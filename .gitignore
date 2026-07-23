@@ -1,0 +1,29 @@
+# Flutter
+**/.dart_tool/
+**/.packages
+**/.pub/
+**/build/
+
+# Android
+**/android/.gradle/
+**/android/local.properties
+
+# iOS
+**/ios/Pods/
+**/ios/.symlinks/
+
+# IDE
+.idea/
+.vscode/
+
+# Node
+**/node_modules/
+**/dist/
+
+# Environment
+.env
+*.env
+
+# OS
+.DS_Store
+Thumbs.db

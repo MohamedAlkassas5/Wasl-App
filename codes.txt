@@ -1,0 +1,32 @@
+C:\src\flutter\bin\flutter.bat pub get
+
+C:\src\flutter\bin\flutter.bat clean
+
+C:\src\flutter\bin\flutter.bat pub run flutter_launcher_icons
+
+C:\src\flutter\bin\flutter.bat flutter pub add firebase_core firebase_auth
+
+C:\src\flutter\bin\flutter.bat emulators --launch Pixel_8a
+
+C:\src\flutter\bin\flutter.bat emulators --launch Pixel_9_Pro
+
+npm run start:dev
+
+
+
+delivary: Ahmed@0155#
+
+admin: admin@123
+
+user: Ahmed@147,   Ahmed@123
+
+Neon.tech
+
+
+
+Railway.app
+
+
+https://console.firebase.google.com/u/0/
+
+TGC76ERYCPBPHFCL8MFPP9NF

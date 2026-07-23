@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "3806380328",
+    "project_id": "flash-tawseel-app",
+    "storage_bucket": "flash-tawseel-app.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:3806380328:android:9c360c50c192407338d01d",
+        "android_client_info": {
+          "package_name": "com.example.wasl_app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCiOhYvy-v1jJ8lSwWZjylf5RDuy34HZ6E"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
