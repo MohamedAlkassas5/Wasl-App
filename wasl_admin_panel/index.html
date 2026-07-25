@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>وصل | لوحة تحكم الإدارة</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <!-- Login view -->
+  <div id="loginView" class="login-wrap">
+    <form id="loginForm" class="login-card">
+      <div class="brand"><span class="brand-mark">و</span><span>وصل</span></div>
+      <h1>لوحة تحكم الإدارة</h1>
+      <p class="muted">سجّل الدخول بحساب المسؤول للمتابعة</p>
+      <label>رقم الهاتف</label>
+      <input id="loginPhone" type="tel" placeholder="01000000000" required />
+      <label>كلمة المرور</label>
+      <input id="loginPassword" type="password" placeholder="••••••••" required />
+      <button type="submit" class="btn btn-primary btn-block">دخول</button>
+      <div id="loginError" class="error"></div>
+      <p class="hint">حساب افتراضي: 01000000000 / WaslAdmin@2026</p>
+    </form>
+  </div>
+
+  <!-- App shell -->
+  <div id="appView" class="app hidden">
+    <aside class="sidebar">
+      <div class="brand"><span class="brand-mark">و</span><span>وصل</span></div>
+      <nav>
+        <a data-route="dashboard" class="nav-item active">لوحة المعلومات</a>
+        <a data-route="registrations" class="nav-item">طلبات التسجيل</a>
+        <a data-route="topups" class="nav-item">طلبات شحن المحفظة</a>
+        <a data-route="settings" class="nav-item">إعدادات النظام</a>
+      </nav>
+      <button id="logoutBtn" class="btn btn-ghost btn-block">تسجيل الخروج</button>
+    </aside>
+
+    <main class="content">
+      <header class="topbar">
+        <h2 id="pageTitle">لوحة المعلومات</h2>
+        <span id="whoami" class="muted"></span>
+      </header>
+      <section id="pageBody" class="page-body"></section>
+    </main>
+  </div>
+
+  <!-- Image lightbox -->
+  <div id="lightbox" class="lightbox hidden" onclick="this.classList.add('hidden')">
+    <img id="lightboxImg" alt="مستند" />
+  </div>
+
+  <script src="./app.js"></script>
+</body>
+</html>

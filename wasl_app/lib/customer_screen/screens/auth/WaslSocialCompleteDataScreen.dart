@@ -197,7 +197,7 @@ class _WaslSocialCompleteDataScreenState extends State<WaslSocialCompleteDataScr
                     child: Container(
                       height: 54,
                       decoration: BoxDecoration(gradient: AppColors.logoGradient, borderRadius: BorderRadius.circular(16)),
-                      child: const Center(child: Text('حفظ وبدء استخدام فلاش 🚀', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontFamily: 'Cairo', fontSize: 15))),
+                      child: const Center(child: Text('حفظ وبدء استخدام وصل 🚀', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontFamily: 'Cairo', fontSize: 15))),
                     ),
                   ),
                 ],
@@ -366,7 +366,7 @@ class _WaslSocialCompleteDataScreenState extends State<WaslSocialCompleteDataScr
 //                     child: Container(
 //                       height: 54,
 //                       decoration: BoxDecoration(gradient: AppColors.logoGradient, borderRadius: BorderRadius.circular(16)),
-//                       child: const Center(child: Text('حفظ وبدء استخدام فلاش 🚀', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontFamily: 'Cairo', fontSize: 15))),
+//                       child: const Center(child: Text('حفظ وبدء استخدام وصل 🚀', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontFamily: 'Cairo', fontSize: 15))),
 //                     ),
 //                   ),
 //                 ],

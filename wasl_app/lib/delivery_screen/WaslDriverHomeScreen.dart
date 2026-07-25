@@ -41,7 +41,7 @@
 //   Future<void> _loadDriverSessionAndInitialize() async {
 //     final prefs = await SharedPreferences.getInstance();
 //     final id = prefs.getInt('user_id') ?? 21;
-//     final name = prefs.getString('user_name') ?? 'كابتن فلاش';
+//     final name = prefs.getString('user_name') ?? 'كابتن وصل';
 //
 //     setState(() {
 //       _driverId = id;
@@ -423,6 +423,8 @@ import 'package:wasl_app/delivery_screen/WaslDriverProfileScreen.dart';
 import 'package:wasl_app/screens/WaslNotificationBell.dart';
 import 'package:wasl_app/delivery_screen/WaslDeliveryPaymentScreen.dart';
 import 'package:wasl_app/services/orders_service.dart';
+import 'package:wasl_app/services/location_service.dart';
+import 'package:wasl_app/services/location_api_service.dart';
 
 class WaslDriverHomeScreen extends StatefulWidget {
   const WaslDriverHomeScreen({Key? key}) : super(key: key);
@@ -433,6 +435,8 @@ class WaslDriverHomeScreen extends StatefulWidget {
 
 class _WaslDriverHomeScreenState extends State<WaslDriverHomeScreen> with WidgetsBindingObserver {
   final FlutterOrdersService _ordersService = FlutterOrdersService();
+  final LocationApiService _locationApi = LocationApiService();
+  Timer? _locationTimer;
   bool _isOnline = false;
   String _driverName = 'جاري التحميل...';
   int _driverId = 21; // القيمة الافتراضية المعتمدة لـ MVP V1
@@ -457,6 +461,7 @@ class _WaslDriverHomeScreenState extends State<WaslDriverHomeScreen> with Widget
   @override
   void dispose() {
     _stopLiveDashboardUpdates();
+    _stopLocationUpdates();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
@@ -470,6 +475,7 @@ class _WaslDriverHomeScreenState extends State<WaslDriverHomeScreen> with Widget
       _startLiveDashboardUpdates();
     } else if (state == AppLifecycleState.paused) {
       _stopLiveDashboardUpdates();
+      _stopLocationUpdates();
     }
   }
 
@@ -480,7 +486,7 @@ class _WaslDriverHomeScreenState extends State<WaslDriverHomeScreen> with Widget
     // 🛡️ تأمين جلب الـ ID بشكل مرن سواء كان مخزناً كـ String أو Int في السيرفر
     final storedId = prefs.get('user_id');
     final id = int.tryParse(storedId?.toString() ?? '') ?? 21;
-    final name = prefs.getString('user_name') ?? 'كابتن فلاش';
+    final name = prefs.getString('user_name') ?? 'كابتن وصل';
 
     if (mounted) {
       setState(() {
@@ -497,7 +503,14 @@ class _WaslDriverHomeScreenState extends State<WaslDriverHomeScreen> with Widget
   Future<void> _fetchOnlineStatus(int driverId) async {
     final result = await _ordersService.getDriverOnlineStatus(driverId);
     if (mounted && result['success'] == true) {
-      setState(() => _isOnline = result['isOnline'] == true);
+      final online = result['isOnline'] == true;
+      setState(() => _isOnline = online);
+      // Resume/stop live location push to match the restored session state.
+      if (online) {
+        _startLocationUpdates();
+      } else {
+        _stopLocationUpdates();
+      }
     }
   }
 
@@ -506,6 +519,31 @@ class _WaslDriverHomeScreenState extends State<WaslDriverHomeScreen> with Widget
     _dashboardTimer = Timer.periodic(const Duration(seconds: 5), (timer) async {
       await _fetchLiveDashboardStats(_driverId);
     });
+  }
+
+  // 🛰️ بث موقع الكابتن الحي للسيرفر أثناء الأونلاين ليظهر في بحث "الأقرب"
+  Future<void> _pushLocationOnce() async {
+    final pos = await LocationService.instance.getCurrentPosition();
+    if (pos == null) return;
+    await _locationApi.updateDriverLocation(
+      driverId: _driverId,
+      latitude: pos.latitude,
+      longitude: pos.longitude,
+    );
+  }
+
+  void _startLocationUpdates() {
+    _locationTimer?.cancel();
+    _pushLocationOnce(); // بث فوري أول ما يبقى أونلاين
+    _locationTimer = Timer.periodic(
+      const Duration(seconds: 20),
+      (_) => _pushLocationOnce(),
+    );
+  }
+
+  void _stopLocationUpdates() {
+    _locationTimer?.cancel();
+    _locationTimer = null;
   }
 
   void _stopLiveDashboardUpdates() {
@@ -568,6 +606,13 @@ class _WaslDriverHomeScreenState extends State<WaslDriverHomeScreen> with Widget
     }
 
     setState(() => _isOnline = result['isOnline'] == true);
+
+    // 🛰️ Start/stop live GPS push so this driver appears in nearby search.
+    if (_isOnline) {
+      _startLocationUpdates();
+    } else {
+      _stopLocationUpdates();
+    }
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(

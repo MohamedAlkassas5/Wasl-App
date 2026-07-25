@@ -1,7 +1,7 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
-// 🎯 استيراد كلاس الألوان الموحد الخاص بهوية فلاش الجديدة
+// 🎯 استيراد كلاس الألوان الموحد الخاص بهوية وصل الجديدة
 import 'package:wasl_app/core/theme/app_colors.dart';
 import 'package:wasl_app/services/auth_service.dart';
 import 'package:wasl_app/screens/WaslPendingScreen.dart';

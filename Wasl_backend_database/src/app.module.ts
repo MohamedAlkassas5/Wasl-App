@@ -9,6 +9,10 @@ import { DeliveryPartner } from './delivery/entities/delivery-partner.entity';
 import { Merchant } from './merchant/entities/merchant.entity';
 import { Order, OrderOffer } from './orders/entities/order.entity';
 import { InAppNotification } from './orders/entities/notification.entity'; // 1️⃣ أولاً: استدعاء الـ Entity الجديد هنا 🎯
+import { AppSetting } from './settings/entities/app-setting.entity';
+import { OtpVerification } from './otp/entities/otp-verification.entity';
+import { WalletTopUpRequest } from './payments/entities/wallet-topup-request.entity';
+import { WalletTransaction } from './payments/entities/wallet-transaction.entity';
 
 // استيراد الموديلات (Modules)
 import { AuthModule } from './auth/auth.module';
@@ -17,6 +21,11 @@ import { OrdersModule } from './orders/orders.module';
 import { CategoriesModule } from './categories/categories.module';
 import { StoresModule } from './stores/stores.module';
 import { UsersModule } from './users/users.module';
+import { SettingsModule } from './settings/settings.module';
+import { PricingModule } from './pricing/pricing.module';
+import { DeliveryModule } from './delivery/delivery.module';
+import { OtpModule } from './otp/otp.module';
+import { PaymentsModule } from './payments/payments.module';
 
 @Module({
   imports: [
@@ -28,15 +37,24 @@ import { UsersModule } from './users/users.module';
       isGlobal: true,
     }),
 
-    // 💻 [الاتصال الحالي]: الاتصال بـ Local Postgres
+    // 💻 Database connection.
+    // - Cloud (Render/Railway/Neon): set DATABASE_URL → connects over SSL.
+    // - Local dev: falls back to localhost Postgres (override via env vars).
+    // No secrets are hardcoded; the local fallback password is dev-only.
     TypeOrmModule.forRoot({
       type: 'postgres',
-      host: 'localhost',
-      port: 5432,
-      username: 'postgres',
-      password: '147258369', // 🔐 باسورد الـ Localhost الخاص بك
-      database: 'wasl_delivery_db',
-      // 🎯 تسجيل الـ Entity الجديد داخل المصفوفة لإنشائه تلقائياً
+      ...(process.env.DATABASE_URL
+        ? {
+            url: process.env.DATABASE_URL,
+            ssl: { rejectUnauthorized: false },
+          }
+        : {
+            host: process.env.DB_HOST || 'localhost',
+            port: Number(process.env.DB_PORT || 5432),
+            username: process.env.DB_USERNAME || 'postgres',
+            password: process.env.DB_PASSWORD || '147258369',
+            database: process.env.DB_NAME || 'wasl_delivery_db',
+          }),
       entities: [
         User,
         DeliveryPartner,
@@ -44,13 +62,22 @@ import { UsersModule } from './users/users.module';
         Order,
         OrderOffer,
         InAppNotification,
+        AppSetting,
+        OtpVerification,
+        WalletTopUpRequest,
+        WalletTransaction,
       ],
-      autoLoadEntities: true, // يضمن التحميل التلقائي للـ Entities المرتبطة بالموديلات الفرعية
-      synchronize: true, // تلقائياً هيولد الجداول الجديدة والـ WalletBalance والـ Notifications
+      autoLoadEntities: true,
+      synchronize: true, // auto-creates tables; fine for MVP. Move to migrations before scale.
     }),
 
     AuthModule,
     AdminModule,
+    SettingsModule,
+    PricingModule,
+    DeliveryModule,
+    OtpModule,
+    PaymentsModule,
     OrdersModule,
     CategoriesModule,
     StoresModule,

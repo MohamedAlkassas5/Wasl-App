@@ -5,6 +5,9 @@ import { OrdersController } from './orders.controller';
 import { Order, OrderOffer } from './entities/order.entity';
 import { DeliveryPartner } from '../delivery/entities/delivery-partner.entity';
 import { InAppNotification } from './entities/notification.entity'; // 🎯 استيراد الـ Entity الجديد المصلح
+import { PricingModule } from '../pricing/pricing.module';
+import { DeliveryModule } from '../delivery/delivery.module';
+import { PaymentsModule } from '../payments/payments.module';
 
 @Module({
   imports: [
@@ -15,6 +18,9 @@ import { InAppNotification } from './entities/notification.entity'; // 🎯 اس
       DeliveryPartner,
       InAppNotification,
     ]),
+    PricingModule,
+    DeliveryModule,
+    PaymentsModule,
   ],
   controllers: [OrdersController],
   providers: [OrdersService],

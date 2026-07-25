@@ -332,7 +332,7 @@
 //                     String items = job['itemsDescription'] ?? 'لا توجد تفاصيل الشحنة';
 //
 //                     // الداتا الجديدة المسترجعة لايف من الباك إند
-//                     String cName = job['customerName'] ?? 'عميل فلاش المميز';
+//                     String cName = job['customerName'] ?? 'عميل وصل المميز';
 //                     String cPhone = job['customerPhone'] ?? 'غير متوفر';
 //                     String addressText = job['deliveryAddressText'] ?? 'مكتوب يدوي بالخريطة';
 //
@@ -398,7 +398,7 @@
 //                             Text('📦 وصف الطلب: $items', maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12, color: AppColors.textSecondary, fontFamily: 'Cairo', height: 1.4)),
 //                             const SizedBox(height: 12),
 //
-//                             // 👤 2️⃣ كارت تفاصيل العميل المطور والمحقون لايف لراحت كابتن فلاش
+//                             // 👤 2️⃣ كارت تفاصيل العميل المطور والمحقون لايف لراحت كابتن وصل
 //                             Container(
 //                               padding: const EdgeInsets.all(14),
 //                               decoration: BoxDecoration(
@@ -575,7 +575,7 @@ class _WaslDriverMarketplaceScreenState extends State<WaslDriverMarketplaceScree
   Widget _buildOrderCard(Map<String, dynamic> job) {
     final String orderId = job['id']?.toString() ?? '0';
     final String cat = job['categoryType'] ?? 'طلب توصيل';
-    final String cName = job['customerName'] ?? 'عميل فلاش';
+    final String cName = job['customerName'] ?? 'عميل وصل';
     final String address = job['deliveryAddressText'] ?? 'العنوان مكتوب يدوياً';
     final double itemsPrice = double.tryParse(job['itemsPrice']?.toString() ?? '0') ?? 0.0;
     final double lat = double.tryParse(job['latitude']?.toString() ?? '30.463') ?? 30.463;

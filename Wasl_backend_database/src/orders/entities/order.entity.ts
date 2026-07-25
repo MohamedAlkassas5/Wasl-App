@@ -84,6 +84,49 @@ export class Order {
   })
   longitude?: number;
 
+  // 📦 [Order-from-anywhere]: pickup point is where the driver collects the
+  // item; the destination is the existing latitude/longitude above. Both are
+  // real GPS from the customer app — never hardcoded.
+  @Column({ name: 'pickup_address_text', type: 'text', nullable: true })
+  pickupAddressText?: string;
+
+  @Column({
+    name: 'pickup_latitude',
+    type: 'decimal',
+    precision: 10,
+    scale: 7,
+    nullable: true,
+  })
+  pickupLatitude?: number;
+
+  @Column({
+    name: 'pickup_longitude',
+    type: 'decimal',
+    precision: 10,
+    scale: 7,
+    nullable: true,
+  })
+  pickupLongitude?: number;
+
+  // 🧮 Trip distance (km) and the pricing-engine estimate, computed at creation.
+  @Column({
+    name: 'distance_km',
+    type: 'decimal',
+    precision: 8,
+    scale: 2,
+    nullable: true,
+  })
+  distanceKm?: number;
+
+  @Column({
+    name: 'estimated_delivery_fee',
+    type: 'decimal',
+    precision: 10,
+    scale: 2,
+    default: 0,
+  })
+  estimatedDeliveryFee!: number;
+
   @Column({
     type: 'enum',
     enum: OrderStatus,

@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-// 🎯 استيراد كلاس الألوان الموحد الخاص بهوية فلاش الجديدة
+// 🎯 استيراد كلاس الألوان الموحد الخاص بهوية وصل الجديدة
 import 'package:wasl_app/core/theme/app_colors.dart';
 // 🎯 استيراد شاشة عروض الأسعار للانتقال إليها تلقائياً
 import 'package:wasl_app/customer_screen/cart_orders/WaslOrderOffersScreen.dart';

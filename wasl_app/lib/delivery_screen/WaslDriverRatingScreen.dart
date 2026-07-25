@@ -66,7 +66,7 @@
 //                 ),
 //                 const SizedBox(height: 8),
 //                 const Text(
-//                   'رأيك يساعدنا في تحسين جودة خدمات فلاش الموحدة',
+//                   'رأيك يساعدنا في تحسين جودة خدمات وصل الموحدة',
 //                   textAlign: TextAlign.center,
 //                   style: TextStyle(fontFamily: 'Cairo', fontSize: 12, color: AppColors.textSecondary),
 //                 ),

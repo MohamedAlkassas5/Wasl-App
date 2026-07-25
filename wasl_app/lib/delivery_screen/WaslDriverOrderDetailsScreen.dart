@@ -486,7 +486,15 @@ class _WaslDriverOrderDetailsScreenState extends State<WaslDriverOrderDetailsScr
   Widget _buildActionButtons() => Padding(
     padding: const EdgeInsets.all(20),
     child: ElevatedButton(
-      onPressed: () => showDialog(context: context, builder: (context) => WaslSubmitBidDialog(orderId: _liveOrderData['id'].toString(), onSubmit: (p, m) {})),
+      onPressed: () => showDialog(
+        context: context,
+        builder: (context) => WaslSubmitBidDialog(
+          orderId: _liveOrderData['id'].toString(),
+          suggestedFee: double.tryParse(
+              _liveOrderData['estimatedDeliveryFee']?.toString() ?? ''),
+          onSubmit: (p, m) {},
+        ),
+      ),
       style: ElevatedButton.styleFrom(backgroundColor: AppColors.textPrimary, minimumSize: const Size(double.infinity, 55), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16))),
       child: const Text('تقديم عرض توصيل الآن 🚀', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, fontFamily: 'Cairo', color: Colors.white)),
     ),

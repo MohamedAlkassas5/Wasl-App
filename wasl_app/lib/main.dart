@@ -5,12 +5,11 @@ import 'package:firebase_core/firebase_core.dart'; // 🎯 2. استيراد ا�
 
 // استيراد الـ Provider الخاص بإدارة جلسة المستخدم
 import 'package:wasl_app/core/providers/user_provider.dart';
+import 'package:wasl_app/core/theme/wasl_theme.dart';
 
 // استيراد الشاشات الخاصة بالتطبيق
 import 'screens/WaslOnboardingScreen.dart';
 import 'screens/WaslLoginScreen.dart';
-import 'package:wasl_app/screens/WaslDeliveryIdentityScreen.dart';
-import 'package:wasl_app/screens/WaslMerchantRegisterScreen.dart';
 import 'package:wasl_app/screens/WaslSplashScreen.dart';
 
 void main() async {
@@ -55,13 +54,7 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'wasl',
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFFF14D18),
-          primary: const Color(0xFFF14D18),
-        ),
-        useMaterial3: true,
-      ),
+      theme: WaslTheme.light,
       debugShowCheckedModeBanner: false,
 
       // 🎯 [الفحص الذكي الخارق للـ UX]:

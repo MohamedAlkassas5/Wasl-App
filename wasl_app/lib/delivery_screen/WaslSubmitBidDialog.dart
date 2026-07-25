@@ -6,11 +6,15 @@ import 'package:wasl_app/services/orders_service.dart'; // 🎯 استيراد �
 
 class WaslSubmitBidDialog extends StatefulWidget {
   final String orderId;
+  // 💰 Distance-based fee suggested by the backend pricing engine. Pre-fills
+  // the input so the driver confirms/adjusts rather than guessing.
+  final double? suggestedFee;
   final Function(double price, int minutes)? onSubmit;
 
   const WaslSubmitBidDialog({
     Key? key,
     required this.orderId,
+    this.suggestedFee,
     this.onSubmit,
   }) : super(key: key);
 
@@ -24,6 +28,15 @@ class _WaslSubmitBidDialogState extends State<WaslSubmitBidDialog> {
   final _formKey = GlobalKey<FormState>();
 
   final FlutterOrdersService _ordersService = FlutterOrdersService();
+
+  @override
+  void initState() {
+    super.initState();
+    // Pre-fill the pricing-engine suggestion (city 20 / nearby 40 / dynamic).
+    if (widget.suggestedFee != null && widget.suggestedFee! > 0) {
+      _feeController.text = widget.suggestedFee!.toStringAsFixed(0);
+    }
+  }
 
   @override
   void dispose() {
@@ -143,6 +156,19 @@ class _WaslSubmitBidDialogState extends State<WaslSubmitBidDialog> {
                     border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
                   ),
                 ),
+                if (widget.suggestedFee != null && widget.suggestedFee! > 0) ...[
+                  const SizedBox(height: 6),
+                  Row(
+                    children: [
+                      const Icon(Icons.auto_awesome, size: 14, color: AppColors.primary),
+                      const SizedBox(width: 6),
+                      Text(
+                        'السعر المقترح حسب المسافة: ${widget.suggestedFee!.toStringAsFixed(0)} ج.م',
+                        style: const TextStyle(fontSize: 11, color: AppColors.primary, fontFamily: 'Cairo', fontWeight: FontWeight.bold),
+                      ),
+                    ],
+                  ),
+                ],
                 const SizedBox(height: 16),
                 const Text(
                     'وقت الوصول المتوقع للمحل (بالدقائق)',

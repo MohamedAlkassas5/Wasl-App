@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { JwtModule } from '@nestjs/jwt';
 import { HttpModule } from '@nestjs/axios'; // 🎯 1. استيراد موديول الـ HTTP الخاص بـ Axios لحل الأزمة
+import { JWT_SECRET, JWT_EXPIRES_IN } from './jwt.constants';
 import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
 import { User } from '../users/entities/user.entity';
@@ -14,8 +15,10 @@ import { Merchant } from '../merchant/entities/merchant.entity';
     TypeOrmModule.forFeature([User, DeliveryPartner, Merchant]),
     JwtModule.register({
       global: true,
-      secret: 'WASL_SUPER_SECRET_KEY_2026',
-      signOptions: { expiresIn: '30d' },
+      secret: JWT_SECRET,
+      // Cast: jsonwebtoken accepts a duration string ('30d') at runtime, but its
+      // types only allow the narrow `ms.StringValue` literal union.
+      signOptions: { expiresIn: JWT_EXPIRES_IN as unknown as number },
     }),
     HttpModule, // 🎯 2. تسجيل الـ HttpModule هنا لكي يستطيع الـ AuthService استخدام الـ HttpService بدون أي عطل
   ],

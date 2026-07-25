@@ -5,7 +5,7 @@
 // import 'package:wasl_app/screens/WaslMerchantRegisterScreen.dart';
 // import 'package:wasl_app/customer_screen/screens/auth/WaslResetPasswordScreen.dart';
 // import 'package:wasl_app/services/auth_service.dart';
-// // 🎯 استيراد كلاس الألوان الموحد الخاص بهوية فلاش الجديدة
+// // 🎯 استيراد كلاس الألوان الموحد الخاص بهوية وصل الجديدة
 // import 'package:wasl_app/core/theme/app_colors.dart';
 //
 // class WaslOtpScreen extends StatefulWidget {

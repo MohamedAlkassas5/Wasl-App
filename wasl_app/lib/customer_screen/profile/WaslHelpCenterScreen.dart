@@ -85,7 +85,7 @@ class WaslHelpCenterScreen extends StatelessWidget {
                 ),
                 const SizedBox(height: 16),
 
-                // ⚡ كارت مشاكل التوصيل بالتدرج اللوني الفخم للـ Gradients المشفرة لـ فلاش
+                // ⚡ كارت مشاكل التوصيل بالتدرج اللوني الفخم للـ Gradients المشفرة لـ وصل
                 Container(
                   padding: const EdgeInsets.all(20),
                   decoration: BoxDecoration(
@@ -134,8 +134,8 @@ class WaslHelpCenterScreen extends StatelessWidget {
                   style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: AppColors.textPrimary, fontFamily: 'Cairo'),
                 ),
                 const SizedBox(height: 12),
-                _buildExpansionTile('كيف يمكنني تتبع طلبي في الوقت الفعلي؟', 'بمجرد قبول المندوب لطلبك اللوجستي الموحد، يمكنك تتبع حركته مباشرة ثانية بثانية عبر الـ GPS المدمج بخرائط فلاش للتوصيل السريع.'),
-                _buildExpansionTile('ما هي طرق الدفع المتاحة في تطبيق فلاش؟', 'نوفر حالياً نظام الدفع النقدي (كاش) فور استلام الشحنة والمشتريات من الكابتن، وجاري دمج المحفظة الرقمية لـ فلاش لتسهيل التحويلات البنكية لاحقاً.'),
+                _buildExpansionTile('كيف يمكنني تتبع طلبي في الوقت الفعلي؟', 'بمجرد قبول المندوب لطلبك اللوجستي الموحد، يمكنك تتبع حركته مباشرة ثانية بثانية عبر الـ GPS المدمج بخرائط وصل للتوصيل السريع.'),
+                _buildExpansionTile('ما هي طرق الدفع المتاحة في تطبيق وصل؟', 'نوفر حالياً نظام الدفع النقدي (كاش) فور استلام الشحنة والمشتريات من الكابتن، وجاري دمج المحفظة الرقمية لـ وصل لتسهيل التحويلات البنكية لاحقاً.'),
               ],
             ),
           ),

@@ -254,7 +254,7 @@ class _WaslDeliveryPaymentScreenState extends State<WaslDeliveryPaymentScreen> {
                   ),
                   const SizedBox(height: 24),
 
-                  // 4️⃣ طرق الدفع المتاحة لـ فلاش
+                  // 4️⃣ طرق الدفع المتاحة لـ وصل
                   _buildSectionTitle('اختر طريقة الدفع'),
                   const SizedBox(height: 10),
                   _buildPaymentMethodTile(

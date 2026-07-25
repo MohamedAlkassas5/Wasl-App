@@ -1,7 +1,7 @@
 // import 'dart:io';
 // import 'package:flutter/material.dart';
 // import 'package:image_picker/image_picker.dart';
-// // 🎯 استيراد كلاس الألوان الموحد الخاص بهوية فلاش الجديدة
+// // 🎯 استيراد كلاس الألوان الموحد الخاص بهوية وصل الجديدة
 // import 'package:wasl_app/core/theme/app_colors.dart';
 //
 // class WaslOrderAnyplaceDetailsScreen extends StatefulWidget {
@@ -100,7 +100,7 @@
 //         ),
 //         child: Row(
 //           children: [
-//             Icon(icon, color: AppColors.primary), // 🎯 الأيقونة باللون الأساسي لفلاش
+//             Icon(icon, color: AppColors.primary), // 🎯 الأيقونة باللون الأساسي لوصل
 //             const SizedBox(width: 14),
 //             Text(label, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.textPrimary, fontFamily: 'Cairo')),
 //           ],
@@ -191,7 +191,7 @@
 //       width: double.infinity,
 //       padding: const EdgeInsets.all(16),
 //       decoration: BoxDecoration(
-//         color: AppColors.primary.withOpacity(0.08), // 🎯 كارت الموقع بخلفية زرقاء ناعمة متناسقة مع فلاش
+//         color: AppColors.primary.withOpacity(0.08), // 🎯 كارت الموقع بخلفية زرقاء ناعمة متناسقة مع وصل
 //         borderRadius: BorderRadius.circular(18),
 //       ),
 //       child: Row(
@@ -374,14 +374,22 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:geolocator/geolocator.dart';
 import 'package:wasl_app/core/theme/app_colors.dart';
 import 'package:wasl_app/services/orders_service.dart';
+import 'package:wasl_app/services/location_service.dart';
 
 class WaslOrderAnyplaceDetailsScreen extends StatefulWidget {
   final String? selectedAddress;
+  // 📍 Exact delivery coordinates picked on the map (real, never hardcoded).
+  final double? selectedLatitude;
+  final double? selectedLongitude;
 
-  const WaslOrderAnyplaceDetailsScreen({Key? key, this.selectedAddress}) : super(key: key);
+  const WaslOrderAnyplaceDetailsScreen({
+    Key? key,
+    this.selectedAddress,
+    this.selectedLatitude,
+    this.selectedLongitude,
+  }) : super(key: key);
 
   @override
   State<WaslOrderAnyplaceDetailsScreen> createState() => _WaslOrderAnyplaceDetailsScreenState();
@@ -399,6 +407,31 @@ class _WaslOrderAnyplaceDetailsScreenState extends State<WaslOrderAnyplaceDetail
   File? _attachedImage;
   final ImagePicker _picker = ImagePicker();
   bool _isSubmitting = false;
+
+  // 📍 Real delivery coordinates: prefer the map-picked point, else live GPS.
+  double? _lat;
+  double? _lng;
+
+  @override
+  void initState() {
+    super.initState();
+    _lat = widget.selectedLatitude;
+    _lng = widget.selectedLongitude;
+    // If the map didn't supply a point, resolve the device GPS once.
+    if (_lat == null || _lng == null) {
+      _resolveCurrentLocation();
+    }
+  }
+
+  Future<void> _resolveCurrentLocation() async {
+    final pos = await LocationService.instance.getCurrentPosition();
+    if (pos != null && mounted) {
+      setState(() {
+        _lat = pos.latitude;
+        _lng = pos.longitude;
+      });
+    }
+  }
 
   @override
   void dispose() {
@@ -487,23 +520,28 @@ class _WaslOrderAnyplaceDetailsScreenState extends State<WaslOrderAnyplaceDetail
   Future<void> _submitOrder() async {
     if (!_formKey.currentState!.validate()) return;
 
-    setState(() => _isSubmitting = true);
-
-    double lat = 30.463284;
-    double lng = 30.702954;
-
-    try {
-      bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
-      LocationPermission permission = await Geolocator.checkPermission();
-
-      if (serviceEnabled && (permission == LocationPermission.always || permission == LocationPermission.whileInUse)) {
-        Position position = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.high);
-        lat = position.latitude;
-        lng = position.longitude;
-      }
-    } catch (e) {
-      debugPrint('💥 [GPS GEOLOCATOR WARNING]: $e');
+    // 📍 A real delivery location is mandatory — no hardcoded fallback.
+    // Try one more GPS resolve if we still don't have a point.
+    if (_lat == null || _lng == null) {
+      await _resolveCurrentLocation();
     }
+    if (_lat == null || _lng == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text(
+            'يرجى تحديد موقع التوصيل على الخريطة أو تفعيل خدمة الموقع أولاً 📍',
+            style: TextStyle(fontFamily: 'Cairo'),
+          ),
+          backgroundColor: AppColors.danger,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        ),
+      );
+      return;
+    }
+
+    setState(() => _isSubmitting = true);
 
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -520,8 +558,8 @@ class _WaslOrderAnyplaceDetailsScreenState extends State<WaslOrderAnyplaceDetail
         storeName: _storeNameController.text.trim(),
         itemsDescription: _orderItemsController.text.trim(),
         deliveryAddressText: _addressDetailsController.text.trim(),
-        latitude: lat,
-        longitude: lng,
+        latitude: _lat!,
+        longitude: _lng!,
         itemsImage: _attachedImage,
       );
 
@@ -645,7 +683,10 @@ class _WaslOrderAnyplaceDetailsScreenState extends State<WaslOrderAnyplaceDetail
                 const Text('الموقع المختار على الخريطة', style: TextStyle(fontSize: 12, color: AppColors.primary, fontWeight: FontWeight.bold, fontFamily: 'Cairo')),
                 const SizedBox(height: 4),
                 Text(
-                  widget.selectedAddress ?? 'حي الملك فهد، الرياض، المملكة العربية السعودية',
+                  widget.selectedAddress ??
+                      (_lat != null && _lng != null
+                          ? 'موقعك الحالي (${_lat!.toStringAsFixed(5)}, ${_lng!.toStringAsFixed(5)})'
+                          : 'جاري تحديد موقعك...'),
                   style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textPrimary, height: 1.5, fontFamily: 'Cairo'),
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,

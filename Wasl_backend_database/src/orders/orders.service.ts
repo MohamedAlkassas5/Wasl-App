@@ -11,6 +11,11 @@ import { Order, OrderOffer, OrderStatus } from './entities/order.entity';
 import { DeliveryPartner } from '../delivery/entities/delivery-partner.entity';
 import { InAppNotification } from './entities/notification.entity';
 import { CreateOrderDto } from './dto/create-order.dto';
+import { PricingService } from '../pricing/pricing.service';
+import { DeliveryService } from '../delivery/delivery.service';
+import { PaymentsService } from '../payments/payments.service';
+import { WalletTxType } from '../payments/entities/wallet-transaction.entity';
+import { haversineKm, roundKm, isValidCoordinate } from '../common/geo.util';
 
 @Injectable()
 export class OrdersService {
@@ -26,6 +31,10 @@ export class OrdersService {
 
     @InjectRepository(InAppNotification)
     private readonly notificationRepository: Repository<InAppNotification>,
+
+    private readonly pricingService: PricingService,
+    private readonly deliveryService: DeliveryService,
+    private readonly paymentsService: PaymentsService,
   ) {}
 
   // 🔔 دالة داخلية لإنشاء وحفظ الإشعارات تلقائياً في قاعدة البيانات
@@ -63,55 +72,105 @@ export class OrdersService {
       }
     }
 
-    // 🟢 إنشاء الطلب مع دمج حقل السعر التقديري (itemsPrice)
+    // 📍 Real destination coordinates are required — no hardcoded fallback.
+    if (!isValidCoordinate(orderData.latitude, orderData.longitude)) {
+      throw new BadRequestException(
+        'يجب تحديد موقع التوصيل على الخريطة قبل إنشاء الطلب',
+      );
+    }
+
+    // 🧮 Compute trip distance + a price estimate when a pickup point exists.
+    let distanceKm: number | undefined;
+    let estimatedDeliveryFee = 0;
+    if (
+      isValidCoordinate(orderData.pickupLatitude, orderData.pickupLongitude)
+    ) {
+      distanceKm = roundKm(
+        haversineKm(
+          {
+            latitude: orderData.pickupLatitude!,
+            longitude: orderData.pickupLongitude!,
+          },
+          { latitude: orderData.latitude, longitude: orderData.longitude },
+        ),
+      );
+      estimatedDeliveryFee =
+        this.pricingService.quoteForDistance(distanceKm).deliveryFee;
+    } else {
+      // No pickup point ⇒ default to the city tier estimate.
+      estimatedDeliveryFee =
+        this.pricingService.quoteForDistance(0).deliveryFee;
+    }
+
     const order = this.orderRepository.create({
       customerId: customerId || orderData.customerId,
       categoryType: orderData.categoryType || 'طلب عام',
       storeName: orderData.storeName || 'غير محدد',
       itemsDescription: processedItems,
-      customerName: orderData.customerName || 'عميل فلاش المميز',
-      customerPhone: orderData.customerPhone || '01xxxxxxxxx',
+      customerName: orderData.customerName || 'عميل وصل',
+      customerPhone: orderData.customerPhone || '',
       deliveryAddressText:
-        orderData.deliveryAddressText || 'العنوان مكتوب بالخريطة',
+        orderData.deliveryAddressText || 'العنوان محدد على الخريطة',
 
-      // إحداثيات السادات / كوم حمادة كـ Fallbacks
-      latitude: orderData.latitude || 30.463284,
-      longitude: orderData.longitude || 30.702954,
+      latitude: orderData.latitude,
+      longitude: orderData.longitude,
+      pickupAddressText: orderData.pickupAddressText,
+      pickupLatitude: orderData.pickupLatitude,
+      pickupLongitude: orderData.pickupLongitude,
+      distanceKm,
+      estimatedDeliveryFee,
 
-      // 💰 حقن السعر التقديري (يأخذ القيمة من الـ DTO أو يضع 0 افتراضياً)
       itemsPrice: Number(orderData.itemsPrice) || 0,
       itemsImageUrl: orderData.itemsImageUrl,
+      voiceNoteUrl: orderData.voiceNoteUrl,
 
       status: OrderStatus.PENDING_OFFERS,
     });
 
     const savedOrder = await this.orderRepository.save(order);
 
-    // 🚀 جلب الكباتن وإرسال الإشعارات
+    // 🚀 Notify only drivers near the PICKUP point (falls back to destination),
+    // sorted nearest-first, using an expanding radius. No more blasting every
+    // online driver in the whole system.
+    await this.notifyNearbyDrivers(savedOrder);
+
+    return savedOrder;
+  }
+
+  /**
+   * Radius-scoped driver notification for a newly created order. Uses the
+   * pickup point when available, otherwise the delivery destination.
+   */
+  private async notifyNearbyDrivers(order: Order): Promise<void> {
     try {
-      const drivers = await this.deliveryRepository.find({
-        where: { isOnline: true },
-      });
-      const notificationTitle = '📦 طلب شحن جديد بالساحة!';
-      const notificationMessage = `مطلوب توصيل إلى: ${order.deliveryAddressText}. افتح الساحة وقدم عرضك الحين! 🏁`;
+      const originLat = Number(order.pickupLatitude ?? order.latitude);
+      const originLng = Number(order.pickupLongitude ?? order.longitude);
 
-      const notificationPromises = drivers.map((driver) => {
-        return this.createNotification(
-          driver.userId,
-          notificationTitle,
-          notificationMessage,
+      if (!isValidCoordinate(originLat, originLng)) return;
+
+      const { drivers, radiusKm } =
+        await this.deliveryService.findNearbyWithExpansion(
+          originLat,
+          originLng,
         );
-      });
 
-      await Promise.all(notificationPromises);
+      const title = '📦 طلب توصيل جديد قريب منك!';
+      await Promise.all(
+        drivers.map((d) =>
+          this.createNotification(
+            d.driverId,
+            title,
+            `طلب توصيل إلى: ${order.deliveryAddressText} — يبعد ${d.distanceKm} كم عنك. قدّم عرضك الآن! 🏁`,
+          ),
+        ),
+      );
+
       console.log(
-        `📡 [MARKETPLACE NOTIF] تم إشعار عدد ${drivers.length} كابتن بوجود الطلب الجديد رقم FL-${savedOrder.id}`,
+        `📡 [MARKETPLACE NOTIF] أُشعر ${drivers.length} كابتن ضمن نطاق ${radiusKm} كم بالطلب رقم FL-${order.id}`,
       );
     } catch (error) {
       console.error('💥 [MARKETPLACE NOTIF ERROR]:', error);
     }
-
-    return savedOrder;
   }
 
   // 🎯 تقديم العروض + إشعار فوري للعميل بوصل عرض جديد
@@ -228,8 +287,12 @@ export class OrdersService {
     };
   }
 
-  calculateWaslCommission(_deliveryFee: number): number {
-    return 5;
+  /**
+   * Platform commission for a delivery fee, using the configurable percentage
+   * from settings (was previously a flat hardcoded 5 EGP).
+   */
+  calculateWaslCommission(deliveryFee: number): number {
+    return this.pricingService.commissionForFee(deliveryFee);
   }
 
   // 🎯 تحديث الحالات + إرسال إشعارات تفاعلية متزامنة للعميل مع كل حركة للكابتن
@@ -307,22 +370,28 @@ export class OrdersService {
       });
 
       if (driver) {
-        driver.balance = Number(driver.balance) - commission;
+        // Debit commission through the ledger so it's fully auditable.
+        const newBalance = await this.paymentsService.credit(
+          order.acceptedDriverId,
+          -commission,
+          WalletTxType.COMMISSION,
+          `عمولة توصيل الطلب FL-${orderId}`,
+        );
 
-        if (Number(driver.balance) < 5) {
+        const minWallet = this.pricingService.minWalletToGoOnline();
+        if (newBalance < minWallet) {
           driver.isOnline = false;
+          await this.deliveryRepository.save(driver);
         }
-
-        await this.deliveryRepository.save(driver);
 
         await this.createNotification(
           order.acceptedDriverId,
           '💰 تم خصم عمولة الطلب',
-          `تم خصم ${commission} ج.م من محفظتك لإكمال الطلب FL-${orderId}. رصيدك الحالي: ${Number(driver.balance).toFixed(2)} ج.م.`,
+          `تم خصم ${commission} ج.م من محفظتك لإكمال الطلب FL-${orderId}. رصيدك الحالي: ${newBalance.toFixed(2)} ج.م.`,
         );
 
         console.log(
-          `💰 [WASL SUCCESS] تم خصم عمولة بقيمة ${commission} ج.م من محفظة الكابتن رقم ${order.acceptedDriverId}. الرصيد الحالي: ${driver.balance}`,
+          `💰 [WASL SUCCESS] تم خصم عمولة بقيمة ${commission} ج.م من محفظة الكابتن رقم ${order.acceptedDriverId}. الرصيد الحالي: ${newBalance}`,
         );
       }
     }
@@ -360,16 +429,50 @@ export class OrdersService {
       throw new NotFoundException('الطلب غير موجود في النظام');
     }
 
+    // 🛰️ Merge the driver's LIVE GPS location (stored on DeliveryPartner, not
+    // on User) into the accepted-driver payload so the customer's tracking map
+    // can actually follow the driver in real time.
+    let driverLocation: {
+      latitude: number | null;
+      longitude: number | null;
+      lastLocationUpdate: Date | null;
+      rating: number;
+    } | null = null;
+
+    if (order.acceptedDriverId) {
+      const partner = await this.deliveryRepository.findOne({
+        where: { userId: order.acceptedDriverId },
+      });
+      if (partner) {
+        driverLocation = {
+          latitude: partner.currentLatitude ?? null,
+          longitude: partner.currentLongitude ?? null,
+          lastLocationUpdate: partner.lastLocationUpdate ?? null,
+          rating: Number(partner.rating ?? 5),
+        };
+      }
+    }
+
     console.log(
       `📡 [LIVE SYNC] الطلب رقم FL-${orderId} حالته الحالية في الداتابيز هي: ${order.status}`,
     );
 
-    return order;
+    // Spread keeps every existing field; we enrich the acceptedDriver object
+    // with live location and expose the agreed fee explicitly.
+    return {
+      ...order,
+      agreedDeliveryFee: Number(order.finalDeliveryFee) || null,
+      acceptedDriver: order.acceptedDriver
+        ? { ...order.acceptedDriver, ...driverLocation }
+        : null,
+    };
   }
 
-  // 🎯 [تم التأمين والتحديث الحقيقي لشاشات الكابتن والساحة اللوجستية]
+  // 🎯 Available orders for the marketplace. When a driverId is supplied and
+  // the driver has a live GPS fix, each pending order is annotated with its
+  // distance from the driver and the list is sorted nearest-first.
   async getAvailableOrders(driverId?: number) {
-    return await this.orderRepository.find({
+    const orders = await this.orderRepository.find({
       where: driverId
         ? [
             { status: OrderStatus.PENDING_OFFERS },
@@ -383,6 +486,47 @@ export class OrdersService {
         createdAt: 'DESC',
       },
     });
+
+    if (!driverId) return orders;
+
+    const driver = await this.deliveryRepository.findOne({
+      where: { userId: driverId },
+    });
+    if (
+      !driver ||
+      !isValidCoordinate(driver.currentLatitude, driver.currentLongitude)
+    ) {
+      // No driver location yet → return unsorted (newest-first) as before.
+      return orders;
+    }
+
+    const origin = {
+      latitude: Number(driver.currentLatitude),
+      longitude: Number(driver.currentLongitude),
+    };
+
+    const enriched = orders.map((o) => {
+      const targetLat = Number(o.pickupLatitude ?? o.latitude);
+      const targetLng = Number(o.pickupLongitude ?? o.longitude);
+      const distanceToDriverKm = isValidCoordinate(targetLat, targetLng)
+        ? roundKm(
+            haversineKm(origin, {
+              latitude: targetLat,
+              longitude: targetLng,
+            }),
+          )
+        : null;
+      return { ...o, distanceToDriverKm };
+    });
+
+    // Nearest-first; orders without coordinates sink to the bottom.
+    enriched.sort(
+      (a, b) =>
+        (a.distanceToDriverKm ?? Number.MAX_SAFE_INTEGER) -
+        (b.distanceToDriverKm ?? Number.MAX_SAFE_INTEGER),
+    );
+
+    return enriched;
   }
 
   async getCustomerOrders(customerId: number) {
@@ -418,9 +562,10 @@ export class OrdersService {
       throw new NotFoundException('حساب الكابتن غير موجود');
     }
 
-    if (isOnline && Number(driver.balance) < 5) {
+    const minWallet = this.pricingService.minWalletToGoOnline();
+    if (isOnline && Number(driver.balance) < minWallet) {
       throw new BadRequestException(
-        'رصيد المحفظة غير كافٍ. يرجى شحن 100 ج.م على الأقل للاستمرار.',
+        `رصيد المحفظة غير كافٍ. يرجى شحن ${minWallet} ج.م على الأقل للاستمرار.`,
       );
     }
 
@@ -491,273 +636,14 @@ export class OrdersService {
     return { success: true, rating: driver.rating };
   }
 
-  // 💰 دالة معالجة وتأكيد شحن المحفظة وتحديث الرصيد التراكمي في الداتابيز
-  async processDriverTopUp(driverId: number, amount: number) {
-    const driver = await this.deliveryRepository.findOne({
-      where: { userId: driverId },
-    });
-
-    if (!driver) {
-      throw new NotFoundException('حساب الكابتن غير موجود بالنظام');
-    }
-
-    driver.balance = Number(driver.balance) + Number(amount);
-
-    await this.deliveryRepository.save(driver);
-
-    console.log(
-      `💳 [WALLET TOP-UP SUCCESS] الكابتن رقم ${driverId} شحن محفظته بـ ${amount} ج.م. الرصيد الجديد: ${driver.balance}`,
+  // 🔒 [SECURITY] Self-service wallet crediting has been removed. Drivers can
+  // no longer top up their own balance directly (this was exploitable). Top-ups
+  // now go through PaymentsService: the driver files a request with proof of a
+  // Vodafone Cash / InstaPay transfer, and an admin verifies it before the
+  // balance is credited. This stub stays only to reject any legacy callers.
+  processDriverTopUp(_driverId: number, _amount: number) {
+    throw new BadRequestException(
+      'شحن المحفظة يتم الآن عبر طلب شحن يوثّقه الأدمن بعد التحويل. الشحن الذاتي غير متاح.',
     );
-
-    await this.createNotification(
-      driverId,
-      '💳 تم شحن محفظتك!',
-      `نجحت عملية السداد، أضيف لحسابك بقيمة ${amount} ج.م. رصيدك الحالي: ${driver.balance} ج.م.`,
-    );
-
-    return {
-      success: true,
-      message: 'تم شحن المحفظة وتحديث الرصيد بنجاح',
-      newBalance: driver.balance,
-    };
   }
 }
-// import {
-//   Injectable,
-//   NotFoundException,
-//   BadRequestException,
-// } from '@nestjs/common';
-// import { InjectRepository } from '@nestjs/typeorm';
-// import { Repository, LessThan } from 'typeorm';
-// import { Interval } from '@nestjs/schedule';
-
-// import { Order, OrderOffer, OrderStatus } from './entities/order.entity';
-// import { DeliveryPartner } from '../delivery/entities/delivery-partner.entity';
-// import { InAppNotification } from './entities/notification.entity';
-// import { CreateOrderDto } from './dto/create-order.dto';
-
-// @Injectable()
-// export class OrdersService {
-//   constructor(
-//     @InjectRepository(Order)
-//     private readonly orderRepository: Repository<Order>,
-//     @InjectRepository(OrderOffer)
-//     private readonly offerRepository: Repository<OrderOffer>,
-//     @InjectRepository(DeliveryPartner)
-//     private readonly deliveryRepository: Repository<DeliveryPartner>,
-//     @InjectRepository(InAppNotification)
-//     private readonly notificationRepository: Repository<InAppNotification>,
-//   ) {}
-
-//   // 🚀 دالة حساب إحصائيات اليوم (طلبات اليوم المكتملة فقط)
-//   async getDriverDashboardStats(driverId: number) {
-//     const driver = await this.deliveryRepository.findOne({
-//       where: { userId: driverId },
-//     });
-
-//     const allCompletedOrders = await this.orderRepository.find({
-//       where: { acceptedDriverId: driverId, status: OrderStatus.COMPLETED },
-//     });
-
-//     const today = new Date();
-//     today.setHours(0, 0, 0, 0);
-
-//     const todayOrders = allCompletedOrders.filter(
-//       (order) => order.createdAt && new Date(order.createdAt) >= today,
-//     );
-
-//     let todayEarnings = 0;
-//     let todayCommissions = 0;
-
-//     todayOrders.forEach((order) => {
-//       const fee = Number(order.finalDeliveryFee || 0);
-//       todayEarnings += fee;
-//       todayCommissions += this.calculateWaslCommission(fee);
-//     });
-
-//     return {
-//       success: true,
-//       balance: driver ? Number(driver.balance || 0) : 0.0,
-//       todayOrdersCount: todayOrders.length,
-//       todayEarnings,
-//       todayCommissions,
-//       rating: driver ? Number(driver.rating || 4.95) : 4.95,
-//     };
-//   }
-
-//   // 🔄 تحديث الحالة (مع دعم الحقل الجديد invoiceImageUrl)
-//   async updateStatus(
-//     orderId: number,
-//     status: OrderStatus,
-//     extraData?: {
-//       itemsPrice?: number;
-//       invoiceImageUrl?: string;
-//     },
-//   ) {
-//     const order = await this.orderRepository.findOne({
-//       where: { id: orderId },
-//     });
-//     if (!order) throw new NotFoundException('الطلب غير موجود');
-
-//     order.status = status;
-
-//     if (extraData?.itemsPrice !== undefined) {
-//       order.itemsPrice = extraData.itemsPrice;
-//     }
-
-//     if (extraData?.invoiceImageUrl !== undefined) {
-//       order.invoiceImageUrl = extraData.invoiceImageUrl;
-//     }
-
-//     return await this.orderRepository.save(order);
-//   }
-
-//   // 🟢 إنشاء طلب جديد (يدعم الصورة المرفوعة)
-//   // استبدل any بـ CreateOrderDto
-//   async createOrder(customerId: number, orderData: CreateOrderDto) {
-//     let processedItems = 'تفاصيل شحنة فارغة';
-//     if (orderData.itemsDescription) {
-//       processedItems = Array.isArray(orderData.itemsDescription)
-//         ? orderData.itemsDescription.join(', ')
-//         : String(orderData.itemsDescription);
-//     }
-
-//     // نقوم بإنشاء كائن نظيف يحتوي فقط على الحقول المطلوبة للـ Entity
-//     const order = this.orderRepository.create({
-//       customerId: customerId || orderData.customerId,
-//       customerName: orderData.customerName,
-//       customerPhone: orderData.customerPhone,
-//       categoryType: orderData.categoryType,
-//       storeName: orderData.storeName || 'غير محدد',
-//       itemsDescription: processedItems,
-//       itemsPrice: Number(orderData.itemsPrice || 0),
-//       deliveryAddressText: orderData.deliveryAddressText,
-//       latitude: orderData.latitude,
-//       longitude: orderData.longitude,
-//       // التأكد من تمرير undefined بدلاً من null لتجنب خطأ التايب
-//       itemsImageUrl: orderData.itemsImageUrl || undefined,
-//       status: OrderStatus.PENDING_OFFERS,
-//     });
-
-//     return await this.orderRepository.save(order);
-//   }
-
-//   // 🎯 تقديم عرض (مع التحقق من الرصيد)
-//   async submitOffer(
-//     driverId: number,
-//     orderId: number,
-//     deliveryFee: number,
-//     estimatedTime: number,
-//   ) {
-//     const driver = await this.deliveryRepository.findOne({
-//       where: { userId: driverId },
-//     });
-//     if (!driver) throw new NotFoundException('الكابتن غير موجود');
-
-//     if (Number(driver.balance) <= -10.0) {
-//       throw new BadRequestException('عفواً، رصيدك لا يسمح باستقبال طلبات.');
-//     }
-
-//     const offer = this.offerRepository.create({
-//       orderId,
-//       driverId,
-//       deliveryFee,
-//       estimatedTime,
-//     });
-//     return await this.offerRepository.save(offer);
-//   }
-
-//   // 🎯 قبول العرض
-//   async acceptOffer(orderId: number, offerId: number) {
-//     const offer = await this.offerRepository.findOne({
-//       where: { id: offerId },
-//     });
-//     if (!offer) throw new NotFoundException('العرض غير موجود');
-
-//     const order = await this.orderRepository.findOne({
-//       where: { id: orderId },
-//     });
-//     if (!order) throw new NotFoundException('الطلب غير موجود');
-
-//     order.status = OrderStatus.ACCEPTED;
-//     order.acceptedDriverId = offer.driverId;
-//     order.finalDeliveryFee = Number(offer.deliveryFee);
-
-//     await this.orderRepository.save(order);
-//     await this.offerRepository.delete({ orderId });
-
-//     return { success: true, message: 'تم قبول العرض' };
-//   }
-
-//   calculateWaslCommission(deliveryFee: number): number {
-//     return Number(((deliveryFee / 30) * 5).toFixed(2));
-//   }
-
-//   // 🎯 خدمات إضافية
-//   async getUnreadNotifications(userId: number) {
-//     return await this.notificationRepository.find({
-//       where: { userId, isRead: false },
-//       order: { createdAt: 'DESC' },
-//     });
-//   }
-
-//   async getAvailableOrders(driverId?: number) {
-//     return await this.orderRepository.find({
-//       where: driverId
-//         ? [
-//             { status: OrderStatus.PENDING_OFFERS },
-//             { acceptedDriverId: driverId },
-//           ]
-//         : { status: OrderStatus.PENDING_OFFERS },
-//       order: { createdAt: 'DESC' },
-//     });
-//   }
-
-//   async getDriverProfile(driverId: number) {
-//     return await this.deliveryRepository.findOne({
-//       where: { userId: driverId },
-//     });
-//   }
-
-//   async updateDriverRating(driverId: number, newRating: number) {
-//     const driver = await this.deliveryRepository.findOne({
-//       where: { userId: driverId },
-//     });
-//     if (!driver) throw new NotFoundException('الكابتن غير موجود');
-//     driver.rating = Number(
-//       ((Number(driver.rating || 5.0) * 9 + newRating) / 10).toFixed(2),
-//     );
-//     return await this.deliveryRepository.save(driver);
-//   }
-
-//   async processDriverTopUp(driverId: number, amount: number) {
-//     const driver = await this.deliveryRepository.findOne({
-//       where: { userId: driverId },
-//     });
-//     if (!driver) throw new NotFoundException('الكابتن غير موجود');
-//     driver.balance = Number(driver.balance) + Number(amount);
-//     return await this.deliveryRepository.save(driver);
-//   }
-
-//   async deleteNotification(id: number) {
-//     return await this.notificationRepository.delete(id);
-//   }
-//   async clearAllUserNotifications(userId: number) {
-//     return await this.notificationRepository.delete({ userId });
-//   }
-//   async deleteDriverProfile(driverId: number) {
-//     const driver = await this.deliveryRepository.findOne({
-//       where: { userId: driverId },
-//     });
-//     if (!driver) throw new NotFoundException('الكابتن غير موجود');
-//     return await this.deliveryRepository.remove(driver);
-//   }
-
-//   @Interval(60000)
-//   async handleAutoCancelOrders() {
-//     await this.orderRepository.delete({
-//       status: OrderStatus.PENDING_OFFERS,
-//       createdAt: LessThan(new Date(Date.now() - 600000)),
-//     });
-//   }
-// }

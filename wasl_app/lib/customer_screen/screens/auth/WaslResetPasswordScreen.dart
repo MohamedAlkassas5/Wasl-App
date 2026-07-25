@@ -111,7 +111,7 @@ class _WaslResetPasswordScreenState extends State<WaslResetPasswordScreen> {
                 ),
                 const SizedBox(height: 8),
                 const Text(
-                  'أدخل كلمة مرور جديدة وقوية لتأمين حسابك في فلاش',
+                  'أدخل كلمة مرور جديدة وقوية لتأمين حسابك في وصل',
                   textAlign: TextAlign.center,
                   style: TextStyle(fontSize: 14, color: AppColors.textSecondary, fontFamily: 'Cairo'),
                 ),

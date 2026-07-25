@@ -89,6 +89,39 @@ export class DeliveryPartner {
   })
   isOnline!: boolean;
 
+  // 🛰️ Live GPS location of the driver (updated periodically while online).
+  // Never hardcoded — populated by PATCH /drivers/:id/location from the app.
+  @Column({
+    name: 'current_latitude',
+    type: 'double precision',
+    nullable: true,
+  })
+  currentLatitude?: number;
+
+  @Column({
+    name: 'current_longitude',
+    type: 'double precision',
+    nullable: true,
+  })
+  currentLongitude?: number;
+
+  // Timestamp of the last GPS fix — used to ignore stale/offline positions.
+  @Column({
+    name: 'last_location_update',
+    type: 'timestamp',
+    nullable: true,
+  })
+  lastLocationUpdate?: Date;
+
+  // How far (km) this driver is willing to travel for a pickup. Configurable
+  // per-driver; defaults to the platform search radius.
+  @Column({
+    name: 'availability_radius_km',
+    type: 'double precision',
+    default: 5,
+  })
+  availabilityRadiusKm!: number;
+
   @Column({
     type: 'decimal',
     precision: 3,

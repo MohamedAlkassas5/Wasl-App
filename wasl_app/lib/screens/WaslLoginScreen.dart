@@ -139,7 +139,7 @@
 //
 //       // 🎯 [تم التحديث لايف]: التقاط الـ ID التلقائي الحقيقي القادم من الـ PostgreSQL فوراً
 //       final int realUserId = int.tryParse(userData['id']?.toString() ?? '') ?? 0;
-//       final String name = userData['name'] ?? 'مستخدم فلاش';
+//       final String name = userData['name'] ?? 'مستخدم وصل';
 //       final String phone = userData['phone'] ?? fullPhone;
 //       final String role = userData['role'] ?? 'customer';
 //       final String status = userData['status'] ?? 'active';
@@ -168,7 +168,7 @@
 //             MaterialPageRoute(
 //               builder: (_) => WaslPendingScreen(
 //                 phone: phone,
-//                 initialNotes: userData['adminNotes'] ?? 'جاري مراجعة حسابك اللوجستي من قِبل إدارة فلاش.',
+//                 initialNotes: userData['adminNotes'] ?? 'جاري مراجعة حسابك اللوجستي من قِبل إدارة وصل.',
 //               ),
 //             ),
 //           );
@@ -188,7 +188,7 @@
 //         Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const WaslOrderCategoryScreen()));
 //       } else {
 //         ScaffoldMessenger.of(context).showSnackBar(
-//           SnackBar(content: Text('مرحباً بك في فلاش توصيل $name 🎉', style: const TextStyle(fontFamily: 'Cairo')), backgroundColor: const Color(0xFF22C55E)),
+//           SnackBar(content: Text('مرحباً بك في وصل توصيل $name 🎉', style: const TextStyle(fontFamily: 'Cairo')), backgroundColor: const Color(0xFF22C55E)),
 //         );
 //         Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const WaslCustomerHomeScreen()));
 //       }
@@ -239,7 +239,7 @@
 //                 ),
 //                 const SizedBox(height: 16),
 //                 const Text(
-//                   'فلاش توصيل • FLASH',
+//                   'وصل توصيل • FLASH',
 //                   style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: AppColors.textPrimary, fontFamily: 'Cairo'),
 //                 ),
 //                 const SizedBox(height: 4),
@@ -445,7 +445,6 @@ import 'package:wasl_app/core/providers/user_provider.dart';
 import 'package:wasl_app/screens/WaslRegisterScreen.dart';
 import 'package:wasl_app/screens/WaslForgotPasswordScreen.dart';
 import 'package:wasl_app/screens/WaslPendingScreen.dart';
-import 'package:wasl_app/customer_screen/order_anywhere/WaslOrderCategoryScreen.dart';
 import 'package:wasl_app/delivery_screen/WaslDriverHomeScreen.dart';
 import 'package:wasl_app/customer_screen/screens/auth/WaslSocialCompleteDataScreen.dart';
 import 'package:wasl_app/services/auth_service.dart';
@@ -569,7 +568,7 @@ class _WaslLoginScreenState extends State<WaslLoginScreen> {
       final String token = data['token'] ?? '';
 
       final int realUserId = int.tryParse(userData['id']?.toString() ?? '') ?? 0;
-      final String name = userData['name'] ?? 'مستخدم فلاش';
+      final String name = userData['name'] ?? 'مستخدم وصل';
       final String phone = userData['phone'] ?? fullPhone;
       final String role = userData['role'] ?? 'customer';
       final String status = userData['status'] ?? 'active';
@@ -623,7 +622,7 @@ class _WaslLoginScreenState extends State<WaslLoginScreen> {
         Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const WaslDriverHomeScreen()));
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('مرحباً بك في فلاش توصيل $name 🎉', style: const TextStyle(fontFamily: 'Cairo')), backgroundColor: const Color(0xFF16A34A)),
+          SnackBar(content: Text('مرحباً بك في وصل يا $name 🎉', style: const TextStyle(fontFamily: 'Cairo')), backgroundColor: const Color(0xFF16A34A)),
         );
         Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const WaslCustomerHomeScreen()));
       }
@@ -666,19 +665,19 @@ class _WaslLoginScreenState extends State<WaslLoginScreen> {
                       errorBuilder: (context, error, stackTrace) {
                         return Container(
                           decoration: BoxDecoration(gradient: AppColors.logoGradient, borderRadius: BorderRadius.circular(18)),
-                          child: const Icon(Icons.flash_on_rounded, size: 40, color: Colors.white),
+                          child: const Icon(Icons.near_me_rounded, size: 40, color: Colors.white),
                         );
                       },
                     ),
                   ),
                   const SizedBox(height: 16),
                   const Text(
-                    'فلاش توصيل • FLASH',
+                    'أهلاً بك في وصل',
                     style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900, color: AppColors.textPrimary, fontFamily: 'Cairo', letterSpacing: -0.5),
                   ),
                   const SizedBox(height: 2),
                   const Text(
-                    'أدخل بيانات حسابك اللوجستي للمتابعة السريعة',
+                    'سجّل الدخول للمتابعة إلى حسابك',
                     style: TextStyle(fontSize: 12, color: AppColors.textSecondary, fontFamily: 'Cairo', fontWeight: FontWeight.w500),
                   ),
                   const SizedBox(height: 24),
@@ -804,7 +803,7 @@ class _WaslLoginScreenState extends State<WaslLoginScreen> {
                               children: [
                                 Text('تسجيل الدخول', style: TextStyle(fontSize: 15, color: Colors.white, fontWeight: FontWeight.bold, fontFamily: 'Cairo')),
                                 SizedBox(width: 6),
-                                Icon(Icons.bolt_rounded, color: Colors.white, size: 18),
+                                Icon(Icons.arrow_back_rounded, color: Colors.white, size: 18),
                               ],
                             ),
                           ),

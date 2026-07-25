@@ -385,7 +385,7 @@ class _WaslOrderTrackingScreenState extends State<WaslOrderTrackingScreen> {
   @override
   Widget build(BuildContext context) {
     final driver = _liveOrder['acceptedDriver'] ?? {};
-    final String name = driver['fullName'] ?? driver['name'] ?? 'كابتن فلاش';
+    final String name = driver['fullName'] ?? driver['name'] ?? 'كابتن وصل';
     final String phone = driver['phone'] ?? 'غير متاح';
     final String rating = driver['rating']?.toString() ?? '4.8';
 

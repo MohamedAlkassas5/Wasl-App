@@ -1,4 +1,11 @@
-import { IsNumber, IsOptional, IsString, IsArray } from 'class-validator';
+import {
+  IsNumber,
+  IsOptional,
+  IsString,
+  IsArray,
+  Min,
+  Max,
+} from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class CreateOrderDto {
@@ -39,13 +46,38 @@ export class CreateOrderDto {
   @IsString()
   dropoffTitle?: string;
 
+  // Destination (delivery) coordinates — required, real GPS from the app.
   @Type(() => Number)
   @IsNumber()
+  @Min(-90)
+  @Max(90)
   latitude!: number;
 
   @Type(() => Number)
   @IsNumber()
+  @Min(-180)
+  @Max(180)
   longitude!: number;
+
+  // Pickup coordinates (order-from-anywhere). Optional: when omitted the trip
+  // distance can't be computed and the order falls back to the city tier.
+  @IsOptional()
+  @IsString()
+  pickupAddressText?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(-90)
+  @Max(90)
+  pickupLatitude?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(-180)
+  @Max(180)
+  pickupLongitude?: number;
 
   @IsOptional()
   @Type(() => Number)
@@ -55,4 +87,8 @@ export class CreateOrderDto {
   @IsOptional()
   @IsString()
   itemsImageUrl?: string;
+
+  @IsOptional()
+  @IsString()
+  voiceNoteUrl?: string;
 }

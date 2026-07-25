@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { Request } from 'express';
+import { JWT_SECRET } from './jwt.constants';
 
 // 👈 تحديد شكل البيانات القادمة من الـ JWT بدقة لإرضاء الـ ESLint
 interface JwtPayload {
@@ -35,7 +36,7 @@ export class JwtAuthGuard implements CanActivate {
     try {
       // 👈 إخبار الـ TypeScript بالنوع الصريح للـ Payload القادم
       const payload = await this.jwtService.verifyAsync<JwtPayload>(token, {
-        secret: 'WASL_SUPER_SECRET_KEY_2026',
+        secret: JWT_SECRET,
       });
 
       // 👈 الآن الإسناد آمن 100% وبدون أي حقول مجهولة

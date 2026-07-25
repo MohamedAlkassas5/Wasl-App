@@ -6,7 +6,7 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 
-import { User, UserRole } from '../users/entities/user.entity';
+import { User, UserRole, AccountStatus } from '../users/entities/user.entity';
 import { DeliveryPartner } from '../delivery/entities/delivery-partner.entity';
 import { Merchant } from '../merchant/entities/merchant.entity';
 import { UpdateApprovalDto } from './dto/update-approval.dto';
@@ -23,6 +23,78 @@ export class AdminService {
     @InjectRepository(Merchant)
     private readonly merchantRepository: Repository<Merchant>,
   ) {}
+
+  /**
+   * List driver/merchant registrations for the admin panel, optionally filtered
+   * by role and status, each joined with its verification documents.
+   */
+  async getRegistrations(role?: UserRole, status?: AccountStatus) {
+    const where: Record<string, unknown> = {};
+    if (role) where.role = role;
+    else where.role = undefined; // handled below
+    if (status) where.status = status;
+
+    const users = await this.userRepository.find({
+      where: role
+        ? { role, ...(status ? { status } : {}) }
+        : [
+            { role: UserRole.DELIVERY, ...(status ? { status } : {}) },
+            { role: UserRole.MERCHANT, ...(status ? { status } : {}) },
+          ],
+      order: { created_at: 'DESC' },
+    });
+
+    // Attach the role-specific document record to each user.
+    const enriched = await Promise.all(
+      users.map(async (u) => {
+        let details: DeliveryPartner | Merchant | null = null;
+        if (u.role === UserRole.DELIVERY) {
+          details = await this.deliveryRepository.findOne({
+            where: { userId: u.id },
+          });
+        } else if (u.role === UserRole.MERCHANT) {
+          details = await this.merchantRepository.findOne({
+            where: { ownerId: u.id },
+          });
+        }
+        return {
+          id: u.id,
+          name: u.name,
+          phone: u.phone,
+          email: u.email || '',
+          role: u.role,
+          status: u.status,
+          adminNotes: u.admin_notes || '',
+          createdAt: u.created_at,
+          details,
+        };
+      }),
+    );
+    return enriched;
+  }
+
+  /** Headline counts for the admin dashboard. */
+  async getDashboardStats() {
+    const [pendingDrivers, pendingMerchants, activeDrivers, totalCustomers] =
+      await Promise.all([
+        this.userRepository.count({
+          where: { role: UserRole.DELIVERY, status: AccountStatus.PENDING },
+        }),
+        this.userRepository.count({
+          where: { role: UserRole.MERCHANT, status: AccountStatus.PENDING },
+        }),
+        this.userRepository.count({
+          where: { role: UserRole.DELIVERY, status: AccountStatus.ACTIVE },
+        }),
+        this.userRepository.count({ where: { role: UserRole.CUSTOMER } }),
+      ]);
+    return {
+      pendingDrivers,
+      pendingMerchants,
+      activeDrivers,
+      totalCustomers,
+    };
+  }
 
   async reviewRegistration(
     targetUserId: number,

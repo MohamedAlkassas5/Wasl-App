@@ -28,7 +28,7 @@ class _WaslDriverProfileScreenState extends State<WaslDriverProfileScreen> {
   void _loadDriverDataAndFetchRating() async {
     final prefs = await SharedPreferences.getInstance();
     final id = prefs.getInt('user_id') ?? 21; // الافتراضي 21 للتست
-    final name = prefs.getString('user_name') ?? 'كابتن فلاش';
+    final name = prefs.getString('user_name') ?? 'كابتن وصل';
     final phone = prefs.getString('user_phone') ?? '';
 
     setState(() {

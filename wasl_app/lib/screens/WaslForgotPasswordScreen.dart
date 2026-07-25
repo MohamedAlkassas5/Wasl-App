@@ -217,7 +217,7 @@ class _WaslForgotPasswordScreenState extends State<WaslForgotPasswordScreen> {
                         ),
                         const SizedBox(height: 24),
 
-                        // زر الإرسال الانسيابي المحدث المدعوم بالتدرج البصري والـ Shadows لـ فلاش
+                        // زر الإرسال الانسيابي المحدث المدعوم بالتدرج البصري والـ Shadows لـ وصل
                         InkWell(
                           onTap: _isLoading ? null : _submitForgotPassword,
                           borderRadius: BorderRadius.circular(16),

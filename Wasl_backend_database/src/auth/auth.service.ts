@@ -203,6 +203,41 @@ export class AuthService {
     };
   }
 
+  /**
+   * Issue a session for a phone that has already passed OTP verification
+   * (WhatsApp OTP flow). Returns null when no account exists yet, so the
+   * caller can route the user to registration. No password is involved —
+   * identity is proven by the verified OTP, keeping auth decoupled from
+   * Firebase.
+   */
+  async loginWithVerifiedPhone(phone: string) {
+    const cleanPhone = phone.replace(/[^0-9]/g, '');
+    const user = await this.userRepository.findOne({
+      where: { phone: cleanPhone },
+    });
+    if (!user) return null;
+
+    if (user.status === AccountStatus.SUSPENDED) {
+      throw new BadRequestException(
+        'عفواً، الحساب محظور حالياً، يرجى مراجعة الإدارة',
+      );
+    }
+
+    return {
+      token: this.generateToken(user),
+      user: {
+        id: user.id,
+        name: user.name,
+        phone: user.phone,
+        role: user.role,
+        status: user.status,
+        email: user.email || '',
+        firebaseUid: user.firebaseUid || '',
+        adminNotes: user.admin_notes || '',
+      },
+    };
+  }
+
   private generateToken(user: User): string {
     return this.jwtService.sign({ sub: user.id, role: user.role });
   }

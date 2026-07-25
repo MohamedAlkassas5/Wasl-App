@@ -2,7 +2,7 @@
 // import 'package:flutter/material.dart';
 // import 'package:http/http.dart' as http;
 // import 'package:shared_preferences/shared_preferences.dart';
-// // 🎯 استيراد كلاس الألوان الموحد الخاص بهوية فلاش الجديدة
+// // 🎯 استيراد كلاس الألوان الموحد الخاص بهوية وصل الجديدة
 // import 'package:wasl_app/core/theme/app_colors.dart';
 // // 🎯 استيراد شاشة التنفيذ المحدثة الديناميكية
 // import 'package:wasl_app/delivery_screen/WaslDriverJobExecutionScreen.dart';

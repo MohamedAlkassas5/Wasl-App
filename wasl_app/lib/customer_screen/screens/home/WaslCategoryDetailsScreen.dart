@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-// 🎯 استيراد كلاس الألوان الموحد الخاص بهوية فلاش الجديدة
+// 🎯 استيراد كلاس الألوان الموحد الخاص بهوية وصل الجديدة
 import 'package:wasl_app/core/theme/app_colors.dart';
 
 class WaslCategoryDetailsScreen extends StatelessWidget {

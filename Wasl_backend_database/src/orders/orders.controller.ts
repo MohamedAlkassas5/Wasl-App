@@ -11,6 +11,7 @@ import {
   BadRequestException,
   UseInterceptors,
   UploadedFile,
+  UseGuards,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
@@ -20,10 +21,16 @@ import { existsSync, mkdirSync } from 'fs';
 import { OrdersService } from './orders.service';
 import { OrderStatus } from './entities/order.entity';
 import { CreateOrderDto } from './dto/create-order.dto';
+import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 
 const orderUploadPath = './uploads/orders';
 
+// 🔐 Every order/wallet/offer/notification route requires a valid JWT. Closes
+// the previous broken-access-control hole where any client could act as any
+// user by passing an id. The Flutter app attaches the Bearer token on all
+// order-service calls.
 @Controller('orders')
+@UseGuards(JwtAuthGuard)
 export class OrdersController {
   constructor(private readonly ordersService: OrdersService) {}
 
@@ -263,6 +270,41 @@ export class OrdersController {
     @Param('offerId', ParseIntPipe) offerId: number,
   ) {
     return this.ordersService.acceptOffer(orderId, offerId);
+  }
+
+  // 🧾 Driver uploads the purchase receipt/invoice image at pickup. Sets the
+  // items price + receipt image and advances the order to "items_bought" so the
+  // customer can review the real total before delivery.
+  @Post(':id/invoice')
+  @UseInterceptors(
+    FileInterceptor('invoiceImage', {
+      storage: diskStorage({
+        destination: (_req, _file, cb) => {
+          const invoicePath = './uploads/invoices';
+          if (!existsSync(invoicePath)) {
+            mkdirSync(invoicePath, { recursive: true });
+          }
+          cb(null, invoicePath);
+        },
+        filename: (_req, file, cb) => {
+          const suffix = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
+          cb(null, `invoice-${suffix}${extname(file.originalname)}`);
+        },
+      }),
+    }),
+  )
+  uploadInvoice(
+    @Param('id', ParseIntPipe) orderId: number,
+    @UploadedFile() file: Express.Multer.File,
+    @Body() body: { itemsPrice?: number },
+  ) {
+    const invoiceImageUrl = file?.filename
+      ? `uploads/invoices/${file.filename}`
+      : undefined;
+    return this.ordersService.updateStatus(orderId, OrderStatus.ITEMS_BOUGHT, {
+      itemsPrice: body?.itemsPrice ? Number(body.itemsPrice) : undefined,
+      invoiceImageUrl,
+    });
   }
 
   @Patch(':id/status')

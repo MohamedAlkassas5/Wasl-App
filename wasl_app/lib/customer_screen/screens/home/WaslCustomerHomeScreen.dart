@@ -40,7 +40,7 @@
 //     if (mounted) {
 //       setState(() {
 //         _customerId = prefs.getInt('user_id') ?? 1; // الافتراضي 1 للتست
-//         _customerName = prefs.getString('user_name') ?? 'عميل فلاش';
+//         _customerName = prefs.getString('user_name') ?? 'عميل وصل';
 //       });
 //     }
 //
@@ -326,7 +326,7 @@
 //               itemBuilder: (context, index) {
 //                 final store = _liveStores[index];
 //
-//                 String storeName = store['merchant_store_name'] ?? 'متجر فلاش شريك';
+//                 String storeName = store['merchant_store_name'] ?? 'متجر وصل شريك';
 //                 String storeType = store['merchant_store_type'] ?? 'توصيل سريـع';
 //
 //                 double rawDistance = double.tryParse(store['distance']?.toString() ?? '0.0') ?? 0.0;
@@ -448,7 +448,7 @@
 //       const WaslSettingsScreen(),
 //       const Center(child: Text('شاشة الطلبات الجارية والمكتملة', style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold))),
 //       const Center(child: Text('المحفظة الرقمية للكباتن والعملاء', style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold))),
-//       const Center(child: Text('العروض الترويجية الحصرية لـ فلاش', style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold))),
+//       const Center(child: Text('العروض الترويجية الحصرية لـ وصل', style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold))),
 //       _buildHomeBody(),
 //     ];
 //
@@ -568,7 +568,7 @@ class _WaslCustomerHomeScreenState extends State<WaslCustomerHomeScreen> {
     if (mounted) {
       setState(() {
         _customerId = prefs.getInt('user_id') ?? 1;
-        _customerName = prefs.getString('user_name') ?? 'عميل فلاش';
+        _customerName = prefs.getString('user_name') ?? 'عميل وصل';
       });
     }
 
@@ -613,7 +613,7 @@ class _WaslCustomerHomeScreenState extends State<WaslCustomerHomeScreen> {
   Future<void> _fetchLiveCategories() async {
     try {
       final res = await FlutterAuthService().getCategories();
-      if (mounted && res != null && res['success'] == true) {
+      if (mounted && res['success'] == true) {
         setState(() {
           _liveCategories = res['data'] ?? [];
           _isLoadingCategories = false;
@@ -646,7 +646,7 @@ class _WaslCustomerHomeScreenState extends State<WaslCustomerHomeScreen> {
         lat: _currentPosition?.latitude ?? 30.0,
         lng: _currentPosition?.longitude ?? 31.0,
       );
-      if (mounted && res != null && res['success'] == true) {
+      if (mounted && res['success'] == true) {
         setState(() {
           _liveStores = res['data'] ?? [];
           _isLoadingStores = false;
@@ -838,7 +838,7 @@ class _WaslCustomerHomeScreenState extends State<WaslCustomerHomeScreen> {
               itemBuilder: (context, index) {
                 final store = _liveStores[index];
                 return _buildLiveStoreCard(
-                  name: store['merchant_store_name'] ?? 'متجر فلاش شريك',
+                  name: store['merchant_store_name'] ?? 'متجر وصل شريك',
                   tags: store['merchant_store_type'] ?? 'توصيل سريـع',
                   rate: '4.7',
                   dist: "${double.tryParse(store['distance']?.toString() ?? '0.0')?.toStringAsFixed(1)} كم",

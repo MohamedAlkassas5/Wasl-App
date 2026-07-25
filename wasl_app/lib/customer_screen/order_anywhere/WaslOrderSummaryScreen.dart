@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:wasl_app/core/theme/app_colors.dart';
 import 'package:wasl_app/core/providers/user_provider.dart';
 import 'package:wasl_app/services/orders_service.dart';
+import 'package:wasl_app/services/location_api_service.dart';
 import 'package:wasl_app/customer_screen/cart_orders/WaslOrderSuccessScreen.dart';
 
 class WaslOrderSummaryScreen extends StatelessWidget {
@@ -16,6 +17,7 @@ class WaslOrderSummaryScreen extends StatelessWidget {
   final double longitude;
 
   final FlutterOrdersService _ordersService = FlutterOrdersService();
+  final LocationApiService _locationApi = LocationApiService();
 
   WaslOrderSummaryScreen({
     Key? key,
@@ -87,6 +89,8 @@ class WaslOrderSummaryScreen extends StatelessWidget {
                 ]),
                 const SizedBox(height: 16),
                 _buildPriceSection(),
+                const SizedBox(height: 16),
+                _buildDeliveryFeeSection(),
               ],
             ),
           ),
@@ -127,6 +131,48 @@ class WaslOrderSummaryScreen extends StatelessWidget {
       Text(itemsPrice > 0 ? '$itemsPrice ج.م' : 'لم يحدد', style: const TextStyle(fontWeight: FontWeight.bold, color: AppColors.primary, fontSize: 18, fontFamily: 'Cairo')),
     ]),
   );
+
+  // 🛵 رسوم التوصيل التقديرية من محرك التسعير في السيرفر (قابلة للتعديل من الإدارة).
+  // المندوبون قد يقدمون عروضاً مختلفة، لذلك نعرضها كـ "تبدأ من".
+  Widget _buildDeliveryFeeSection() => FutureBuilder<Map<String, dynamic>>(
+        future: _locationApi.getQuoteByDistance(0),
+        builder: (context, snapshot) {
+          String feeText = '...';
+          if (snapshot.connectionState == ConnectionState.done) {
+            final data = snapshot.data;
+            if (data != null && data['success'] == true) {
+              final fee = data['data']?['deliveryFee'];
+              feeText = fee != null ? 'تبدأ من $fee ج.م' : 'حسب المسافة';
+            } else {
+              feeText = 'حسب المسافة';
+            }
+          }
+          return Container(
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: AppColors.white,
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: const Color(0xFFF1F5F9)),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text('رسوم التوصيل التقديرية:',
+                    style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontFamily: 'Cairo',
+                        color: AppColors.textPrimary)),
+                Text(feeText,
+                    style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.primary,
+                        fontSize: 16,
+                        fontFamily: 'Cairo')),
+              ],
+            ),
+          );
+        },
+      );
 
   Widget _buildSubmitButton(BuildContext context) => Padding(
     padding: const EdgeInsets.all(20),

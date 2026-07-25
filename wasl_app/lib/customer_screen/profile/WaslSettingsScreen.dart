@@ -1,6 +1,6 @@
 // import 'package:flutter/material.dart';
 // import 'package:shared_preferences/shared_preferences.dart';
-// // 🎯 استيراد كلاس الألوان الموحد الخاص بهوية فلاش الجديدة
+// // 🎯 استيراد كلاس الألوان الموحد الخاص بهوية وصل الجديدة
 // import 'package:wasl_app/core/theme/app_colors.dart';
 // import 'package:wasl_app/customer_screen/profile/WaslHelpCenterScreen.dart';
 // import 'package:wasl_app/screens/WaslLoginScreen.dart'; // استيراد شاشة تسجيل الدخول صراحة للتوجيه المباشر
@@ -29,11 +29,11 @@
 //   Future<void> _loadUserData() async {
 //     final prefs = await SharedPreferences.getInstance();
 //     setState(() {
-//       _userName = prefs.getString('user_name') ?? 'مستخدم فلاش';
+//       _userName = prefs.getString('user_name') ?? 'مستخدم وصل';
 //       _userPhone = prefs.getString('user_phone') ?? '';
 //
 //       String role = prefs.getString('user_role') ?? 'customer';
-//       _userRole = role == 'customer' ? 'عميل مميز' : 'كابتن فلاش';
+//       _userRole = role == 'customer' ? 'عميل مميز' : 'كابتن وصل';
 //     });
 //   }
 //
@@ -169,7 +169,7 @@
 //           },
 //         ),
 //         title: const Text(
-//           'فلاش • FLASH',
+//           'وصل • FLASH',
 //           style: TextStyle(color: AppColors.primary, fontWeight: FontWeight.bold, fontSize: 18, fontFamily: 'Cairo'),
 //         ),
 //         centerTitle: true,
@@ -183,7 +183,7 @@
 //             child: Column(
 //               crossAxisAlignment: CrossAxisAlignment.stretch,
 //               children: [
-//                 // كارت الهوية الشخصية الموحد بنظام الـ Gradients لفلاش
+//                 // كارت الهوية الشخصية الموحد بنظام الـ Gradients لوصل
 //                 Container(
 //                   padding: const EdgeInsets.all(20),
 //                   decoration: BoxDecoration(
@@ -390,11 +390,11 @@ class _WaslSettingsScreenState extends State<WaslSettingsScreen> {
   Future<void> _loadUserData() async {
     final prefs = await SharedPreferences.getInstance();
     setState(() {
-      _userName = prefs.getString('user_name') ?? 'مستخدم فلاش';
+      _userName = prefs.getString('user_name') ?? 'مستخدم وصل';
       _userPhone = prefs.getString('user_phone') ?? '';
 
       String role = prefs.getString('user_role') ?? 'customer';
-      _userRole = role == 'customer' ? 'عميل مميز' : 'كابتن فلاش';
+      _userRole = role == 'customer' ? 'عميل مميز' : 'كابتن وصل';
     });
   }
 

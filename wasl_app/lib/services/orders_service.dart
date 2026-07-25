@@ -20,6 +20,9 @@ class FlutterOrdersService {
     required double itemsPrice,
     required double latitude,
     required double longitude,
+    double? pickupLatitude,
+    double? pickupLongitude,
+    String? pickupAddressText,
   }) async {
     final url = Uri.parse('$baseUrl/orders/create');
     try {
@@ -37,6 +40,9 @@ class FlutterOrdersService {
           'itemsPrice': itemsPrice,
           'latitude': latitude,
           'longitude': longitude,
+          if (pickupLatitude != null) 'pickupLatitude': pickupLatitude,
+          if (pickupLongitude != null) 'pickupLongitude': pickupLongitude,
+          if (pickupAddressText != null) 'pickupAddressText': pickupAddressText,
         }),
       ).timeout(const Duration(seconds: 15));
 

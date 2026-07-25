@@ -1,433 +1,235 @@
-// import 'package:flutter/material.dart';
-// import 'package:shared_preferences/shared_preferences.dart';
-// import 'package:wasl_app/screens/WaslLoginScreen.dart';
-//
-// class WaslOnboardingScreen extends StatefulWidget {
-//   const WaslOnboardingScreen({Key? key}) : super(key: key);
-//
-//   @override
-//   State<WaslOnboardingScreen> createState() => _WaslOnboardingScreenState();
-// }
-//
-// class _WaslOnboardingScreenState extends State<WaslOnboardingScreen> {
-//   final PageController _pageController = PageController();
-//   int _currentPage = 0;
-//
-//   // بيانات الصفحات الثلاثة (الصور والنصوص)
-//   final List<Map<String, String>> _onboardingData = [
-//     {
-//       'title': 'مدينتك بين يديك',
-//       'desc': 'كل ما تحتاجه، يصلك من متاجرك المحلية المفضلة مباشرة إلى باب بيتك.',
-//       'image': 'images/PageStart_logo.png', // الصفحة الأولى الحالية
-//     },
-//     {
-//       'title': 'تتبع شحنتك لحظة بلحظة',
-//       'desc': 'تابع مندوب التوصيل على الخريطة مباشرة من وقت خروج الطلب وحتى وصوله إليك.',
-//       'image': 'images/onboarding_track.png', // يمكنك تغيير مسار الصورة
-//     },
-//     {
-//       'title': 'دفع آمن وسريع',
-//       'desc': 'نوفر لك خيارات دفع متعددة وآمنة تناسب احتياجاتك سواء نقداً أو إلكترونياً.',
-//       'image': 'images/onboarding_payment.png', // يمكنك تغيير مسار الصورة
-//     },
-//   ];
-//
-//   // دالة لحفظ أن المستخدم أتم رؤية الشاشات التوجيهية وتوجيهه لصفحة الدخول
-//   Future<void> _completeOnboarding() async {
-//     final prefs = await SharedPreferences.getInstance();
-//     await prefs.setBool('seen_onboarding', true);
-//
-//     if (mounted) {
-//       Navigator.pushReplacement(
-//         context,
-//         MaterialPageRoute(builder: (context) => const WaslLoginScreen()),
-//       );
-//     }
-//   }
-//
-//   @override
-//   Widget build(BuildContext context) {
-//     return Scaffold(
-//       backgroundColor: const Color(0xFFF8F8F8),
-//       body: Directionality(
-//         textDirection: TextDirection.rtl,
-//         child: SafeArea(
-//           child: Padding(
-//             padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 16.0),
-//             child: Column(
-//               crossAxisAlignment: CrossAxisAlignment.stretch,
-//               children: [
-//                 // الشريط العلوي (الشعار وزر التخطي)
-//                 Row(
-//                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
-//                   children: [
-//                     Row(
-//                       children: const [
-//                         Icon(Icons.location_on, color: Color(0xFFF14D18)),
-//                         SizedBox(width: 4),
-//                         Text(
-//                           'وصل',
-//                           style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Color(0xFF101F30)),
-//                         ),
-//                       ],
-//                     ),
-//                     // زر التخطي يختفي في الصفحة الأخيرة
-//                     _currentPage != _onboardingData.length - 1
-//                         ? TextButton(
-//                       onPressed: _completeOnboarding,
-//                       child: const Text(
-//                         'تخطي',
-//                         style: TextStyle(color: Colors.grey, fontSize: 16, fontWeight: FontWeight.w500),
-//                       ),
-//                     )
-//                         : const SizedBox(width: 48), // للحفاظ على توازن التصميم
-//                   ],
-//                 ),
-//
-//                 // الجزء المتغير (PageView) المحتوي على الصور والنصوص
-//                 Expanded(
-//                   child: PageView.builder(
-//                     controller: _pageController,
-//                     itemCount: _onboardingData.length,
-//                     onPageChanged: (index) {
-//                       setState(() {
-//                         _currentPage = index;
-//                       });
-//                     },
-//                     itemBuilder: (context, index) {
-//                       return Column(
-//                         mainAxisAlignment: MainAxisAlignment.center,
-//                         children: [
-//                           const Spacer(),
-//                           // مساحة الصورة المركزية الديناميكية
-//                           Container(
-//                             width: MediaQuery.of(context).size.width * 0.85,
-//                             height: MediaQuery.of(context).size.width * 0.85,
-//                             decoration: BoxDecoration(
-//                               borderRadius: BorderRadius.circular(40),
-//                               image: DecorationImage(
-//                                 image: AssetImage(_onboardingData[index]['image']!),
-//                                 fit: BoxFit.cover,
-//                               ),
-//                             ),
-//                           ),
-//                           const Spacer(),
-//                           // العناوين والنصوص
-//                           Text(
-//                             _onboardingData[index]['title']!,
-//                             textAlign: TextAlign.center,
-//                             style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: Color(0xFF101F30)),
-//                           ),
-//                           const SizedBox(height: 16),
-//                           Padding(
-//                             padding: const EdgeInsets.symmetric(horizontal: 16.0),
-//                             child: Text(
-//                               _onboardingData[index]['desc']!,
-//                               textAlign: TextAlign.center,
-//                               style: const TextStyle(fontSize: 16, color: Colors.grey, height: 1.6),
-//                             ),
-//                           ),
-//                           const Spacer(),
-//                         ],
-//                       );
-//                     },
-//                   ),
-//                 ),
-//
-//                 // 🎯 التعديل الأساسي: تم إصلاح مؤشرات الصفحات الديناميكية هنا
-//                 Row(
-//                   mainAxisAlignment: MainAxisAlignment.center,
-//                   children: List.generate(
-//                     _onboardingData.length,
-//                         (index) => Container(
-//                       margin: const EdgeInsets.symmetric(horizontal: 3),
-//                       width: _currentPage == index ? 24 : 6,
-//                       height: _currentPage == index ? 4 : 6,
-//                       decoration: BoxDecoration(
-//                         color: _currentPage == index ? const Color(0xFFF14D18) : const Color(0xFFE0E0E0),
-//                         // نضع الـ borderRadius فقط عندما يكون الشكل مستطيلاً (عندما index == _currentPage)
-//                         borderRadius: _currentPage == index ? BorderRadius.circular(3) : null,
-//                         shape: _currentPage == index ? BoxShape.rectangle : BoxShape.circle,
-//                       ),
-//                     ),
-//                   ),
-//                 ),
-//                 const SizedBox(height: 32),
-//
-//                 // زر الانتقال التالي / ابدأ الآن
-//                 ElevatedButton(
-//                   onPressed: () {
-//                     if (_currentPage < _onboardingData.length - 1) {
-//                       _pageController.nextPage(
-//                         duration: const Duration(milliseconds: 300),
-//                         curve: Curves.easeInOut,
-//                       );
-//                     } else {
-//                       _completeOnboarding();
-//                     }
-//                   },
-//                   style: ElevatedButton.styleFrom(
-//                     backgroundColor: const Color(0xFFF14D18),
-//                     padding: const EdgeInsets.symmetric(vertical: 16),
-//                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-//                     elevation: 0,
-//                   ),
-//                   child: Row(
-//                     mainAxisAlignment: MainAxisAlignment.center,
-//                     children: [
-//                       Text(
-//                         _currentPage == _onboardingData.length - 1 ? 'ابدأ الآن' : 'التالي',
-//                         style: const TextStyle(fontSize: 18, color: Colors.white, fontWeight: FontWeight.bold),
-//                       ),
-//                       const SizedBox(width: 8),
-//                       Icon(
-//                         _currentPage == _onboardingData.length - 1 ? Icons.check : Icons.arrow_forward,
-//                         color: Colors.white,
-//                       ),
-//                     ],
-//                   ),
-//                 ),
-//               ],
-//             ),
-//           ),
-//         ),
-//       ),
-//     );
-//   }
-// }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-// 🎯 استيراد كلاس الألوان الموحد الخاص بهوية فلاش الجديدة
 import 'package:wasl_app/core/theme/app_colors.dart';
+import 'package:wasl_app/core/widgets/wasl_ui.dart';
 import 'package:wasl_app/screens/WaslLoginScreen.dart';
 
 class WaslOnboardingScreen extends StatefulWidget {
-  const WaslOnboardingScreen({Key? key}) : super(key: key);
+  const WaslOnboardingScreen({super.key});
 
   @override
   State<WaslOnboardingScreen> createState() => _WaslOnboardingScreenState();
+}
+
+class _OnbData {
+  final String title;
+  final String desc;
+  final String image;
+  final IconData icon;
+  const _OnbData(this.title, this.desc, this.image, this.icon);
 }
 
 class _WaslOnboardingScreenState extends State<WaslOnboardingScreen> {
   final PageController _pageController = PageController();
   int _currentPage = 0;
 
-  // بيانات الصفحات الثلاثة بعد تحديث مسار لوجو FLASH الجديد
-  final List<Map<String, String>> _onboardingData = [
-    {
-      'title': 'سرعة الفلاش بين يديك',
-      'desc': 'كل ما تحتاجه، يصلك من متاجرك المحلية المفضلة مباشرة إلى باب بيتك بأقصى سرعة.',
-      'image': 'images/PageStart_logo.png', // استخدام اللوجو الرسمي الجديد لـ FLASH
-    },
-    {
-      'title': 'تتبع شحنتك لحظة بلحظة',
-      'desc': 'تابع مندوب التوصيل على الخريطة مباشرة من وقت خروج الطلب وحتى وصوله إليك.',
-      'image': 'images/onboarding_track.png',
-    },
-    {
-      'title': 'دفع آمن وسريع',
-      'desc': 'نوفر لك خيارات دفع متعددة وآمنة تناسب احتياجاتك سواء نقداً أو إلكترونياً.',
-      'image': 'images/onboarding_payment.png',
-    },
+  static const List<_OnbData> _data = [
+    _OnbData(
+      'كل مدينتك بين يديك',
+      'اطلب أي شيء من متاجرك المحلية المفضلة، ويصلك مباشرة إلى باب بيتك بأسرع وقت.',
+      'images/PageStart_logo.png',
+      Icons.storefront_rounded,
+    ),
+    _OnbData(
+      'تتبع طلبك لحظة بلحظة',
+      'تابع الكابتن على الخريطة مباشرة من وقت خروج الطلب وحتى وصوله إليك.',
+      'images/onboarding_track.png',
+      Icons.location_on_rounded,
+    ),
+    _OnbData(
+      'وصّل أي شيء لأي مكان',
+      'محتاج حد يجيب لك دواء أو يوصّل طرد؟ اطلب خدمة توصيل مخصصة لأي مهمة.',
+      'images/onboarding_payment.png',
+      Icons.delivery_dining_rounded,
+    ),
   ];
 
-  Future<void> _completeOnboarding() async {
+  bool get _isLast => _currentPage == _data.length - 1;
+
+  Future<void> _complete() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('seen_onboarding', true);
-
     if (mounted) {
       Navigator.pushReplacement(
         context,
-        MaterialPageRoute(builder: (context) => const WaslLoginScreen()),
+        MaterialPageRoute(builder: (_) => const WaslLoginScreen()),
       );
     }
   }
 
   @override
+  void dispose() {
+    _pageController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppColors.background, // 🎯 استخدام لون الخلفية الموحد لـ FLASH
+      backgroundColor: AppColors.background,
       body: Directionality(
         textDirection: TextDirection.rtl,
         child: SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 16.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                // الشريط العلوي (الشعار وزر التخطي)
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Row(
-                      children: const [
-                        Icon(Icons.bolt, color: AppColors.primary, size: 28), // 🎯 أيقونة البرق الرسمية لـ FLASH
-                        SizedBox(width: 4),
-                        Text(
-                          'فلاش',
-                          style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: AppColors.textPrimary, fontFamily: 'Cairo'),
-                        ),
-                      ],
-                    ),
-                    _currentPage != _onboardingData.length - 1
-                        ? TextButton(
-                      onPressed: _completeOnboarding,
-                      child: const Text(
-                        'تخطي',
-                        style: TextStyle(color: AppColors.textSecondary, fontSize: 16, fontWeight: FontWeight.bold, fontFamily: 'Cairo'),
-                      ),
-                    )
-                        : const SizedBox(width: 48),
-                  ],
+          child: Column(
+            children: [
+              _buildTopBar(),
+              Expanded(
+                child: PageView.builder(
+                  controller: _pageController,
+                  itemCount: _data.length,
+                  onPageChanged: (i) => setState(() => _currentPage = i),
+                  itemBuilder: (_, i) => _buildPage(_data[i]),
                 ),
-
-                // الجزء المتغير (PageView)
-                Expanded(
-                  child: PageView.builder(
-                    controller: _pageController,
-                    itemCount: _onboardingData.length,
-                    onPageChanged: (index) {
-                      setState(() {
-                        _currentPage = index;
-                      });
-                    },
-                    itemBuilder: (context, index) {
-                      return Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          const Spacer(),
-                          // مساحة الصورة المركزية المحدثة
-                          Container(
-                            width: MediaQuery.of(context).size.width * 0.85,
-                            height: MediaQuery.of(context).size.width * 0.85,
-                            decoration: BoxDecoration(
-                              color: AppColors.white,
-                              borderRadius: BorderRadius.circular(40),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: AppColors.primary.withOpacity(0.04),
-                                  blurRadius: 20,
-                                  offset: const Offset(0, 10),
-                                )
-                              ],
-                            ),
-                            child: ClipRRect(
-                              borderRadius: BorderRadius.circular(40),
-                              child: Image.asset(
-                                _onboardingData[index]['image']!,
-                                fit: BoxFit.contain,
-                                errorBuilder: (_, __, ___) => Container(
-                                  decoration: const BoxDecoration(
-                                    gradient: AppColors.logoGradient,
-                                  ),
-                                  child: const Icon(Icons.flash_on, size: 80, color: AppColors.white),
-                                ),
-                              ),
-                            ),
-                          ),
-                          const Spacer(),
-                          // العناوين والنصوص بخط القاهرة Cairo
-                          Text(
-                            _onboardingData[index]['title']!,
-                            textAlign: TextAlign.center,
-                            style: const TextStyle(fontSize: 26, fontWeight: FontWeight.bold, color: AppColors.textPrimary, fontFamily: 'Cairo'),
-                          ),
-                          const SizedBox(height: 16),
-                          Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                            child: Text(
-                              _onboardingData[index]['desc']!,
-                              textAlign: TextAlign.center,
-                              style: const TextStyle(fontSize: 15, color: AppColors.textSecondary, height: 1.6, fontFamily: 'Cairo'),
-                            ),
-                          ),
-                          const Spacer(),
-                        ],
-                      );
-                    },
-                  ),
-                ),
-
-                // 🎯 تحديث مؤشرات الصفحات لتتبع التدرج اللوني والانسيابية لـ FLASH
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: List.generate(
-                    _onboardingData.length,
-                        (index) => Container(
-                      margin: const EdgeInsets.symmetric(horizontal: 3),
-                      width: _currentPage == index ? 24 : 6,
-                      height: 6,
-                      decoration: BoxDecoration(
-                        gradient: _currentPage == index ? AppColors.logoGradient : null,
-                        color: _currentPage == index ? null : const Color(0xFFE2E8F0),
-                        borderRadius: BorderRadius.circular(3),
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 32),
-
-                // 🎯 زر الانتقال المطور بالتدرج اللوني الموحد للبراند
-                GestureDetector(
-                  onTap: () {
-                    if (_currentPage < _onboardingData.length - 1) {
-                      _pageController.nextPage(
-                        duration: const Duration(milliseconds: 300),
-                        curve: Curves.easeInOut,
-                      );
+              ),
+              _buildIndicator(),
+              const SizedBox(height: WaslSpacing.lg),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: WaslSpacing.lg),
+                child: WaslButton(
+                  label: _isLast ? 'ابدأ الآن' : 'التالي',
+                  icon: _isLast ? Icons.check_rounded : Icons.arrow_forward_rounded,
+                  onPressed: () {
+                    if (_isLast) {
+                      _complete();
                     } else {
-                      _completeOnboarding();
+                      _pageController.nextPage(
+                        duration: const Duration(milliseconds: 320),
+                        curve: Curves.easeOutCubic,
+                      );
                     }
                   },
-                  child: Container(
-                    height: 56,
-                    decoration: BoxDecoration(
-                      gradient: AppColors.logoGradient,
-                      borderRadius: BorderRadius.circular(16),
-                      boxShadow: [
-                        BoxShadow(
-                          color: AppColors.primary.withOpacity(0.24),
-                          blurRadius: 16,
-                          offset: const Offset(0, 6),
-                        )
-                      ],
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Text(
-                          _currentPage == _onboardingData.length - 1 ? 'ابدأ الآن' : 'التالي',
-                          style: const TextStyle(fontSize: 18, color: AppColors.white, fontWeight: FontWeight.bold, fontFamily: 'Cairo'),
-                        ),
-                        const SizedBox(width: 8),
-                        Icon(
-                          _currentPage == _onboardingData.length - 1 ? Icons.check : Icons.arrow_forward,
-                          color: AppColors.white,
-                          size: 20,
-                        ),
-                      ],
-                    ),
-                  ),
                 ),
-              ],
-            ),
+              ),
+              const SizedBox(height: WaslSpacing.lg),
+            ],
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildTopBar() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+          WaslSpacing.lg, WaslSpacing.md, WaslSpacing.lg, 0),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 34,
+                height: 34,
+                decoration: BoxDecoration(
+                  gradient: AppColors.logoGradient,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(Icons.near_me_rounded,
+                    color: Colors.white, size: 20),
+              ),
+              const SizedBox(width: 8),
+              const Text('وصل',
+                  style: TextStyle(
+                      fontSize: 24,
+                      fontWeight: FontWeight.w800,
+                      color: AppColors.textPrimary)),
+            ],
+          ),
+          AnimatedOpacity(
+            opacity: _isLast ? 0 : 1,
+            duration: const Duration(milliseconds: 200),
+            child: TextButton(
+              onPressed: _isLast ? null : _complete,
+              child: const Text('تخطي',
+                  style: TextStyle(
+                      color: AppColors.textSecondary,
+                      fontWeight: FontWeight.w700)),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPage(_OnbData d) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: WaslSpacing.lg),
+      child: Column(
+        children: [
+          const Spacer(),
+          // Illustration with a soft branded halo; falls back to an icon tile.
+          Container(
+            width: MediaQuery.of(context).size.width * 0.72,
+            height: MediaQuery.of(context).size.width * 0.72,
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topRight,
+                end: Alignment.bottomLeft,
+                colors: [
+                  AppColors.primary.withOpacity(0.10),
+                  AppColors.secondary.withOpacity(0.06),
+                ],
+              ),
+              borderRadius: BorderRadius.circular(40),
+            ),
+            padding: const EdgeInsets.all(28),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(24),
+              child: Image.asset(
+                d.image,
+                fit: BoxFit.contain,
+                errorBuilder: (_, __, ___) => Center(
+                  child: Container(
+                    width: 120,
+                    height: 120,
+                    decoration: const BoxDecoration(
+                      gradient: AppColors.logoGradient,
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(d.icon, size: 58, color: Colors.white),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          const Spacer(),
+          Text(d.title,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                  fontSize: 25,
+                  fontWeight: FontWeight.w800,
+                  color: AppColors.textPrimary)),
+          const SizedBox(height: WaslSpacing.md),
+          Text(d.desc,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                  fontSize: 15,
+                  color: AppColors.textSecondary,
+                  height: 1.7)),
+          const Spacer(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildIndicator() {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: List.generate(_data.length, (i) {
+        final active = i == _currentPage;
+        return AnimatedContainer(
+          duration: const Duration(milliseconds: 280),
+          curve: Curves.easeOut,
+          margin: const EdgeInsets.symmetric(horizontal: 3),
+          width: active ? 26 : 7,
+          height: 7,
+          decoration: BoxDecoration(
+            gradient: active ? AppColors.logoGradient : null,
+            color: active ? null : const Color(0xFFE2E8F0),
+            borderRadius: BorderRadius.circular(4),
+          ),
+        );
+      }),
     );
   }
 }
