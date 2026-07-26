@@ -104,7 +104,7 @@ class _WaslSplashScreenState extends State<WaslSplashScreen>
           gradient: LinearGradient(
             begin: Alignment.topRight,
             end: Alignment.bottomLeft,
-            colors: [Color(0xFFFF7A3D), Color(0xFFF14D18)],
+            colors: [Color(0xFF1FC4D6), Color(0xFF1B62E6)],
           ),
         ),
         child: SafeArea(

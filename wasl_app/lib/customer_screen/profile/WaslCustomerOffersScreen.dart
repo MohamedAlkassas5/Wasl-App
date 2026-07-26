@@ -10,7 +10,7 @@ class WaslCustomerOffersScreen extends StatelessWidget {
       'icon': Icons.shopping_bag_rounded,
       'title': 'اطلب من أي مكان',
       'subtitle': 'صيدلية، سوبر ماركت، مكتبة — حتى لو المحل مش مشترك!',
-      'color': Color(0xFFF14D18),
+      'color': Color(0xFF1B62E6),
     },
     {
       'icon': Icons.local_pharmacy_rounded,
@@ -65,14 +65,14 @@ class WaslCustomerOffersScreen extends StatelessWidget {
                 padding: const EdgeInsets.all(24),
                 decoration: BoxDecoration(
                   gradient: const LinearGradient(
-                    colors: [Color(0xFFF14D18), Color(0xFFFF7A45)],
+                    colors: [Color(0xFF1B62E6), Color(0xFF1FC4D6)],
                     begin: Alignment.topRight,
                     end: Alignment.bottomLeft,
                   ),
                   borderRadius: BorderRadius.circular(20),
                   boxShadow: [
                     BoxShadow(
-                      color: const Color(0xFFF14D18).withOpacity(0.3),
+                      color: const Color(0xFF1B62E6).withOpacity(0.3),
                       blurRadius: 20,
                       offset: const Offset(0, 8),
                     ),

@@ -1,16 +1,17 @@
 import 'package:flutter/material.dart';
 
-/// Wasl brand design tokens (v2 — unified around the orange logo identity).
+/// Wasl brand design tokens (v3 — unified around the FLASH blue/cyan logo).
 ///
 /// The whole app shares these constants, so redefining them here re-skins every
-/// screen at once. Names are kept stable for backward compatibility; new tokens
-/// were added for the redesign.
+/// screen at once. Names are kept stable for backward compatibility; the values
+/// now follow the FLASH logo: an electric royal blue with a turquoise/cyan
+/// accent, matching the "FLASH tawseel" mark and its blue→cyan gradient.
 class AppColors {
-  // Brand
-  static const primary = Color(0xFFF14D18); // Wasl orange (matches the logo)
-  static const primaryDark = Color(0xFFC83E10);
-  static const secondary = Color(0xFFFF8A4C); // warm accent
-  static const accent = Color(0xFF1F2A44); // deep ink for contrast surfaces
+  // Brand — from the FLASH logo
+  static const primary = Color(0xFF1B62E6); // FLASH electric blue
+  static const primaryDark = Color(0xFF1442AE); // deeper blue (pressed/shadow)
+  static const secondary = Color(0xFF1FC4D6); // turquoise/cyan accent
+  static const accent = Color(0xFF0F2038); // deep navy for contrast surfaces
 
   // Neutrals
   static const background = Color(0xFFF6F7F9);
@@ -27,15 +28,15 @@ class AppColors {
   static const warning = Color(0xFFF59E0B);
   static const danger = Color(0xFFDC2626);
 
-  // Signature gradient (buttons, highlights)
+  // Signature gradient (buttons, highlights) — cyan → blue like the logo.
   static const logoGradient = LinearGradient(
     begin: Alignment.topRight,
     end: Alignment.bottomLeft,
-    colors: [Color(0xFFFF7A3D), Color(0xFFF14D18)],
+    colors: [Color(0xFF1FC4D6), Color(0xFF1B62E6)],
   );
 
   // Soft tinted surface behind icons/badges.
-  static Color primarySoft = const Color(0xFFF14D18).withOpacity(0.08);
+  static Color primarySoft = const Color(0xFF1B62E6).withOpacity(0.08);
 }
 
 /// Spacing / radius scale for consistent rhythm across the redesign.
