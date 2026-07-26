@@ -9,9 +9,16 @@ import {
 import { Type } from 'class-transformer';
 
 export class CreateOrderDto {
+  // 🔐 Optional and, when present, ignored: OrdersController overwrites this
+  // with the id from the authenticated caller's JWT (`user.sub`) so nobody can
+  // place an order in someone else's name. It used to be required, which meant
+  // a client that (reasonably) stopped sending a field the server discards
+  // would break order creation with a confusing "customerId must be a number"
+  // validation error before the handler ever ran.
+  @IsOptional()
   @Type(() => Number)
   @IsNumber()
-  customerId!: number;
+  customerId?: number;
 
   @IsString()
   customerName!: string;

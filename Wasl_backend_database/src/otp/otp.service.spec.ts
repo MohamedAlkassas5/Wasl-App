@@ -101,6 +101,34 @@ describe('OtpService (proof of phone ownership)', () => {
     );
   });
 
+  it('still checks the code on an already-verified record', async () => {
+    // Regression: this branch used to `return true` for any input once the
+    // phone was verified. OtpController hands a session token to a verified
+    // phone that already has an account, so accepting any code meant knowing
+    // someone's number was enough to log in as them until the window expired.
+    const code = await issueCode();
+    await service.verifyOtp(PHONE, code);
+    const wrong = code === '000000' ? '111111' : '000000';
+
+    await expect(service.verifyOtp(PHONE, wrong)).resolves.toBe(false);
+    // The real code still works — idempotent retries must keep functioning.
+    await expect(service.verifyOtp(PHONE, code)).resolves.toBe(true);
+  });
+
+  it('caps guesses against an already-verified record', async () => {
+    const code = await issueCode();
+    await service.verifyOtp(PHONE, code);
+    const wrong = code === '000000' ? '111111' : '000000';
+
+    for (let i = 0; i < 5; i++) {
+      await expect(service.verifyOtp(PHONE, wrong)).resolves.toBe(false);
+    }
+
+    await expect(service.verifyOtp(PHONE, wrong)).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+  });
+
   it('forgets the verification once it has been consumed', async () => {
     const code = await issueCode();
     await service.verifyOtp(PHONE, code);

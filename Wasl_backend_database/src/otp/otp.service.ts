@@ -119,13 +119,27 @@ export class OtpService {
       throw new BadRequestException('لم يتم طلب رمز تحقق لهذا الرقم');
     }
     if (record.verified) {
-      // Already verified — idempotent so a client can re-submit the same code
-      // (e.g. a retried request) without being locked out. Still bounded by the
-      // verification window, so a long-stale record is not a free pass.
-      if (this.isWithinVerifiedWindow(record)) {
-        return true;
+      // Already verified — re-submitting the *same* code is idempotent, so a
+      // retried request (or the register/reset step that follows a verify)
+      // isn't locked out. The code is still checked, which is the whole point:
+      // this branch used to return true for *any* input. Since a verified phone
+      // that already has an account is handed a session token by
+      // OtpController, that made "know the number" enough to take the account
+      // over for the length of the verification window.
+      if (!this.isWithinVerifiedWindow(record)) {
+        throw new BadRequestException('انتهت صلاحية الرمز، اطلب رمزاً جديداً');
       }
-      throw new BadRequestException('انتهت صلاحية الرمز، اطلب رمزاً جديداً');
+      if (record.attempts >= OtpService.MAX_VERIFY_ATTEMPTS) {
+        throw new BadRequestException(
+          'تم تجاوز عدد المحاولات، اطلب رمزاً جديداً',
+        );
+      }
+      if (!(await bcrypt.compare(code, record.otpHash))) {
+        record.attempts += 1;
+        await this.otpRepository.save(record);
+        return false;
+      }
+      return true;
     }
     if (new Date() > new Date(record.expiresAt)) {
       throw new BadRequestException('انتهت صلاحية الرمز، اطلب رمزاً جديداً');

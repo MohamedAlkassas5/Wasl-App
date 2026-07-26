@@ -313,6 +313,123 @@ triggers the rotation. Redeploying without it will refuse to boot, by design.
 Verify by trying `01000000000` / `WaslAdmin@2026` against the live API; if it
 succeeds today, treat the account as compromised and review what it touched.
 
+### 2.12 🔴 Account takeover via `POST /auth/otp/verify` — FIXED
+
+Found on 2026-07-26, and **demonstrated against a running server** rather than
+inferred (see "Verification" below).
+
+`OtpService.verifyOtp` had an idempotency branch: once a record was `verified`,
+it returned `true` **without comparing the submitted code at all**. Read on its
+own that looks defensible — the comment above it argued for exactly that, and
+the 30-minute window is bounded.
+
+It was an account takeover because of a second fact in another file:
+`OtpController.verify` hands back a **session JWT** when a verified phone
+already has an account, and *that path never consumes the verification*. So
+after any legitimate OTP sign-in, the record sat in `verified` state for 30
+minutes with nothing burning it, and during that window:
+
+```
+POST /auth/otp/verify  {"phone":"<victim>","code":"000000"}
+  → 201 {"verified":true,"registered":true,"token":"eyJ..."}   ← full session
+GET  /users/status                    (with that token) → 200, victim's account
+GET  /orders/customer/<victim>        (with that token) → 200
+POST /auth/otp/reset-password {"phone":"<victim>","code":"000000",
+                               "newPassword":"..."}     → 200, password replaced
+POST /auth/login              with the attacker-chosen password → session
+```
+
+Knowing a phone number was the entire attack. No code, no password. Delivery
+partners' and admins' numbers are as guessable as anyone's.
+
+**Fix** — the branch still permits genuine idempotent retries (the register or
+reset step that follows a verify, or a retried request), but it re-compares the
+submitted code against the stored hash and counts failed guesses against
+`MAX_VERIFY_ATTEMPTS`. Two regression tests in `otp.service.spec.ts` pin both
+halves: a wrong code is rejected after verification, and the real code still
+works.
+
+**Verification** — backend built and booted against a real Postgres, and the
+sequence above run end-to-end as HTTP:
+
+| Build | Attacker posts `000000` for a verified phone |
+|---|---|
+| before fix | `201` + working session token → password reset → **account taken over** |
+| after fix | `400` ×3 (`000000`, `123456`, `999999`); victim's real code still returns a session |
+
+`npm test` → **49 passed, 8 suites** (was 47).
+
+> Note for future passes: this is the second bug of this exact shape (cf. §2.6a
+> `social-check`) — a route that mints a session on evidence it never actually
+> checked. Worth grepping for every path that can produce a JWT.
+
+### 2.13 🔴 Committed fallback JWT secret → forgeable admin sessions — FIXED
+
+Found 2026-07-26 while auditing every JWT-minting path (the follow-up the
+§2.12 note asked for). `jwt.constants.ts` did:
+
+```ts
+export const JWT_SECRET = process.env.JWT_SECRET || 'WASL_SUPER_SECRET_KEY_2026';
+```
+
+The guard verifies incoming tokens against this same constant. Render's
+blueprint injects a generated `JWT_SECRET`, so Render deploys were fine — but a
+**VPS / Railway / plain-`docker run`** deploy that didn't set the env var would
+silently fall back to a secret **sitting in the public source tree**. Anyone
+with the repo could sign `{sub: <any id>, role: "admin"}` and be that user —
+including the admin who reads every uploaded national ID. Same class as §2.11:
+a known value used as a live secret.
+
+**Fix** (`jwt.constants.ts`) mirrors the admin-seeder rule — fail closed:
+- Production (`NODE_ENV=production`): `JWT_SECRET` is **required** (16+ chars);
+  the burned literal is rejected. Missing/weak → the app refuses to boot.
+- Dev/test: a random per-process secret is generated when unset (tokens don't
+  survive a restart, but nothing guessable is ever trusted; tests sign and
+  verify in-process so they're unaffected).
+
+Verified: `NODE_ENV=production` with the var unset → refuses to boot; with the
+leaked value → refuses; with a fresh random value → boots. `.env.example`
+updated to show it as required with a generator command. Since the constant
+was live in git, **rotate `JWT_SECRET` on any existing deployment** — every
+token ever signed with the old value is forgeable.
+
+### 2.14 🟡 `CreateOrderDto.customerId` required but ignored — FIXED
+
+`POST /orders/create` overwrites `customerId` with the caller's JWT `sub`
+(the §2.5 ownership fix), but the DTO still marked it **required**. Because the
+global `ValidationPipe` runs before the handler, a client that (reasonably)
+stopped sending a field the server discards would get a confusing
+`customerId must be a number` 400 and be unable to create orders at all. Made
+it `@IsOptional()` — the value is still ignored, but its absence no longer
+breaks the core flow. Confirmed against a live DB: an order now creates with no
+`customerId` in the body.
+
+---
+
+## 2.15 End-to-end verification against a real database (2026-07-26)
+
+For the first time the backend was exercised against a **real Postgres** on
+this machine — not a mock. Docker still won't start here, so a PGlite instance
+(`@electric-sql/pglite` + `-socket`) served the real Postgres wire protocol on
+`5432`; the **unmodified** NestJS build connected, `synchronize` created every
+table, the admin seeder ran, and the whole "order from anywhere" money journey
+ran as live HTTP:
+
+| Step | Result |
+|---|---|
+| Driver online with empty wallet | ✅ blocked (min-wallet rule) |
+| Admin credits wallet → driver online | ✅ ledger entry written |
+| Customer creates order (real GPS) | ✅ haversine distance 0.75 km, city-tier fee 20 EGP |
+| Stranger reads another customer's orders / offers | ✅ 403 |
+| Driver bids → owner accepts (stranger can't) | ✅ 403 for stranger, ok for owner |
+| Non-assigned driver advances status | ✅ 403 |
+| Assigned driver → completed | ✅ **commission 7 EGP debited via ledger**, balance 100→93 |
+| Rating without a completed order together | ✅ 403 |
+| Admin reads driver's transaction ledger | ✅ credit + commission entries |
+
+The differentiator flow is genuinely working and correctly authorized, on real
+persistence. (Marketplace / merchant side, §2.2–2.3, still unbuilt.)
+
 ---
 
 ## 3. MVP readiness (re-scored)
@@ -328,7 +445,7 @@ succeeds today, treat the account as compromised and review what it touched.
 | Location system | 85% | ↑ haversine + radius search |
 | Store/marketplace ordering | 15% | ↑ no longer fabricated, but nothing to list yet |
 | Merchant experience | 5% | — still register-only |
-| Security | 92% | ↑↑ ownership checks, rate limiting, guarded documents, phone-verified registration; secrets still in repo |
+| Security | 90% | OTP-verify takeover (§2.12) and forgeable-JWT fallback (§2.13) closed this pass; still: rotate JWT_SECRET + admin creds on live, secrets in repo |
 | **Overall** | **≈ 75%** | ↑ from ≈35% |
 
 **The "order from anywhere" flow — the actual differentiator — is close to
