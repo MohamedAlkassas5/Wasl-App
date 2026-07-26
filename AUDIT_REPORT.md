@@ -275,9 +275,14 @@ first commit, and matter more than the repo itself:
   *fetch* these over HTTP; this is a different exposure with the same blast
   radius. §4 item 7 moves them off local disk entirely.)
 - **`Database pass.txt` and `codes.txt`** — git-ignored, but note that ignoring
-  is not fixing: the credentials still sit in the working tree and, more to the
-  point, are presumably still live. §4 item 6 covers rotating them and moving
-  them into environment variables.
+  is not fixing: the credentials still sit in the working tree, are **still
+  readable in older commits** (`git show 350def7:codes.txt` — untracking in
+  `8d210aa` didn't purge history), and are presumably still live. The only fix
+  is rotation. A concrete rotation checklist now lives in **`SECURITY.md`** at
+  the repo root (DB password, admin password, any user passwords in `codes.txt`,
+  `JWT_SECRET`, WhatsApp token) with post-rotation verification steps. History
+  was intentionally left intact (rewriting it changes every hash, needs a
+  force-push, and doesn't help against clones already made).
 
 `.gitignore` also now covers `*.jks` / `*.keystore` / `key.properties`
 pre-emptively, so Android signing keys can't be committed later.
