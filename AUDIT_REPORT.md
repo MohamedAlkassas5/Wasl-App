@@ -222,6 +222,8 @@ search. Flutter screens for wallet/offers exist with no backend behind them.
 - No live driver→customer tracking channel (no sockets); tracking is polling.
 - ~~Uploaded ID/selfie documents are served from a public, unauthenticated
   `/uploads` static route.~~ ✅ **FIXED** — see §2.9.
+- Uploads still write to **ephemeral** local disk. A storage seam is now in
+  place (§2.17); the S3 adapter itself is the remaining step.
 - `Database pass.txt` and `codes.txt` (containing plaintext passwords and a
   token) are committed at repo root.
 - Backend `.env` is absent; `.env.example` ships a real-looking default password.
@@ -464,6 +466,37 @@ ledger included. `npm test`: 49 passed.
 > them. Fake the baseline as applied there once —
 > `INSERT INTO migrations(timestamp, name) VALUES (...)` for InitialSchema (or
 > `migration:run` only on fresh DBs) — then let later migrations flow normally.
+
+### 2.17 ✅ Storage seam for uploads (S3-ready)
+
+Uploads (ID scans, selfies, order photos, receipts, payment proofs) wrote and
+read straight from local disk, so every Render/Railway deploy — disks are
+ephemeral — wiped approved partners' documents. Introduced a `StorageProvider`
+seam so the physical location is swappable:
+
+- `src/storage/storage-provider.ts` — interface (`save`, `exists`, `localPath`,
+  `createReadStream`) keyed on the DB-relative path (`uploads/orders/x.jpg`).
+- `local-disk-storage.provider.ts` — the default; **behaviour identical** to
+  before, and it now owns the path-traversal guard. Unit-tested.
+- `s3-storage.provider.ts` — a documented stub that **fails fast on boot** if
+  `STORAGE_DRIVER=s3` is set before the adapter is finished, rather than
+  silently losing files. It spells out the exact steps (AWS SDK, the four
+  methods, and switching the multer write paths to `memoryStorage` +
+  `save()`).
+- `storage.module.ts` — global; picks the backend from `STORAGE_DRIVER`
+  (default `local`).
+
+The **read/serve path is fully wired through the seam** and verified: the
+authenticated `/uploads` controller serves via `localPath` (→ `sendFile`) or a
+stream, so an S3 backend needs no controller change. The **write path (multer)
+still targets local disk** — consistent for the default backend; the S3 stub
+documents that it must move to `save()` when the adapter lands.
+
+**Verified on the live server:** an order created with a real PNG upload was
+retrieved byte-for-byte through the authenticated route (via the provider),
+with `Cache-Control: private, no-store`; a stranger got 403 and an anonymous
+request 401. `npm test`: **53 passed, 9 suites** (+4: local-provider unit tests,
+files-controller spec still green through the seam).
 
 ---
 

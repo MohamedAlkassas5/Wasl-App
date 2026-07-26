@@ -1,0 +1,33 @@
+import { Global, Logger, Module } from '@nestjs/common';
+
+import { STORAGE_PROVIDER, StorageProvider } from './storage-provider';
+import { LocalDiskStorageProvider } from './local-disk-storage.provider';
+import { S3StorageProvider } from './s3-storage.provider';
+
+/**
+ * Global so any module can inject STORAGE_PROVIDER without re-importing.
+ * The backend is chosen once at boot by STORAGE_DRIVER (default `local`).
+ */
+@Global()
+@Module({
+  providers: [
+    {
+      provide: STORAGE_PROVIDER,
+      useFactory: (): StorageProvider => {
+        const driver = (process.env.STORAGE_DRIVER || 'local').toLowerCase();
+        const logger = new Logger('StorageModule');
+
+        if (driver === 's3' || driver === 'cloudinary') {
+          // Throws until the adapter is implemented — fail fast rather than
+          // silently write to a disk the next deploy wipes.
+          return new S3StorageProvider();
+        }
+
+        logger.log('📁 Storage backend: local-disk (uploads/).');
+        return new LocalDiskStorageProvider();
+      },
+    },
+  ],
+  exports: [STORAGE_PROVIDER],
+})
+export class StorageModule {}

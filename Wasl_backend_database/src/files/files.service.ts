@@ -1,8 +1,12 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { existsSync } from 'fs';
-import { join, resolve, sep } from 'path';
+import type { Readable } from 'stream';
 
 import { AuthUser } from '../auth/current-user';
 import { UserRole } from '../users/entities/user.entity';
@@ -10,6 +14,7 @@ import { DeliveryPartner } from '../delivery/entities/delivery-partner.entity';
 import { Merchant } from '../merchant/entities/merchant.entity';
 import { Order, OrderStatus } from '../orders/entities/order.entity';
 import { WalletTopUpRequest } from '../payments/entities/wallet-topup-request.entity';
+import { STORAGE_PROVIDER, StorageProvider } from '../storage/storage-provider';
 
 /** Sub-folders under `uploads/` that the app actually writes to. */
 const ALLOWED_FOLDERS = ['orders', 'invoices', 'payments'];
@@ -17,11 +22,13 @@ const ALLOWED_FOLDERS = ['orders', 'invoices', 'payments'];
 /** Multer names files itself, so anything outside this charset is an attack. */
 const SAFE_NAME = /^[A-Za-z0-9._-]+$/;
 
+/** How a resolved upload should be sent to the client. */
+export type ServePlan =
+  | { kind: 'local'; localPath: string }
+  | { kind: 'stream'; stream: Readable };
+
 @Injectable()
 export class FilesService {
-  /** Absolute path of the uploads root — everything served must live inside it. */
-  private readonly root = resolve(process.cwd(), 'uploads');
-
   constructor(
     @InjectRepository(DeliveryPartner)
     private readonly deliveryRepository: Repository<DeliveryPartner>,
@@ -31,14 +38,17 @@ export class FilesService {
     private readonly orderRepository: Repository<Order>,
     @InjectRepository(WalletTopUpRequest)
     private readonly topUpRepository: Repository<WalletTopUpRequest>,
+    @Inject(STORAGE_PROVIDER)
+    private readonly storage: StorageProvider,
   ) {}
 
   /**
    * Turn the URL segments into the exact relative path stored in the database
-   * (`uploads/foo.jpg`, `uploads/orders/bar.jpg`) and the absolute path on disk.
-   * Rejects anything that escapes the uploads root.
+   * (`uploads/foo.jpg`, `uploads/orders/bar.jpg`). Validates the charset and
+   * folder, and confirms the object actually exists via the storage backend.
+   * Path-traversal safety is enforced by the backend when it resolves the key.
    */
-  resolveUpload(filename: string, folder?: string) {
+  async resolveUpload(filename: string, folder?: string) {
     if (!SAFE_NAME.test(filename)) {
       throw new BadRequestException('اسم الملف غير صالح');
     }
@@ -49,22 +59,24 @@ export class FilesService {
     const relativePath = folder
       ? `uploads/${folder}/${filename}`
       : `uploads/${filename}`;
-    const absolutePath = folder
-      ? join(this.root, folder, filename)
-      : join(this.root, filename);
 
-    // Belt and braces: even with the charset check, never serve outside the root.
-    if (
-      !resolve(absolutePath).startsWith(this.root + sep) &&
-      resolve(absolutePath) !== this.root
-    ) {
-      throw new BadRequestException('مسار الملف غير صالح');
-    }
-    if (!existsSync(absolutePath)) {
+    if (!(await this.storage.exists(relativePath))) {
       throw new NotFoundException('الملف غير موجود');
     }
 
-    return { relativePath, absolutePath };
+    return { relativePath };
+  }
+
+  /**
+   * How to serve a resolved file: a local filesystem path (so the controller
+   * can `res.sendFile` with correct Content-Type and range support) or a
+   * readable stream (remote backends that have no local file).
+   */
+  servePlan(relativePath: string): ServePlan {
+    const localPath = this.storage.localPath(relativePath);
+    return localPath
+      ? { kind: 'local', localPath }
+      : { kind: 'stream', stream: this.storage.createReadStream(relativePath) };
   }
 
   /**

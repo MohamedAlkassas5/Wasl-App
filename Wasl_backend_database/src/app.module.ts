@@ -21,6 +21,7 @@ import { DeliveryModule } from './delivery/delivery.module';
 import { OtpModule } from './otp/otp.module';
 import { PaymentsModule } from './payments/payments.module';
 import { FilesModule } from './files/files.module';
+import { StorageModule } from './storage/storage.module';
 
 @Module({
   imports: [
@@ -52,6 +53,7 @@ import { FilesModule } from './files/files.module';
       migrationsRun: true,
     }),
 
+    StorageModule,
     AuthModule,
     AdminModule,
     SettingsModule,

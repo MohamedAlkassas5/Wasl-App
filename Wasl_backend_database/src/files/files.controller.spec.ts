@@ -8,6 +8,8 @@ import * as request from 'supertest';
 
 import { FilesController } from './files.controller';
 import { FilesService } from './files.service';
+import { STORAGE_PROVIDER } from '../storage/storage-provider';
+import { LocalDiskStorageProvider } from '../storage/local-disk-storage.provider';
 import { JWT_SECRET } from '../auth/jwt.constants';
 import { UserRole } from '../users/entities/user.entity';
 import { DeliveryPartner } from '../delivery/entities/delivery-partner.entity';
@@ -60,6 +62,7 @@ describe('FilesController (uploads access control)', () => {
       controllers: [FilesController],
       providers: [
         FilesService,
+        { provide: STORAGE_PROVIDER, useClass: LocalDiskStorageProvider },
         { provide: getRepositoryToken(DeliveryPartner), useValue: deliveryRepo },
         { provide: getRepositoryToken(Merchant), useValue: emptyRepo },
         { provide: getRepositoryToken(Order), useValue: emptyRepo },

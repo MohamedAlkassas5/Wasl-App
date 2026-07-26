@@ -51,7 +51,7 @@ export class FilesController {
     folder: string | undefined,
     res: Response,
   ) {
-    const { relativePath, absolutePath } = this.filesService.resolveUpload(
+    const { relativePath } = await this.filesService.resolveUpload(
       filename,
       folder,
     );
@@ -62,6 +62,14 @@ export class FilesController {
 
     // Personal documents must never sit in a shared/CDN cache.
     res.setHeader('Cache-Control', 'private, no-store');
-    res.sendFile(absolutePath);
+
+    // Local backend → sendFile (Content-Type by extension, range support).
+    // Remote backend → pipe the object's stream.
+    const plan = this.filesService.servePlan(relativePath);
+    if (plan.kind === 'local') {
+      res.sendFile(plan.localPath);
+    } else {
+      plan.stream.pipe(res);
+    }
   }
 }
