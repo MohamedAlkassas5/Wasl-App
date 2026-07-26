@@ -15,12 +15,15 @@
       <h1>لوحة تحكم الإدارة</h1>
       <p class="muted">سجّل الدخول بحساب المسؤول للمتابعة</p>
       <label>رقم الهاتف</label>
-      <input id="loginPhone" type="tel" placeholder="01000000000" required />
+      <input id="loginPhone" type="tel" placeholder="رقم هاتف المسؤول" required />
       <label>كلمة المرور</label>
       <input id="loginPassword" type="password" placeholder="••••••••" required />
       <button type="submit" class="btn btn-primary btn-block">دخول</button>
       <div id="loginError" class="error"></div>
-      <p class="hint">حساب افتراضي: 01000000000 / WaslAdmin@2026</p>
+      <!-- 🗑️ كان هنا سطر بيعرض "حساب افتراضي: 01000000000 / WaslAdmin@2026"
+           على شاشة الدخول — أي حد يفتح اللوحة كان يشوف بيانات دخول الأدمن.
+           السيرفر مبقاش عنده حساب افتراضي أصلاً (ADMIN_PHONE/ADMIN_PASSWORD
+           إجباريين دلوقتي). -->
     </form>
   </div>
 

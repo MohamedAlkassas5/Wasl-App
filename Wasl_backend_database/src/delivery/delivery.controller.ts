@@ -12,6 +12,11 @@ import {
 import { DeliveryService } from './delivery.service';
 import { UpdateLocationDto } from './dto/update-location.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import {
+  CurrentUser,
+  AuthUser,
+  assertSelfOrAdmin,
+} from '../auth/current-user';
 
 /**
  * Driver location + nearby-driver endpoints. All routes require a valid JWT
@@ -22,12 +27,18 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 export class DeliveryController {
   constructor(private readonly deliveryService: DeliveryService) {}
 
-  /** Driver app pushes its live GPS location here while online. */
+  /**
+   * Driver app pushes its live GPS location here while online.
+   * 🔐 A driver may only move their own pin — spoofing another captain's
+   * location would let an attacker steal or sabotage nearby-order matching.
+   */
   @Patch(':id/location')
   updateLocation(
+    @CurrentUser() user: AuthUser,
     @Param('id', ParseIntPipe) driverId: number,
     @Body() dto: UpdateLocationDto,
   ) {
+    assertSelfOrAdmin(user, driverId);
     return this.deliveryService.updateLocation(
       driverId,
       dto.latitude,

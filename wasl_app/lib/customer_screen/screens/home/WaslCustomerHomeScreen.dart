@@ -557,6 +557,9 @@ class _WaslCustomerHomeScreenState extends State<WaslCustomerHomeScreen> {
   List<dynamic> _liveCategories = [];
   List<dynamic> _liveStores = [];
 
+  /// سبب خلو قائمة المتاجر (مفيش GPS / مفيش متاجر قريبة / عطل اتصال).
+  String _storesMessage = '';
+
   @override
   void initState() {
     super.initState();
@@ -640,42 +643,53 @@ class _WaslCustomerHomeScreenState extends State<WaslCustomerHomeScreen> {
     }
   }
 
+  // 🏪 المتاجر الحقيقية بس. الفرع الاحتياطي القديم كان بيعرض "مطعم الشرقاوي"
+  // و"صيدلية العزبي" وهميين — يعني العميل يدوس على متجر مش موجود. لو مفيش
+  // متاجر معتمدة قريبة، بنقول كده صراحة.
   Future<void> _fetchLiveStores() async {
+    if (_currentPosition == null) {
+      // من غير GPS مفيش معنى لـ "قريب منك" — بلاش نخترع موقع.
+      if (mounted) {
+        setState(() {
+          _liveStores = [];
+          _storesMessage = 'فعّل خدمة الموقع لعرض المتاجر القريبة منك';
+          _isLoadingStores = false;
+        });
+      }
+      return;
+    }
+
     try {
       final res = await FlutterAuthService().getNearbyStores(
-        lat: _currentPosition?.latitude ?? 30.0,
-        lng: _currentPosition?.longitude ?? 31.0,
+        lat: _currentPosition!.latitude,
+        lng: _currentPosition!.longitude,
       );
-      if (mounted && res['success'] == true) {
+      if (!mounted) return;
+
+      if (res['success'] == true) {
+        final List stores = (res['data'] as List?) ?? [];
         setState(() {
-          _liveStores = res['data'] ?? [];
+          _liveStores = stores;
+          _storesMessage = stores.isEmpty
+              ? 'لا توجد متاجر شريكة في نطاقك حالياً — تقدر تطلب أي حاجة من أي مكان عبر زر الطلب'
+              : '';
           _isLoadingStores = false;
         });
       } else {
-        _fallbackStores();
+        setState(() {
+          _liveStores = [];
+          _storesMessage = 'تعذّر تحميل المتاجر القريبة، حاول مرة أخرى';
+          _isLoadingStores = false;
+        });
       }
     } catch (e) {
-      _fallbackStores();
-    }
-  }
-
-  void _fallbackStores() {
-    if (mounted) {
-      setState(() {
-        _liveStores = [
-          {
-            'merchant_store_name': 'مطعم وكافيه الشرقاوي - الفرع الأقرب',
-            'merchant_store_type': 'مطاعم • مأكولات حية',
-            'distance': 0.60,
-          },
-          {
-            'merchant_store_name': 'صيدلية العزبي الحية بالمنطقة',
-            'merchant_store_type': 'صيدليات • رعاية صحية',
-            'distance': 1.20,
-          }
-        ];
-        _isLoadingStores = false;
-      });
+      if (mounted) {
+        setState(() {
+          _liveStores = [];
+          _storesMessage = 'تعذّر الاتصال بالسيرفر لعرض المتاجر';
+          _isLoadingStores = false;
+        });
+      }
     }
   }
 
@@ -829,31 +843,54 @@ class _WaslCustomerHomeScreenState extends State<WaslCustomerHomeScreen> {
             const Text('متاجر نشطة قريبة منك حالياً', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: AppColors.textPrimary, fontFamily: 'Cairo')),
             const SizedBox(height: 12),
 
-            _isLoadingStores
-                ? const Center(child: Padding(padding: EdgeInsets.all(20.0), child: CircularProgressIndicator(color: AppColors.primary)))
-                : ListView.builder(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              itemCount: _liveStores.length,
-              itemBuilder: (context, index) {
-                final store = _liveStores[index];
-                return _buildLiveStoreCard(
-                  name: store['merchant_store_name'] ?? 'متجر وصل شريك',
-                  tags: store['merchant_store_type'] ?? 'توصيل سريـع',
-                  rate: '4.7',
-                  dist: "${double.tryParse(store['distance']?.toString() ?? '0.0')?.toStringAsFixed(1)} كم",
-                  time: "${((double.tryParse(store['distance']?.toString() ?? '0.0') ?? 0.0) * 10 + 5).toInt()} دقيقة",
-                  fee: "${((double.tryParse(store['distance']?.toString() ?? '0.0') ?? 0.0) * 5 + 10).toInt()} ج.م",
-                );
-              },
-            ),
+            if (_isLoadingStores)
+              const Center(child: Padding(padding: EdgeInsets.all(20.0), child: CircularProgressIndicator(color: AppColors.primary)))
+            else if (_liveStores.isEmpty)
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 22),
+                decoration: BoxDecoration(
+                  color: AppColors.white,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: const Color(0xFFF1F5F9), width: 1),
+                ),
+                child: Column(
+                  children: [
+                    const Icon(Icons.storefront_outlined, size: 30, color: AppColors.textSecondary),
+                    const SizedBox(height: 8),
+                    Text(
+                      _storesMessage.isEmpty ? 'لا توجد متاجر شريكة قريبة حالياً' : _storesMessage,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(fontSize: 12, color: AppColors.textSecondary, fontFamily: 'Cairo', height: 1.6),
+                    ),
+                  ],
+                ),
+              )
+            else
+              ListView.builder(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                itemCount: _liveStores.length,
+                itemBuilder: (context, index) {
+                  final store = _liveStores[index];
+                  final distance = double.tryParse(store['distance']?.toString() ?? '');
+                  return _buildLiveStoreCard(
+                    name: store['merchant_store_name'] ?? 'متجر وصل شريك',
+                    tags: store['merchant_store_type'] ?? '',
+                    dist: distance == null ? '' : '${distance.toStringAsFixed(1)} كم',
+                  );
+                },
+              ),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildLiveStoreCard({required String name, required String tags, required String rate, required String dist, required String time, required String fee}) {
+  // ⚠️ التقييم ووقت التوصيل ورسوم التوصيل كانت بتتحسب هنا بأرقام مخترعة
+  // (4.7 ثابت، والمسافة×10+5 دقيقة، والمسافة×5+10 جنيه) — ورقم الرسوم ده كان
+  // بيخالف محرك التسعير الحقيقي في السيرفر. اتشالوا لحد ما يبقى ليهم مصدر حقيقي.
+  Widget _buildLiveStoreCard({required String name, required String tags, required String dist}) {
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(12),
@@ -876,36 +913,21 @@ class _WaslCustomerHomeScreenState extends State<WaslCustomerHomeScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: AppColors.textPrimary, fontFamily: 'Cairo'), maxLines: 1, overflow: TextOverflow.ellipsis),
-                const SizedBox(height: 1),
-                Text(tags, style: const TextStyle(fontSize: 11, color: AppColors.textSecondary, fontFamily: 'Cairo'), maxLines: 1, overflow: TextOverflow.ellipsis),
-                const SizedBox(height: 6),
-                Row(
-                  children: [
-                    const Icon(Icons.star_rounded, color: Colors.amber, size: 14),
-                    Text(' $rate ', style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: AppColors.textPrimary)),
-                    const SizedBox(width: 8),
-                    const Icon(Icons.location_on_outlined, size: 12, color: AppColors.textSecondary),
-                    Text(' $dist ', style: const TextStyle(fontSize: 10, color: AppColors.textSecondary)),
-                    const SizedBox(width: 8),
-                    const Icon(Icons.access_time_rounded, size: 12, color: AppColors.textSecondary),
-                    Text(' $time', style: const TextStyle(fontSize: 10, color: AppColors.textSecondary)),
-                  ],
-                )
+                if (tags.isNotEmpty) ...[
+                  const SizedBox(height: 1),
+                  Text(tags, style: const TextStyle(fontSize: 11, color: AppColors.textSecondary, fontFamily: 'Cairo'), maxLines: 1, overflow: TextOverflow.ellipsis),
+                ],
+                if (dist.isNotEmpty) ...[
+                  const SizedBox(height: 6),
+                  Row(
+                    children: [
+                      const Icon(Icons.location_on_outlined, size: 12, color: AppColors.textSecondary),
+                      Text(' $dist', style: const TextStyle(fontSize: 10, color: AppColors.textSecondary)),
+                    ],
+                  ),
+                ],
               ],
             ),
-          ),
-          const SizedBox(width: 8),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Text(fee, style: const TextStyle(fontWeight: FontWeight.bold, color: AppColors.primary, fontFamily: 'Cairo', fontSize: 13)),
-              const SizedBox(height: 6),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(color: const Color(0xFFDCFCE7), borderRadius: BorderRadius.circular(6)),
-                child: const Text('مفتوح', style: TextStyle(color: Color(0xFF16A34A), fontSize: 10, fontWeight: FontWeight.bold, fontFamily: 'Cairo')),
-              )
-            ],
           ),
         ],
       ),

@@ -455,16 +455,10 @@
 
 import 'package:flutter/material.dart';
 import 'package:country_picker/country_picker.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:provider/provider.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:wasl_app/screens/WaslLoginScreen.dart';
 import 'package:wasl_app/screens/WaslOtpScreen.dart';
 import 'package:wasl_app/core/theme/app_colors.dart';
-import 'package:wasl_app/core/providers/user_provider.dart';
-import 'package:wasl_app/services/auth_service.dart';
-import 'package:wasl_app/customer_screen/screens/home/WaslCustomerHomeScreen.dart';
-import 'package:wasl_app/customer_screen/screens/auth/WaslSocialCompleteDataScreen.dart';
+import 'package:wasl_app/services/whatsapp_otp_service.dart';
 
 class WaslRegisterScreen extends StatefulWidget {
   const WaslRegisterScreen({Key? key}) : super(key: key);
@@ -516,7 +510,8 @@ class _WaslRegisterScreenState extends State<WaslRegisterScreen> {
     return points;
   }
 
-  // 🎯 طلب الـ OTP الحي من Firebase وتمرير الـ VerificationId لشاشة الـ OTP
+  // 📲 طلب رمز التحقق من السيرفر (واتساب). السيرفر هو اللي بيولّد الكود
+  // ويتحقق منه، فالتطبيق مش بيقرر أي حاجة عن هوية الرقم.
   void _handleRegistrationNext() async {
     if (_currentRoleIndex == 2) {
       _showMerchantBlockSnackBar();
@@ -524,15 +519,16 @@ class _WaslRegisterScreenState extends State<WaslRegisterScreen> {
     }
 
     if (_nameController.text.isEmpty || _phoneController.text.isEmpty || _passwordController.text.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('يرجى ملء الحقول الأساسية للمتابعة', style: TextStyle(fontFamily: 'Cairo')), backgroundColor: AppColors.danger),
-      );
+      _showSnackBar('يرجى ملء الحقول الأساسية للمتابعة', AppColors.danger);
       return;
     }
     if (_passwordController.text != _confirmPasswordController.text) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('كلمات المرور غير متطابقة', style: TextStyle(fontFamily: 'Cairo')), backgroundColor: AppColors.danger, behavior: SnackBarBehavior.floating),
-      );
+      _showSnackBar('كلمات المرور غير متطابقة', AppColors.danger);
+      return;
+    }
+    // السيرفر بيرفض أي كلمة مرور أقل من 6 أحرف — نمسكها هنا قبل ما نحرق رمز تحقق.
+    if (_passwordController.text.length < 6) {
+      _showSnackBar('كلمة المرور يجب أن تكون 6 أحرف على الأقل', AppColors.danger);
       return;
     }
 
@@ -547,97 +543,42 @@ class _WaslRegisterScreenState extends State<WaslRegisterScreen> {
     if (cleanPhone.startsWith('0')) cleanPhone = cleanPhone.substring(1);
     String fullPhone = '+$_selectedCountryCode$cleanPhone';
 
-    await FlutterAuthService().sendFirebaseOtp(
-      phone: fullPhone,
-      onCodeSent: (String verificationId) {
-        Navigator.pop(context);
+    final result = await WhatsappOtpService().sendOtp(fullPhone);
 
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (_) => WaslOtpScreen(
-              currentRoleIndex: _currentRoleIndex,
-              name: _nameController.text.trim(),
-              phone: fullPhone,
-              password: _passwordController.text,
-              role: role,
-              verificationId: verificationId,
-            ),
-          ),
-        );
-      },
-      onFailed: (FirebaseAuthException e) {
-        Navigator.pop(context);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('فشل إرسال الرمز: ${e.message}', style: const TextStyle(fontFamily: 'Cairo')), backgroundColor: AppColors.danger),
-        );
-      },
-    );
-  }
-
-  // 🎯 معالجة التسجيل وفحص الحساب الاجتماعي المباشر عبر الباك إند NestJS
-  void _handleRegisterSocial(String provider) async {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => const Center(child: CircularProgressIndicator(color: AppColors.primary)),
-    );
-
-    await Future.delayed(const Duration(seconds: 1));
     if (!mounted) return;
     Navigator.pop(context);
 
-    String dummyEmail = provider == 'facebook' ? 'ahmed_fb@wasl.com' : 'ahmed_google@wasl.com';
-    String dummyName = provider == 'facebook' ? 'Ahmed Harfoush (FB)' : 'Ahmed Talaat';
-    String dummyUid = 'social_firebase_uid_123456';
-
-    final check = await FlutterAuthService().socialLoginCheck(email: dummyEmail, firebaseUid: dummyUid);
-
-    if (check['success'] == true) {
-      if (check['isRegistered'] == true) {
-        final data = check['data'];
-        final userData = data['user'];
-        final String token = data['token'] ?? '';
-
-        if (!mounted) return;
-        Provider.of<UserProvider>(context, listen: false).saveUserSession(
-          id: userData['id'] ?? 0,
-          name: userData['name'] ?? dummyName,
-          phone: userData['phone'] ?? '',
-          role: userData['role'] ?? 'customer',
-          token: token,
-        );
-
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.setInt('user_id', userData['id'] ?? 0);
-        await prefs.setString('user_name', userData['name'] ?? dummyName);
-        await prefs.setString('user_phone', userData['phone'] ?? '');
-        await prefs.setString('user_role', userData['role'] ?? 'customer');
-        await prefs.setString('access_token', token);
-
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('مرحباً بعودتك السريعة يا ${userData['name'] ?? dummyName} 🎉', style: const TextStyle(fontFamily: 'Cairo')), backgroundColor: const Color(0xFF22C55E)),
-        );
-        Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const WaslCustomerHomeScreen()));
-      } else {
-        if (!mounted) return;
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (_) => WaslSocialCompleteDataScreen(
-              name: dummyName,
-              email: dummyEmail,
-              provider: provider,
-              firebaseUid: dummyUid,
-            ),
-          ),
-        );
-      }
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(check['message'] ?? 'فشل الاتصال الموثق الاجتماعي', style: const TextStyle(fontFamily: 'Cairo')), backgroundColor: AppColors.danger),
-      );
+    if (result['success'] != true) {
+      _showSnackBar(result['message'] ?? 'تعذّر إرسال رمز التحقق', AppColors.danger);
+      return;
     }
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => WaslOtpScreen(
+          currentRoleIndex: _currentRoleIndex,
+          name: _nameController.text.trim(),
+          phone: fullPhone,
+          password: _passwordController.text,
+          role: role,
+        ),
+      ),
+    );
+  }
+
+  // 🗑️ أزرار فيسبوك/البريد اتشالت: مكانتش دخول اجتماعي حقيقي — كانت بتبعت
+  // إيميل ثابت متكتوب في الكود لراوت بيدّي توكن لأي حساب من غير أي تحقق.
+  // الراوت اتقفل في السيرفر، ولو رجع لازم يتحقق من Firebase ID token هناك.
+
+  void _showSnackBar(String text, Color bg) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(text, style: const TextStyle(fontFamily: 'Cairo')),
+        backgroundColor: bg,
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
   }
 
   void _showMerchantBlockSnackBar() {
@@ -758,55 +699,6 @@ class _WaslRegisterScreenState extends State<WaslRegisterScreen> {
                             ),
                           ),
                         ),
-                      ),
-
-                      const SizedBox(height: 24),
-                      Row(
-                        children: const [
-                          Expanded(child: Divider(color: Color(0xFFF1F5F9), endIndent: 10, thickness: 1.5)),
-                          Text('أو سجل سريعاً عبر', style: TextStyle(fontFamily: 'Cairo', fontSize: 11, color: AppColors.textSecondary, fontWeight: FontWeight.bold)),
-                          Expanded(child: Divider(color: Color(0xFFF1F5F9), indent: 10, thickness: 1.5)),
-                        ],
-                      ),
-                      const SizedBox(height: 16),
-
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          InkWell(
-                            onTap: () => _handleRegisterSocial('facebook'),
-                            borderRadius: BorderRadius.circular(16),
-                            child: Container(
-                              width: 64,
-                              height: 52,
-                              decoration: BoxDecoration(
-                                color: AppColors.white,
-                                borderRadius: BorderRadius.circular(16),
-                                border: Border.all(color: const Color(0xFFF1F5F9), width: 1.5),
-                              ),
-                              child: const Center(
-                                child: Icon(Icons.facebook_rounded, color: Color(0xFF1877F2), size: 26),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 16),
-                          InkWell(
-                            onTap: () => _handleRegisterSocial('email'),
-                            borderRadius: BorderRadius.circular(16),
-                            child: Container(
-                              width: 64,
-                              height: 52,
-                              decoration: BoxDecoration(
-                                color: AppColors.white,
-                                borderRadius: BorderRadius.circular(16),
-                                border: Border.all(color: const Color(0xFFF1F5F9), width: 1.5),
-                              ),
-                              child: const Center(
-                                child: Icon(Icons.mail_outline_rounded, color: Color(0xFF64748B), size: 24),
-                              ),
-                            ),
-                          ),
-                        ],
                       ),
 
                       const SizedBox(height: 28),

@@ -446,7 +446,6 @@ import 'package:wasl_app/screens/WaslRegisterScreen.dart';
 import 'package:wasl_app/screens/WaslForgotPasswordScreen.dart';
 import 'package:wasl_app/screens/WaslPendingScreen.dart';
 import 'package:wasl_app/delivery_screen/WaslDriverHomeScreen.dart';
-import 'package:wasl_app/customer_screen/screens/auth/WaslSocialCompleteDataScreen.dart';
 import 'package:wasl_app/services/auth_service.dart';
 import 'package:wasl_app/customer_screen/screens/home/WaslCustomerHomeScreen.dart';
 
@@ -472,69 +471,9 @@ class _WaslLoginScreenState extends State<WaslLoginScreen> {
     super.dispose();
   }
 
-  void _handleSocialLogin(String provider) async {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => const Center(child: CircularProgressIndicator(color: AppColors.primary)),
-    );
-
-    await Future.delayed(const Duration(seconds: 1));
-    if (!mounted) return;
-    Navigator.pop(context);
-
-    String dummyEmail = provider == 'facebook' ? 'ahmed_fb@wasl.com' : 'ahmed_google@wasl.com';
-    String dummyName = provider == 'facebook' ? 'Ahmed Harfoush (FB)' : 'Ahmed Talaat';
-    String dummyUid = 'social_firebase_uid_123456';
-
-    final check = await FlutterAuthService().socialLoginCheck(email: dummyEmail, firebaseUid: dummyUid);
-
-    if (check['success'] == true) {
-      if (check['isRegistered'] == true) {
-        final data = check['data'];
-        final userData = data['user'];
-        final String token = data['token'] ?? '';
-        final int realUserId = int.tryParse(userData['id']?.toString() ?? '') ?? 0;
-
-        if (!mounted) return;
-        Provider.of<UserProvider>(context, listen: false).saveUserSession(
-          id: realUserId,
-          name: userData['name'] ?? dummyName,
-          phone: userData['phone'] ?? '',
-          role: userData['role'] ?? 'customer',
-          token: token,
-        );
-
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.setInt('user_id', realUserId);
-        await prefs.setString('user_name', userData['name'] ?? dummyName);
-        await prefs.setString('user_role', userData['role'] ?? 'customer');
-        await prefs.setString('access_token', token);
-
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('مرحباً بعودتك السريعة يا ${userData['name'] ?? dummyName} 🎉', style: const TextStyle(fontFamily: 'Cairo')), backgroundColor: const Color(0xFF22C55E)),
-        );
-        Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const WaslCustomerHomeScreen()));
-      } else {
-        if (!mounted) return;
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (_) => WaslSocialCompleteDataScreen(
-              name: dummyName,
-              email: dummyEmail,
-              provider: provider,
-              firebaseUid: dummyUid,
-            ),
-          ),
-        );
-      }
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(check['message'] ?? 'فشلت عملية الدخول الاجتماعي', style: const TextStyle(fontFamily: 'Cairo')), backgroundColor: AppColors.danger),
-      );
-    }
-  }
+  // 🗑️ دالة _handleSocialLogin اتشالت: مكانتش دخول اجتماعي حقيقي — كانت بتبعت
+  // إيميل ثابت متكتوب في الكود لـ /auth/social-check، والراوت ده كان بيدّي توكن
+  // صالح لأي حساب بمجرد معرفة الإيميل. الراوت اتقفل في السيرفر (410).
 
   void _handleLogin() async {
     if (_phoneController.text.isEmpty || _passwordController.text.isEmpty) {
@@ -810,55 +749,6 @@ class _WaslLoginScreenState extends State<WaslLoginScreen> {
                         ),
                       ],
                     ),
-                  ),
-                  const SizedBox(height: 24),
-
-                  Row(
-                    children: const [
-                      Expanded(child: Divider(color: Color(0xFFF1F5F9), endIndent: 10, thickness: 1.5)),
-                      Text('أو سجل سريعاً عبر', style: TextStyle(fontFamily: 'Cairo', fontSize: 11, color: AppColors.textSecondary, fontWeight: FontWeight.bold)),
-                      Expanded(child: Divider(color: Color(0xFFF1F5F9), indent: 10, thickness: 1.5)),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      InkWell(
-                        onTap: () => _handleSocialLogin('facebook'),
-                        borderRadius: BorderRadius.circular(16),
-                        child: Container(
-                          width: 64,
-                          height: 52,
-                          decoration: BoxDecoration(
-                            color: AppColors.white,
-                            borderRadius: BorderRadius.circular(16),
-                            border: Border.all(color: const Color(0xFFF1F5F9), width: 1.5),
-                          ),
-                          child: const Center(
-                            child: Icon(Icons.facebook_rounded, color: Color(0xFF1877F2), size: 26),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 16),
-                      InkWell(
-                        onTap: () => _handleSocialLogin('email'),
-                        borderRadius: BorderRadius.circular(16),
-                        child: Container(
-                          width: 64,
-                          height: 52,
-                          decoration: BoxDecoration(
-                            color: AppColors.white,
-                            borderRadius: BorderRadius.circular(16),
-                            border: Border.all(color: const Color(0xFFF1F5F9), width: 1.5),
-                          ),
-                          child: const Center(
-                            child: Icon(Icons.mail_outline_rounded, color: Color(0xFF64748B), size: 24),
-                          ),
-                        ),
-                      ),
-                    ],
                   ),
                   const SizedBox(height: 28),
 

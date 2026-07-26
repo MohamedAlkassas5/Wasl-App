@@ -10,8 +10,9 @@ export class UsersService {
     private readonly userRepository: Repository<User>,
   ) {}
 
-  async getStatusByPhone(phone: string) {
-    const user = await this.userRepository.findOne({ where: { phone } });
+  /** Status of the caller's own account, keyed on the id carried by the JWT. */
+  async getStatusById(userId: number) {
+    const user = await this.userRepository.findOne({ where: { id: userId } });
 
     if (!user) {
       throw new NotFoundException('المستخدم غير موجود');

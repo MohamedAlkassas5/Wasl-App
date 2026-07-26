@@ -31,6 +31,14 @@ Being static, it deploys free to Netlify, Vercel, GitHub Pages, or Cloudflare
 Pages — just publish this folder. Set the API base via the `?api=` query param
 or by editing `app.js`.
 
-## Default admin
-Seeded on first backend boot (override with `ADMIN_PHONE` / `ADMIN_PASSWORD`
-env vars): **01000000000 / WaslAdmin@2026**. Change the password after first login.
+## Admin account
+There is no default admin — the backend seeder requires `ADMIN_PHONE` and
+`ADMIN_PASSWORD` and refuses to invent credentials without them.
+
+Set both in the backend environment before first boot. The password must be at
+least 12 characters; this account can approve partners and read every uploaded
+identity document, so treat it accordingly.
+
+> Earlier versions seeded **01000000000 / WaslAdmin@2026** and printed those on
+> this panel's login page. If any deployment ever booted without the env vars
+> set, assume that account exists with that password and change it now.

@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { HttpModule } from '@nestjs/axios';
 import { OtpVerification } from './entities/otp-verification.entity';
@@ -12,7 +12,9 @@ import { AuthModule } from '../auth/auth.module';
   imports: [
     TypeOrmModule.forFeature([OtpVerification]),
     HttpModule,
-    AuthModule,
+    // AuthService gates registration on a verified phone, OtpController issues
+    // the session — the two modules need each other.
+    forwardRef(() => AuthModule),
   ],
   controllers: [OtpController],
   providers: [

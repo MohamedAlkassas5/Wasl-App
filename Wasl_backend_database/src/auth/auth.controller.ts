@@ -1,18 +1,24 @@
 import {
   Body,
   Controller,
+  GoneException,
   Post,
   Delete,
   Param,
   UploadedFiles,
+  UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
 import { FileFieldsInterceptor } from '@nestjs/platform-express';
+import { Throttle } from '@nestjs/throttler';
 import { diskStorage } from 'multer';
 import { extname } from 'path';
 import * as fs from 'fs';
 
 import { AuthService } from './auth.service';
+import { JwtAuthGuard } from './jwt-auth.guard';
+import { AuthUser, CurrentUser } from './current-user';
+import { UserRole } from '../users/entities/user.entity';
 import { RegisterDto } from './register.dto';
 import { LoginDto } from './login.dto';
 
@@ -22,6 +28,8 @@ export class AuthController {
 
   // 🎯 تم إزالة الـ Endpoint الخاصة بـ verify-otp لأن التحقق أصبح يتم بالكامل داخل الفلاتر عبر Firebase
 
+  // Registration writes files to disk — cap it hard per IP.
+  @Throttle({ default: { limit: 5, ttl: 3_600_000 } })
   @Post('register')
   @UseInterceptors(
     FileFieldsInterceptor(
@@ -87,46 +95,51 @@ export class AuthController {
     );
   }
 
+  // Password endpoint: 10 attempts per 5 minutes per IP blunts credential
+  // stuffing without locking out a user who fat-fingers their password.
+  @Throttle({ default: { limit: 10, ttl: 300_000 } })
   @Post('login')
   login(@Body() loginDto: LoginDto) {
     return this.authService.login(loginDto);
   }
 
-  // 🌐 2️⃣ [تم الإصلاح ومسح await] فحص الدخول الاجتماعي عبر البريد أو فيسبوك من الفلاتر لتأمين الدخول السريع
+  /**
+   * 🚫 DISABLED — this was a full account-takeover hole.
+   *
+   * It looked a user up by `email` OR `firebaseUid` and, on a match, minted a
+   * session token. Neither value was ever verified: posting a known email
+   * address was enough to receive a valid JWT for that account. The Flutter
+   * side never performed real Google/Facebook sign-in either — it sent a
+   * hardcoded address (`ahmed_google@wasl.com`), so nothing legitimate depends
+   * on this route.
+   *
+   * To bring social login back it must verify a real Firebase ID token
+   * server-side (firebase-admin `verifyIdToken`) and trust only the uid inside
+   * that verified token. Until then, phone + WhatsApp OTP is the login path.
+   */
   @Post('social-check')
-  async socialCheck(@Body() body: { email: string; firebaseUid: string }) {
-    const { email, firebaseUid } = body;
-
-    // البحث في قاعدة البيانات عن المستخدم بالبريد أو الـ UID من خلال الـ authService
-    const user = await this.authService.findOneByEmailOrUid(email, firebaseUid);
-
-    if (user) {
-      // 🎉 الحساب مسجل فعلياً! توليد Access Token مباشرة بدون await لأن الدالة زامنية (Sync)
-      const token = this.authService.generateJwtToken(user);
-      return {
-        success: true,
-        isRegistered: true,
-        data: {
-          user: user,
-          token: token,
-        },
-      };
-    }
-
-    // 🆕 الحساب جديد تماماً ومحتاج يروح لشاشة استكمال البيانات في الفلاتر
-    return {
-      success: true,
-      isRegistered: false,
-      message: 'الحساب غير مسجل، يرجى استكمال البيانات الجغرافية ورقم الهاتف.',
-    };
+  socialCheck(): never {
+    throw new GoneException(
+      'الدخول عبر الحسابات الاجتماعية غير متاح حالياً، يرجى الدخول برقم الهاتف',
+    );
   }
 
+  /**
+   * Account deletion. Previously unauthenticated: anyone who knew (or guessed)
+   * a phone number could wipe that account. Now the caller must hold a valid
+   * token, and a non-admin can only delete themselves — the `:phone` in the URL
+   * is ignored for them and the id comes from the token.
+   */
+  @UseGuards(JwtAuthGuard)
   @Delete(':phone')
   async deleteAccount(
+    @CurrentUser() requester: AuthUser,
     @Param('phone') phone: string,
   ): Promise<{ success: boolean; message: string }> {
-    const cleanPhone = phone.replace(/[^a-zA-Z0-9]/g, '');
-    return await this.authService.deleteAccountByPhone(cleanPhone);
+    if (requester.role === UserRole.ADMIN) {
+      return await this.authService.deleteAccountByPhone(phone);
+    }
+    return await this.authService.deleteAccountById(requester.sub);
   }
 }
 // import {

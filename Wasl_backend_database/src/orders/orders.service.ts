@@ -2,6 +2,7 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
+  ForbiddenException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, LessThan } from 'typeorm';
@@ -16,6 +17,8 @@ import { DeliveryService } from '../delivery/delivery.service';
 import { PaymentsService } from '../payments/payments.service';
 import { WalletTxType } from '../payments/entities/wallet-transaction.entity';
 import { haversineKm, roundKm, isValidCoordinate } from '../common/geo.util';
+import { AuthUser } from '../auth/current-user';
+import { UserRole } from '../users/entities/user.entity';
 
 @Injectable()
 export class OrdersService {
@@ -36,6 +39,42 @@ export class OrdersService {
     private readonly deliveryService: DeliveryService,
     private readonly paymentsService: PaymentsService,
   ) {}
+
+  /**
+   * 🔐 Loads an order and asserts the caller is allowed to see/touch it.
+   * `as` narrows the allowed relationship: the order's customer, its assigned
+   * driver, or either. Admins always pass.
+   */
+  private async getOrderFor(
+    orderId: number,
+    user: AuthUser,
+    as: 'customer' | 'driver' | 'any',
+  ): Promise<Order> {
+    const order = await this.orderRepository.findOne({
+      where: { id: orderId },
+    });
+    if (!order) {
+      throw new NotFoundException('الطلب غير موجود');
+    }
+    if (user.role === UserRole.ADMIN) return order;
+
+    const isCustomer = Number(order.customerId) === Number(user.sub);
+    const isDriver =
+      order.acceptedDriverId != null &&
+      Number(order.acceptedDriverId) === Number(user.sub);
+
+    const allowed =
+      as === 'customer'
+        ? isCustomer
+        : as === 'driver'
+          ? isDriver
+          : isCustomer || isDriver;
+
+    if (!allowed) {
+      throw new ForbiddenException('عفواً، هذا الطلب لا يخصك');
+    }
+    return order;
+  }
 
   // 🔔 دالة داخلية لإنشاء وحفظ الإشعارات تلقائياً في قاعدة البيانات
   async createNotification(userId: number, title: string, message: string) {
@@ -231,7 +270,10 @@ export class OrdersService {
     return savedOffer;
   }
 
-  async getOrderOffers(orderId: number) {
+  // 🔐 Offers reveal which drivers bid and for how much — only the order's own
+  // customer (or an admin) may read them.
+  async getOrderOffers(orderId: number, user: AuthUser) {
+    await this.getOrderFor(orderId, user, 'customer');
     return await this.offerRepository.find({
       where: {
         orderId,
@@ -243,7 +285,10 @@ export class OrdersService {
   }
 
   // 🎯 قبول العرض من العميل + إشعار فوري للكابتن لبدء الرحلة
-  async acceptOffer(orderId: number, offerId: number) {
+  // 🔐 Only the order's own customer may accept an offer on it.
+  async acceptOffer(orderId: number, offerId: number, user: AuthUser) {
+    const order = await this.getOrderFor(orderId, user, 'customer');
+
     const offer = await this.offerRepository.findOne({
       where: {
         id: offerId,
@@ -254,14 +299,14 @@ export class OrdersService {
       throw new NotFoundException('العرض غير موجود');
     }
 
-    const order = await this.orderRepository.findOne({
-      where: {
-        id: orderId,
-      },
-    });
+    // The offer must belong to this order — otherwise a customer could accept
+    // an unrelated (cheaper) offer from someone else's order.
+    if (Number(offer.orderId) !== Number(orderId)) {
+      throw new BadRequestException('هذا العرض لا يخص هذا الطلب');
+    }
 
-    if (!order) {
-      throw new NotFoundException('الطلب غير موجود');
+    if (order.status !== OrderStatus.PENDING_OFFERS) {
+      throw new BadRequestException('تم قبول عرض لهذا الطلب بالفعل');
     }
 
     order.status = OrderStatus.ACCEPTED;
@@ -303,13 +348,20 @@ export class OrdersService {
       itemsPrice?: number;
       invoiceImageUrl?: string;
     },
+    user?: AuthUser,
   ) {
-    const order = await this.orderRepository.findOne({
-      where: { id: orderId },
-    });
+    // 🔐 Status drives money (completion debits the driver's wallet), so only
+    // the order's assigned driver — or an admin — may advance it.
+    const order = user
+      ? await this.getOrderFor(orderId, user, 'driver')
+      : await this.orderRepository.findOne({ where: { id: orderId } });
 
     if (!order) {
       throw new NotFoundException('الطلب غير موجود');
+    }
+
+    if (!Object.values(OrderStatus).includes(status)) {
+      throw new BadRequestException('حالة الطلب غير صالحة');
     }
 
     order.status = status;
@@ -417,7 +469,11 @@ export class OrdersService {
     return await this.deliveryRepository.remove(driver);
   }
 
-  async getOrderDetailsForCustomer(orderId: number) {
+  // 🔐 Live tracking exposes the customer's address/phone and the driver's GPS,
+  // so it is limited to the two parties on the order (or an admin).
+  async getOrderDetailsForCustomer(orderId: number, user: AuthUser) {
+    await this.getOrderFor(orderId, user, 'any');
+
     const order = await this.orderRepository.findOne({
       where: { id: orderId },
       relations: {
@@ -600,8 +656,21 @@ export class OrdersService {
     }
   }
 
-  // 🎯 حذف إشعار فردي من قاعدة البيانات
-  async deleteNotification(id: number) {
+  // 🎯 حذف إشعار فردي من قاعدة البيانات (لصاحبه فقط)
+  async deleteNotification(id: number, user: AuthUser) {
+    const notification = await this.notificationRepository.findOne({
+      where: { id },
+    });
+    if (!notification) {
+      throw new NotFoundException('الإشعار غير موجود');
+    }
+    if (
+      user.role !== UserRole.ADMIN &&
+      Number(notification.userId) !== Number(user.sub)
+    ) {
+      throw new ForbiddenException('عفواً، هذا الإشعار لا يخصك');
+    }
+
     await this.notificationRepository.delete(id);
     console.log(`🗑️ [NOTIF CLEAR] تم حذف الإشعار رقم: ${id}`);
   }
@@ -615,7 +684,27 @@ export class OrdersService {
   }
 
   // 🎯 دالة تحديث وتقييم الكابتن وحساب المتوسط الحسابي لايف
-  async updateDriverRating(driverId: number, newRating: number) {
+  // 🔐 `raterCustomerId` must be a customer who actually completed an order with
+  // this driver — without it, anyone could inflate or tank a captain's rating.
+  async updateDriverRating(
+    driverId: number,
+    newRating: number,
+    raterCustomerId: number,
+  ) {
+    const completedTogether = await this.orderRepository.findOne({
+      where: {
+        customerId: raterCustomerId,
+        acceptedDriverId: driverId,
+        status: OrderStatus.COMPLETED,
+      },
+    });
+
+    if (!completedTogether) {
+      throw new ForbiddenException(
+        'يمكنك تقييم الكابتن فقط بعد إتمام طلب معه',
+      );
+    }
+
     const driver = await this.deliveryRepository.findOne({
       where: { userId: driverId },
     });
@@ -636,14 +725,4 @@ export class OrdersService {
     return { success: true, rating: driver.rating };
   }
 
-  // 🔒 [SECURITY] Self-service wallet crediting has been removed. Drivers can
-  // no longer top up their own balance directly (this was exploitable). Top-ups
-  // now go through PaymentsService: the driver files a request with proof of a
-  // Vodafone Cash / InstaPay transfer, and an admin verifies it before the
-  // balance is credited. This stub stays only to reject any legacy callers.
-  processDriverTopUp(_driverId: number, _amount: number) {
-    throw new BadRequestException(
-      'شحن المحفظة يتم الآن عبر طلب شحن يوثّقه الأدمن بعد التحويل. الشحن الذاتي غير متاح.',
-    );
-  }
 }

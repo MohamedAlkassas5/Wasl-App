@@ -22,13 +22,19 @@ import { OrdersService } from './orders.service';
 import { OrderStatus } from './entities/order.entity';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import {
+  CurrentUser,
+  AuthUser,
+  assertSelfOrAdmin,
+} from '../auth/current-user';
 
 const orderUploadPath = './uploads/orders';
 
-// 🔐 Every order/wallet/offer/notification route requires a valid JWT. Closes
-// the previous broken-access-control hole where any client could act as any
-// user by passing an id. The Flutter app attaches the Bearer token on all
-// order-service calls.
+// 🔐 Every order/wallet/offer/notification route requires a valid JWT, AND the
+// caller's own id (from the token) is what identifies them — ids in the URL or
+// body are authorization-checked against it, never trusted on their own. This
+// closes the broken-access-control hole where any logged-in client could act as
+// any other user by passing their id.
 @Controller('orders')
 @UseGuards(JwtAuthGuard)
 export class OrdersController {
@@ -52,14 +58,17 @@ export class OrdersController {
     }),
   )
   create(
+    @CurrentUser() user: AuthUser,
     @UploadedFile() file: Express.Multer.File,
     @Body() createOrderDto: CreateOrderDto,
   ) {
-    if (!createOrderDto || !createOrderDto.customerId) {
-      throw new BadRequestException(
-        'معرف العميل (customerId) مطلوب لإنشاء الطلب',
-      );
+    if (!createOrderDto) {
+      throw new BadRequestException('بيانات الطلب غير مكتملة');
     }
+
+    // 🔐 The order is always created for the authenticated caller. A client-sent
+    // customerId is ignored so nobody can place orders in someone else's name.
+    createOrderDto.customerId = user.sub;
 
     // 2. معالجة وتأمين قائمة الأصناف
     if (typeof createOrderDto.items === 'string') {
@@ -89,40 +98,42 @@ export class OrdersController {
       createOrderDto.itemsImageUrl = `uploads/orders/${file.filename}`;
     }
 
-    return this.ordersService.createOrder(
-      Number(createOrderDto.customerId),
-      createOrderDto,
-    );
+    return this.ordersService.createOrder(user.sub, createOrderDto);
   }
 
-  // 🎯 جلب الطلبات المتاحة حياً للسوق اللوجستي + طلبات الكابتن النشطة عبر الـ Query Parameter
+  // 🎯 جلب الطلبات المتاحة حياً للسوق اللوجستي + طلبات الكابتن النشطة
+  // 🔐 The marketplace is always scoped to the calling driver.
   @Get('available')
-  getAvailable(@Query('driverId') driverId?: string) {
-    return this.ordersService.getAvailableOrders(
-      driverId ? Number(driverId) : undefined,
-    );
+  getAvailable(@CurrentUser() user: AuthUser) {
+    return this.ordersService.getAvailableOrders(user.sub);
   }
 
   // 🎯 جلب طلبات عميل محدد فقط (بدون تسريب بيانات العملاء الآخرين)
   @Get('customer/:customerId')
   getCustomerOrders(
+    @CurrentUser() user: AuthUser,
     @Param('customerId', ParseIntPipe) customerId: number,
   ) {
+    assertSelfOrAdmin(user, customerId);
     return this.ordersService.getCustomerOrders(customerId);
   }
 
   @Get('driver/:driverId/online-status')
   getDriverOnlineStatus(
+    @CurrentUser() user: AuthUser,
     @Param('driverId', ParseIntPipe) driverId: number,
   ) {
+    assertSelfOrAdmin(user, driverId);
     return this.ordersService.getDriverOnlineStatus(driverId);
   }
 
   @Patch('driver/:driverId/online-status')
   setDriverOnlineStatus(
+    @CurrentUser() user: AuthUser,
     @Param('driverId', ParseIntPipe) driverId: number,
     @Body('isOnline') isOnline: boolean,
   ) {
+    assertSelfOrAdmin(user, driverId);
     return this.ordersService.setDriverOnlineStatus(
       driverId,
       Boolean(isOnline),
@@ -132,8 +143,10 @@ export class OrdersController {
   // 🚀 مسار إحصائيات لوحة التحكم الشامل والمزامنة الآنية
   @Get('driver/:driverId/dashboard-stats')
   async getDriverDashboardStats(
+    @CurrentUser() user: AuthUser,
     @Param('driverId', ParseIntPipe) driverId: number,
   ) {
+    assertSelfOrAdmin(user, driverId);
     const driver = await this.ordersService.getDriverProfile(driverId);
 
     const todayStart = new Date();
@@ -170,71 +183,71 @@ export class OrdersController {
   }
 
   // 🎯 مسار إرسال تقييم جديد لكابتن محدد وحساب المتوسط الحسابي فوراً من العميل لايف
+  // 🔐 Only a customer who actually had a completed order with this driver may
+  // rate them — otherwise ratings could be brigaded by anyone with an account.
   @Post('driver/:driverId/rate')
   async rateDriver(
+    @CurrentUser() user: AuthUser,
     @Param('driverId', ParseIntPipe) driverId: number,
     @Body('rating') rating: number,
   ) {
     const validatedRating = Math.max(1, Math.min(5, Number(rating || 5)));
-    return this.ordersService.updateDriverRating(driverId, validatedRating);
-  }
-
-  @Patch('driver/:driverId/topup-request')
-  requestTopUp(
-    @Param('driverId', ParseIntPipe) driverId: number,
-    @Body('amount') amount: number,
-  ) {
-    const validatedAmount = Math.max(0, Number(amount || 0));
-    return {
-      success: true,
-      message: 'تم توليد طلب الشحن بنجاح',
-      paymentUrl: `https://mock-gateway.wasl.com/pay?driverId=${driverId}&amount=${validatedAmount}`,
-    };
-  }
-
-  // 🚀 الـ Webhook الحاسم والمؤمن فور نجاح السداد
-  @Post('payment/webhook')
-  async handlePaymentWebhook(
-    @Body() body: { driverId: number; amount: number; status: string },
-  ) {
-    if (body && body.status === 'success' && body.driverId) {
-      return this.ordersService.processDriverTopUp(
-        Number(body.driverId),
-        Number(body.amount || 0),
-      );
-    }
-    return { success: false, message: 'طلب دفع غير مكتمل أو مشوه' };
+    return this.ordersService.updateDriverRating(
+      driverId,
+      validatedRating,
+      user.sub,
+    );
   }
 
   // 🎯 مسار جلب الإشعارات الحية وغير المقروءة للعميل والمندوب فوراً
   @Get('user/:userId/notifications')
-  getNotifications(@Param('userId', ParseIntPipe) userId: number) {
+  getNotifications(
+    @CurrentUser() user: AuthUser,
+    @Param('userId', ParseIntPipe) userId: number,
+  ) {
+    assertSelfOrAdmin(user, userId);
     return this.ordersService.getUnreadNotifications(userId);
   }
 
-  // 🎯 مسار حذف إشعار فردي محدد
+  // 🎯 مسار حذف إشعار فردي محدد (لصاحب الإشعار فقط)
   @Delete('notifications/:id')
-  async deleteNotification(@Param('id', ParseIntPipe) id: number) {
-    await this.ordersService.deleteNotification(id);
+  async deleteNotification(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseIntPipe) id: number,
+  ) {
+    await this.ordersService.deleteNotification(id, user);
     return { success: true, message: 'تم مسح الإشعار بنجاح' };
   }
 
   // 🎯 مسار مسح وتصفية كل إشعارات العميل أو الكابتن دفعة واحدة
   @Delete('user/:userId/notifications/clear-all')
-  async clearAllNotifications(@Param('userId', ParseIntPipe) userId: number) {
+  async clearAllNotifications(
+    @CurrentUser() user: AuthUser,
+    @Param('userId', ParseIntPipe) userId: number,
+  ) {
+    assertSelfOrAdmin(user, userId);
     await this.ordersService.clearAllUserNotifications(userId);
     return { success: true, message: 'تم مسح مركز الإشعارات بالكامل' };
   }
 
   // 🎯 مسار تتبع العميل لقراءة التفاصيل الحية
+  // 🔐 Restricted to the order's own customer, its assigned driver, or an admin.
   @Get(':id/customer-details')
-  async getCustomerOrderDetails(@Param('id', ParseIntPipe) id: number) {
-    return this.ordersService.getOrderDetailsForCustomer(id);
+  async getCustomerOrderDetails(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseIntPipe) id: number,
+  ) {
+    return this.ordersService.getOrderDetailsForCustomer(id, user);
   }
 
   // 🎯 مسار أمني حاسم لحذف حساب الكابتن نهائياً من قاعدة البيانات (PostgreSQL)
+  // 🔐 A driver may delete only their own account; admins may delete any.
   @Delete('driver/:driverId')
-  async deleteDriverAccount(@Param('driverId', ParseIntPipe) driverId: number) {
+  async deleteDriverAccount(
+    @CurrentUser() user: AuthUser,
+    @Param('driverId', ParseIntPipe) driverId: number,
+  ) {
+    assertSelfOrAdmin(user, driverId);
     await this.ordersService.deleteDriverProfile(driverId);
     return {
       success: true,
@@ -242,34 +255,43 @@ export class OrdersController {
     };
   }
 
+  // 🔐 The bidding driver is taken from the token, so nobody can submit an
+  // offer in another captain's name (and charge their wallet).
   @Post(':id/submit-offer')
   submitOffer(
+    @CurrentUser() user: AuthUser,
     @Param('id', ParseIntPipe) orderId: number,
     @Body()
-    body: { driverId: number; deliveryFee: number; estimatedTime: number },
+    body: { deliveryFee: number; estimatedTime: number },
   ) {
-    if (!body || !body.driverId) {
+    if (!body) {
       throw new BadRequestException('بيانات تقديم العرض غير مكتملة');
     }
     return this.ordersService.submitOffer(
-      Number(body.driverId),
+      user.sub,
       orderId,
       Number(body.deliveryFee || 0),
       Number(body.estimatedTime || 15),
     );
   }
 
+  // 🔐 Offers on an order are visible only to that order's customer (or admin).
   @Get(':id/offers')
-  getOffers(@Param('id', ParseIntPipe) orderId: number) {
-    return this.ordersService.getOrderOffers(orderId);
+  getOffers(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseIntPipe) orderId: number,
+  ) {
+    return this.ordersService.getOrderOffers(orderId, user);
   }
 
+  // 🔐 Only the order's own customer may accept an offer on it.
   @Post(':id/offers/:offerId/accept')
   acceptOffer(
+    @CurrentUser() user: AuthUser,
     @Param('id', ParseIntPipe) orderId: number,
     @Param('offerId', ParseIntPipe) offerId: number,
   ) {
-    return this.ordersService.acceptOffer(orderId, offerId);
+    return this.ordersService.acceptOffer(orderId, offerId, user);
   }
 
   // 🧾 Driver uploads the purchase receipt/invoice image at pickup. Sets the
@@ -294,6 +316,7 @@ export class OrdersController {
     }),
   )
   uploadInvoice(
+    @CurrentUser() user: AuthUser,
     @Param('id', ParseIntPipe) orderId: number,
     @UploadedFile() file: Express.Multer.File,
     @Body() body: { itemsPrice?: number },
@@ -301,14 +324,22 @@ export class OrdersController {
     const invoiceImageUrl = file?.filename
       ? `uploads/invoices/${file.filename}`
       : undefined;
-    return this.ordersService.updateStatus(orderId, OrderStatus.ITEMS_BOUGHT, {
-      itemsPrice: body?.itemsPrice ? Number(body.itemsPrice) : undefined,
-      invoiceImageUrl,
-    });
+    return this.ordersService.updateStatus(
+      orderId,
+      OrderStatus.ITEMS_BOUGHT,
+      {
+        itemsPrice: body?.itemsPrice ? Number(body.itemsPrice) : undefined,
+        invoiceImageUrl,
+      },
+      user,
+    );
   }
 
+  // 🔐 Only the order's assigned driver (or an admin) may move its status —
+  // previously any caller could mark any order completed.
   @Patch(':id/status')
   updateStatus(
+    @CurrentUser() user: AuthUser,
     @Param('id', ParseIntPipe) orderId: number,
     @Query('status') status: OrderStatus,
     @Body() body: { itemsPrice?: number; invoiceImageUrl?: string },
@@ -317,154 +348,11 @@ export class OrdersController {
       itemsPrice: body?.itemsPrice ? Number(body.itemsPrice) : undefined,
       invoiceImageUrl: body?.invoiceImageUrl || undefined,
     };
-    return this.ordersService.updateStatus(orderId, status, parsedBody);
+    return this.ordersService.updateStatus(
+      orderId,
+      status,
+      parsedBody,
+      user,
+    );
   }
 }
-// import {
-//   Controller,
-//   Post,
-//   Get,
-//   Delete,
-//   Body,
-//   Param,
-//   Patch,
-//   Query,
-//   ParseIntPipe,
-//   BadRequestException,
-//   UseInterceptors,
-//   UploadedFile,
-// } from '@nestjs/common';
-// import { FileInterceptor } from '@nestjs/platform-express';
-// import { OrdersService } from './orders.service';
-// import { OrderStatus } from './entities/order.entity';
-// import { CreateOrderDto } from './dto/create-order.dto';
-
-// @Controller('orders')
-// export class OrdersController {
-//   constructor(private readonly ordersService: OrdersService) {}
-
-//   // 🛠️ مسار إنشاء الطلب (تم التحديث لدعم رفع الصور)
-//   // في الـ Controller، تأكد من استخدام الـ DTO
-//   // في الـ Controller، تأكد من استخدام الـ DTO
-//   @Post('create')
-//   @UseInterceptors(FileInterceptor('file'))
-//   async create(
-//     @UploadedFile() file: Express.Multer.File,
-//     @Body() createOrderDto: CreateOrderDto, // استخدم DTO هنا
-//   ) {
-//     // تأكد من تمرير البيانات للـ service بشكل صحيح
-//     const data = {
-//       ...createOrderDto,
-//       itemsImageUrl: file?.path || null,
-//       itemsPrice: Number(createOrderDto.itemsPrice || 0),
-//     };
-
-//     return await this.ordersService.createOrder(
-//       Number(createOrderDto.customerId),
-//       data as CreateOrderDto, // تمرير البيانات
-//     );
-//   }
-
-//   // 🎯 جلب الطلبات المتاحة
-//   @Get('available')
-//   async getAvailable(@Query('driverId') driverId?: string) {
-//     return await this.ordersService.getAvailableOrders(
-//       driverId ? Number(driverId) : undefined,
-//     );
-//   }
-
-//   // 🚀 إحصائيات لوحة التحكم
-//   @Get('driver/:driverId/dashboard-stats')
-//   async getDriverDashboardStats(
-//     @Param('driverId', ParseIntPipe) driverId: number,
-//   ) {
-//     return await this.ordersService.getDriverDashboardStats(driverId);
-//   }
-
-//   // 🎯 تقييم الكابتن
-//   @Post('driver/:driverId/rate')
-//   async rateDriver(
-//     @Param('driverId', ParseIntPipe) driverId: number,
-//     @Body('rating') rating: number,
-//   ) {
-//     return this.ordersService.updateDriverRating(
-//       driverId,
-//       Math.max(1, Math.min(5, Number(rating || 5))),
-//     );
-//   }
-
-//   // 💳 طلب شحن
-//   @Patch('driver/:driverId/topup-request')
-//   requestTopUp(
-//     @Param('driverId', ParseIntPipe) driverId: number,
-//     @Body('amount') amount: number,
-//   ) {
-//     return {
-//       success: true,
-//       message: 'تم توليد طلب الشحن بنجاح',
-//       paymentUrl: `https://mock-gateway.wasl.com/pay?driverId=${driverId}&amount=${Math.max(0, Number(amount || 0))}`,
-//     };
-//   }
-
-//   // 🚀 Webhook للسداد
-//   @Post('payment/webhook')
-//   async handlePaymentWebhook(
-//     @Body() body: { driverId: number; amount: number; status: string },
-//   ) {
-//     if (body?.status === 'success' && body.driverId) {
-//       return await this.ordersService.processDriverTopUp(
-//         Number(body.driverId),
-//         Number(body.amount || 0),
-//       );
-//     }
-//     throw new BadRequestException('بيانات دفع غير مكتملة');
-//   }
-
-//   // 🔔 إدارة الإشعارات
-//   @Get('user/:userId/notifications')
-//   getNotifications(@Param('userId', ParseIntPipe) userId: number) {
-//     return this.ordersService.getUnreadNotifications(userId);
-//   }
-
-//   @Delete('notifications/:id')
-//   async deleteNotification(@Param('id', ParseIntPipe) id: number) {
-//     await this.ordersService.deleteNotification(id);
-//     return { success: true, message: 'تم مسح الإشعار بنجاح' };
-//   }
-
-//   // 📦 العروض والقبول
-//   @Post(':id/submit-offer')
-//   submitOffer(
-//     @Param('id', ParseIntPipe) orderId: number,
-//     @Body()
-//     body: { driverId: number; deliveryFee: number; estimatedTime: number },
-//   ) {
-//     return this.ordersService.submitOffer(
-//       Number(body.driverId),
-//       orderId,
-//       Number(body.deliveryFee || 0),
-//       Number(body.estimatedTime || 15),
-//     );
-//   }
-
-//   @Post(':id/offers/:offerId/accept')
-//   acceptOffer(
-//     @Param('id', ParseIntPipe) orderId: number,
-//     @Param('offerId', ParseIntPipe) offerId: number,
-//   ) {
-//     return this.ordersService.acceptOffer(orderId, offerId);
-//   }
-
-//   // 🔄 تحديث الحالة
-//   @Patch(':id/status')
-//   updateStatus(
-//     @Param('id', ParseIntPipe) orderId: number,
-//     @Query('status') status: OrderStatus,
-//     @Body() body: { itemsPrice?: number; invoiceImageUrl?: string },
-//   ) {
-//     return this.ordersService.updateStatus(orderId, status, {
-//       itemsPrice: body?.itemsPrice ? Number(body.itemsPrice) : undefined,
-//       invoiceImageUrl: body?.invoiceImageUrl,
-//     });
-//   }
-// }

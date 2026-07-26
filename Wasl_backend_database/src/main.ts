@@ -1,14 +1,17 @@
 import { ValidationPipe } from '@nestjs/common'; // 🎯 استيراد الـ ValidationPipe
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
-import * as express from 'express';
-import { join } from 'path'; // 👈 استيراد دالة join لإدارة مسارات الفولدرات بداخل السيرفر
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
   // 🌐 [تم الإضافة]: تفعيل الـ CORS لتأمين قنوات الاتصال وفك حظر المحاكي والأجهزة الخارجية
   app.enableCors();
+
+  // 🛡️ Behind Render/Railway the app sees the proxy's IP unless we trust the
+  // X-Forwarded-For header. Without this the rate limiter would count every
+  // request as coming from one address.
+  app.getHttpAdapter().getInstance().set('trust proxy', 1);
 
   // 🎯 تفعيل الفحص البرمجي الشامل والتحويل التلقائي للبيانات بداخل السيرفر
   app.useGlobalPipes(
@@ -18,8 +21,9 @@ async function bootstrap() {
     }),
   );
 
-  // 🎯 السطر السحري: يفتح منفذ عام لرؤية وتحميل الصور والمستندات من فولدر uploads
-  app.use('/uploads', express.static(join(__dirname, '..', 'uploads')));
+  // 🔐 uploads/ is NOT served statically any more. National IDs, selfies and
+  // payment-proof screenshots live there; they now go through FilesController,
+  // which requires a token and checks that the caller owns the document.
 
   // 🚀 [تم التحديث]: تشغيل السيرفر ليستقبل الاتصالات اللوجستية الحية من الموبايل والمحاكي بسلاسة
   const port = process.env.PORT ?? 3000;

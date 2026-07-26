@@ -1,9 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:country_picker/country_picker.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:wasl_app/screens/WaslOtpScreen.dart';
 import 'package:wasl_app/core/theme/app_colors.dart';
-import 'package:wasl_app/services/auth_service.dart';
+import 'package:wasl_app/services/whatsapp_otp_service.dart';
 
 class WaslForgotPasswordScreen extends StatefulWidget {
   const WaslForgotPasswordScreen({Key? key}) : super(key: key);
@@ -24,16 +23,12 @@ class _WaslForgotPasswordScreenState extends State<WaslForgotPasswordScreen> {
     super.dispose();
   }
 
-  // 🎯 طلب الـ OTP الحي عبر فايربيز للتحقق الفعلي قبل إتاحة تحديث كلمة المرور
+  // 📲 رمز التحقق بيتبعت من السيرفر على واتساب. مش بنفحص هنا لو الرقم له حساب
+  // ولا لأ — الرد بيبقى واحد في الحالتين علشان محدش يستخدم الشاشة دي علشان
+  // يعرف مين مسجّل عندنا؛ الفحص ده بيحصل بعد التحقق من الكود.
   void _submitForgotPassword() async {
     if (_phoneController.text.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('يرجى إدخال رقم الجوال أولاً ⚠️', style: TextStyle(fontFamily: 'Cairo')),
-          backgroundColor: AppColors.danger,
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
+      _showSnackBar('يرجى إدخال رقم الجوال أولاً ⚠️', AppColors.danger);
       return;
     }
 
@@ -49,37 +44,37 @@ class _WaslForgotPasswordScreenState extends State<WaslForgotPasswordScreen> {
     if (cleanPhone.startsWith('0')) cleanPhone = cleanPhone.substring(1);
     String fullPhone = '+$_selectedCountryCode$cleanPhone';
 
-    // 🔥 طلب الـ OTP من Firebase لمسار نسيت كلمة المرور وتمريره للمنظومة
-    await FlutterAuthService().sendFirebaseOtp(
-      phone: fullPhone,
-      onCodeSent: (String verificationId) {
-        Navigator.pop(context); // إغلاق الـ Loading Dialog
+    final result = await WhatsappOtpService().sendOtp(fullPhone);
 
-        // الانتقال لشاشة الـ OTP وتأكيد مسار استعادة الحساب لإعادة التعيين لاحقاً
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (_) => WaslOtpScreen(
-              phone: fullPhone,
-              isFromForgotPassword: true, // إشارة لشاشة الـ OTP لتفعيل واجهة تحديث الباسورد بالـ Backend بعد التحقق
-              verificationId: verificationId,
-            ),
-          ),
-        );
-      },
-      onFailed: (FirebaseAuthException e) {
-        Navigator.pop(context); // إغلاق الـ Loading Dialog
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('فشل إرسال الرمز: ${e.message}', style: const TextStyle(fontFamily: 'Cairo')),
-            backgroundColor: AppColors.danger,
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-      },
+    if (!mounted) return;
+    Navigator.pop(context); // إغلاق الـ Loading Dialog
+    setState(() => _isLoading = false);
+
+    if (result['success'] != true) {
+      _showSnackBar(result['message'] ?? 'تعذّر إرسال رمز التحقق', AppColors.danger);
+      return;
+    }
+
+    // الانتقال لشاشة الـ OTP وتأكيد مسار استعادة الحساب لإعادة التعيين بعد التحقق
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => WaslOtpScreen(
+          phone: fullPhone,
+          isFromForgotPassword: true,
+        ),
+      ),
     );
+  }
 
-    if (mounted) setState(() => _isLoading = false);
+  void _showSnackBar(String text, Color bg) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(text, style: const TextStyle(fontFamily: 'Cairo')),
+        backgroundColor: bg,
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
   }
 
   @override

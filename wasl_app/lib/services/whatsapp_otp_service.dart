@@ -30,7 +30,7 @@ class WhatsappOtpService {
       }
       return {
         'success': false,
-        'message': decoded['message'] ?? 'تعذّر إرسال رمز التحقق',
+        'message': _firstMessage(decoded) ?? 'تعذّر إرسال رمز التحقق',
       };
     } on TimeoutException {
       return {'success': false, 'message': 'انتهى وقت الاتصال بالسيرفر.'};
@@ -60,12 +60,58 @@ class WhatsappOtpService {
       }
       return {
         'success': false,
-        'message': decoded['message'] ?? 'رمز التحقق غير صحيح',
+        'message': _firstMessage(decoded) ?? 'رمز التحقق غير صحيح',
       };
     } on TimeoutException {
       return {'success': false, 'message': 'انتهى وقت الاتصال بالسيرفر.'};
     } catch (e) {
       return {'success': false, 'message': 'خطأ في الاتصال: $e'};
     }
+  }
+
+  /// Complete a forgot-password flow. The code is sent again with the new
+  /// password so the server ties the change to a proven OTP rather than to a
+  /// phone number alone.
+  Future<Map<String, dynamic>> resetPassword({
+    required String phone,
+    required String code,
+    required String newPassword,
+  }) async {
+    final url = Uri.parse('$baseUrl/auth/otp/reset-password');
+    try {
+      final response = await http
+          .post(
+            url,
+            headers: WaslApiConfig.jsonHeaders,
+            body: jsonEncode({
+              'phone': phone,
+              'code': code,
+              'newPassword': newPassword,
+            }),
+          )
+          .timeout(const Duration(seconds: 15));
+      final decoded = jsonDecode(response.body);
+      if (response.statusCode >= 200 && response.statusCode < 300) {
+        return {'success': true, 'data': decoded};
+      }
+      return {
+        'success': false,
+        'message': _firstMessage(decoded) ?? 'تعذّر تحديث كلمة المرور',
+      };
+    } on TimeoutException {
+      return {'success': false, 'message': 'انتهى وقت الاتصال بالسيرفر.'};
+    } catch (e) {
+      return {'success': false, 'message': 'خطأ في الاتصال: $e'};
+    }
+  }
+
+  /// Nest's validation pipe returns `message` as a list of strings; every other
+  /// error returns a plain string. Flatten both to one line for the UI.
+  static String? _firstMessage(dynamic decoded) {
+    if (decoded is! Map) return null;
+    final message = decoded['message'];
+    if (message is List && message.isNotEmpty) return message.first.toString();
+    if (message is String) return message;
+    return null;
   }
 }

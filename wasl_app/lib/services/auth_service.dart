@@ -1,103 +1,20 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:http/http.dart' as http;
-import 'package:firebase_auth/firebase_auth.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:wasl_app/core/config/api_config.dart';
 
+/// Calls against the NestJS backend for everything account-related.
+///
+/// Phone verification is **not** here — it lives in [WhatsappOtpService],
+/// which talks to `/auth/otp/*`. Firebase phone auth used to sit in this file;
+/// it was client-side only, so the server had no way to tell a verified phone
+/// from an invented one. The server now owns that decision and `/auth/register`
+/// rejects any phone that hasn't passed a WhatsApp code.
 class FlutterAuthService {
   static String get baseUrl => WaslApiConfig.baseUrl;
 
-  final FirebaseAuth _firebaseAuth = FirebaseAuth.instance;
-
-  // 🎯 1️⃣ دالة طلب وإرسال الـ OTP عبر Firebase لأي رقم هاتف في العالم مجاناً لايف
-  Future<void> sendFirebaseOtp({
-    required String phone,
-    required Function(String verificationId) onCodeSent,
-    required Function(FirebaseAuthException e) onFailed,
-  }) async {
-    print("Base URL: $baseUrl");
-    print("📡 [WASL DEBUG] جاري طلب كود OTP من فايربيز للرقم: $phone");
-    try {
-      await _firebaseAuth.verifyPhoneNumber(
-        phoneNumber: phone,
-        timeout: const Duration(seconds: 60),
-        verificationCompleted: (PhoneAuthCredential credential) async {},
-        verificationFailed: (FirebaseAuthException e) {
-          print("❌ [WASL DEBUG] فشل إرسال الـ OTP من فايربيز: ${e.message}");
-          onFailed(e);
-        },
-        codeSent: (String verificationId, int? resendToken) {
-          print("📥 [WASL DEBUG] تم إرسال الكود بنجاح! الـ VerificationId هو: $verificationId");
-          onCodeSent(verificationId);
-        },
-        codeAutoRetrievalTimeout: (String verificationId) {},
-      );
-    } catch (e) {
-      print("💥 [WASL DEBUG] عطل مفاجئ أثناء الاتصال بفايربيز: $e");
-    }
-  }
-
-  // 🎯 2️⃣ دالة التحقق من الـ OTP عبر فايربيز، وتخزين الحساب في NestJS بعد النجاح فوراً
-  Future<Map<String, dynamic>> verifyOtpAndRegisterInNest({
-    required String verificationId,
-    required String smsCode,
-    required String name,
-    required String phone,
-    required String password,
-    required String role,
-    File? idFront,
-    File? idBack,
-    File? storeLogo,
-    String? storeName,
-    String? storeType,
-    File? vehicleImage,
-    String? vehicleType,
-  }) async {
-    try {
-      print("🔐 [WASL DEBUG] جاري التحقق من كود الـ OTP ($smsCode) عبر سيرفرات فايربيز...");
-
-      PhoneAuthCredential credential = PhoneAuthProvider.credential(
-        verificationId: verificationId,
-        smsCode: smsCode.trim(),
-      );
-
-      UserCredential userCred = await _firebaseAuth.signInWithCredential(credential);
-      String? firebaseUid = userCred.user?.uid;
-
-      if (firebaseUid == null) {
-        return {'success': false, 'message': 'فشل التحقق من الهوية عبر فايربيز.'};
-      }
-
-      print("✅ [WASL DEBUG] تم التحقق بنجاح من فايربيز! الـ UID هو: $firebaseUid");
-
-      return await register(
-        name: name,
-        phone: phone,
-        password: password,
-        role: role,
-        idFront: idFront,
-        idBack: idBack,
-        storeLogo: storeLogo,
-        storeName: storeName,
-        storeType: storeType,
-        vehicleImage: vehicleImage,
-        vehicleType: vehicleType,
-        firebaseUid: firebaseUid,
-      );
-
-    } on FirebaseAuthException catch (fbError) {
-      print("❌ [WASL DEBUG] خطأ فايربيز: ${fbError.code} - ${fbError.message}");
-      return {
-        'success': false,
-        'message': fbError.code == 'invalid-verification-code' ? 'كود التحقق غير صحيح، يرجى المحاولة مرة أخرى' : 'فشل التحقق: ${fbError.message}'
-      };
-    } catch (e) {
-      print("💥 [WASL DEBUG] عطل غير متوقع: $e");
-      return {'success': false, 'message': 'فشل الاتصال بالسيرفر: $e'};
-    }
-  }
-
-  // 🎯 3️⃣ دالة ترحيل البيانات ورفع المستندات إلى سيرفر NestJS الرئيسي
+  // 🎯 1️⃣ دالة ترحيل البيانات ورفع المستندات إلى سيرفر NestJS الرئيسي
   Future<Map<String, dynamic>> register({
     required String name,
     required String phone,
@@ -151,9 +68,16 @@ class FlutterAuthService {
       final decodedData = jsonDecode(response.body);
 
       if (response.statusCode == 201 || response.statusCode == 200) {
+        // 🔐 السيرفر بيرجّع توكن مع التسجيل — لازم يتخزن هنا، لأن شاشة الانتظار
+        // (المندوب/المتجر) بتسأل /users/status وده مسار محمي بالتوكن.
+        final String token = decodedData['token']?.toString() ?? '';
+        if (token.isNotEmpty) {
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setString('access_token', token);
+        }
         return {'success': true, 'data': decodedData};
       } else {
-        return {'success': false, 'message': decodedData['message'] ?? 'فشل حفظ البيانات والمستندات في السيرفر الرئيسي'};
+        return {'success': false, 'message': _firstMessage(decodedData) ?? 'فشل حفظ البيانات والمستندات في السيرفر الرئيسي'};
       }
     } catch (e) {
       print("💥 [WASL DEBUG] عطل أثناء رفع المستندات: $e");
@@ -161,7 +85,7 @@ class FlutterAuthService {
     }
   }
 
-  // 🎯 4️⃣ دالة تسجيل الدخول (Login) تضرب الـ NestJS مباشرة
+  // 🎯 2️⃣ دالة تسجيل الدخول (Login) تضرب الـ NestJS مباشرة
   Future<Map<String, dynamic>> login({
     required String phone,
     required String password,
@@ -187,41 +111,29 @@ class FlutterAuthService {
       if (response.statusCode == 201 || response.statusCode == 200) {
         return {'success': true, 'data': decodedData};
       } else {
-        return {'success': false, 'message': decodedData['message'] ?? 'بيانات الدخول غير صحيحة'};
+        return {'success': false, 'message': _firstMessage(decodedData) ?? 'بيانات الدخول غير صحيحة'};
       }
     } catch (e) {
       return {'success': false, 'message': 'فشل الاتصال بالسيرفر: $e'};
     }
   }
 
-  // 🎯 5️⃣ دالة فحص الدخول الاجتماعي عبر البريد أو فيسبوك في الباك إند لـ NestJS
-  Future<Map<String, dynamic>> socialLoginCheck({required String email, required String firebaseUid}) async {
-    final url = Uri.parse('$baseUrl/auth/social-check');
-    print("📡 [WASL DEBUG] فحص الحساب الاجتماعي بالبريد في NestJS عبر: $url");
-    try {
-      final response = await http.post(
-        url,
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-        },
-        body: jsonEncode({
-          'email': email.trim(),
-          'firebaseUid': firebaseUid,
-        }),
-      ).timeout(const Duration(seconds: 15));
-
-      final decodedData = jsonDecode(response.body);
-      if (response.statusCode == 200 || response.statusCode == 201) {
-        return {'success': true, 'isRegistered': decodedData['isRegistered'], 'data': decodedData['data']};
-      }
-      return {'success': false, 'message': decodedData['message'] ?? 'حدث خطأ أثناء فحص الحساب اللوجستي'};
-    } catch (e) {
-      return {'success': false, 'message': 'فشل الاتصال بالسيرفر: $e'};
-    }
+  /// Nest's validation pipe returns `message` as a list of strings; everything
+  /// else returns a plain string. Flatten both so the UI always has one line.
+  static String? _firstMessage(dynamic decoded) {
+    if (decoded is! Map) return null;
+    final message = decoded['message'];
+    if (message is List && message.isNotEmpty) return message.first.toString();
+    if (message is String) return message;
+    return null;
   }
 
-  // 🎯 6️⃣ دالة سحب التصنيفات الحقيقية من السيرفر لصالح شاشة الرئيسية
+  // 🗑️ `socialLoginCheck` اتشالت مع الراوت بتاعها: /auth/social-check كان بيدّي
+  // توكن صالح لأي حساب بمجرد معرفة الإيميل، والتطبيق كان بيبعت إيميل ثابت
+  // متكتوب في الكود. لو الدخول الاجتماعي رجع، لازم يتحقق من Firebase ID token
+  // على السيرفر (firebase-admin verifyIdToken).
+
+  // 🎯 3️⃣ دالة سحب التصنيفات الحقيقية من السيرفر لصالح شاشة الرئيسية
   Future<Map<String, dynamic>> getCategories() async {
     final url = Uri.parse('$baseUrl/categories');
     try {
@@ -240,14 +152,15 @@ class FlutterAuthService {
     }
   }
 
-  // 🎯 7️⃣ دالة جلب المتاجر القريبة الفردية بالـ GPS وفرز الأقرب تصاعدياً
+  // 🎯 4️⃣ دالة جلب المتاجر القريبة الفردية بالـ GPS وفرز الأقرب تصاعدياً
+  // 🏪 السيرفر بيرجّع المتاجر الحقيقية المعتمدة من الأدمن بس؛ لو مفيش، بترجع مصفوفة فاضية.
   Future<Map<String, dynamic>> getNearbyStores({required double lat, required double lng}) async {
     final url = Uri.parse('$baseUrl/stores/nearby?lat=$lat&lng=$lng');
     try {
-      final response = await http.get(url, headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-      }).timeout(const Duration(seconds: 12));
+      final response = await http.get(
+        url,
+        headers: await WaslApiConfig.authHeaders(),
+      ).timeout(const Duration(seconds: 12));
 
       final decodedData = jsonDecode(response.body);
       if (response.statusCode == 200) {
@@ -261,18 +174,16 @@ class FlutterAuthService {
     }
   }
 
-  // 🎯 8️⃣ الفحص اللحظي لحالة الحساب (لصالح شاشة الانتظار)
+  // 🎯 5️⃣ الفحص اللحظي لحالة الحساب (لصالح شاشة الانتظار)
+  // 🔐 الحساب بيتحدد من التوكن نفسه، مش من رقم الهاتف في الرابط —
+  // الرابط القديم كان بيسمح لأي حد يستعلم عن بيانات أي رقم.
   Future<Map<String, dynamic>> checkUserStatus(String phone) async {
-    final String cleanPhone = phone.replaceAll('+', '').replaceAll(' ', '').trim();
-    final url = Uri.parse('$baseUrl/users/status?phone=$cleanPhone');
+    final url = Uri.parse('$baseUrl/users/status');
 
     try {
       final response = await http.get(
         url,
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-        },
+        headers: await WaslApiConfig.authHeaders(),
       ).timeout(const Duration(seconds: 15));
 
       final decodedData = jsonDecode(response.body);
@@ -294,18 +205,16 @@ class FlutterAuthService {
     }
   }
 
-  // 🎯 9️⃣ دالة حذف الحساب نهائياً
+  // 🎯 6️⃣ دالة حذف الحساب نهائياً
   Future<Map<String, dynamic>> deleteUserAccount(String phone) async {
     final cleanPhone = phone.replaceAll('+', '').replaceAll(' ', '').trim();
     final url = Uri.parse('$baseUrl/auth/$cleanPhone');
 
     try {
+      // 🔐 السيرفر بيحذف صاحب التوكن نفسه؛ الرقم في الرابط بقى للتوافق بس.
       final response = await http.delete(
         url,
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-        },
+        headers: await WaslApiConfig.authHeaders(),
       ).timeout(const Duration(seconds: 15));
 
       if (response.statusCode == 200 || response.statusCode == 204) {

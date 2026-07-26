@@ -40,6 +40,18 @@ export class OtpVerification {
   @Column({ type: 'boolean', default: false })
   verified!: boolean;
 
+  /**
+   * When the code was proven correct. A successful verification is only good
+   * for a limited window afterwards (see OtpService.VERIFIED_WINDOW_MS) — this
+   * is what stops a phone that was verified weeks ago from still being
+   * accepted as proof of ownership at registration or password reset.
+   */
+  // Typed `| null` rather than optional on purpose: TypeORM's `save()` skips
+  // `undefined` properties, so clearing this on resend must write an explicit
+  // null.
+  @Column({ name: 'verified_at', type: 'timestamp', nullable: true })
+  verifiedAt!: Date | null;
+
   @CreateDateColumn({ name: 'created_at' })
   createdAt!: Date;
 

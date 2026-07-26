@@ -16,6 +16,7 @@ export const SettingKey = {
   PER_KM_FAR: 'per_km_far',
   DRIVER_SEARCH_RADIUS_KM: 'driver_search_radius_km',
   DRIVER_LOCATION_TTL_MIN: 'driver_location_ttl_min',
+  STORE_SEARCH_RADIUS_KM: 'store_search_radius_km',
   MIN_WALLET_TO_GO_ONLINE: 'min_wallet_to_go_online',
   PAY_VODAFONE_NUMBER: 'pay_vodafone_number',
   PAY_INSTAPAY_HANDLE: 'pay_instapay_handle',
@@ -76,6 +77,11 @@ const DEFAULT_SETTINGS: SettingSeed[] = [
     value: '10',
     description:
       'A driver GPS fix older than this (minutes) is treated as stale.',
+  },
+  {
+    key: SettingKey.STORE_SEARCH_RADIUS_KM,
+    value: '10',
+    description: 'Radius (km) within which partner stores are shown to a customer.',
   },
   {
     key: SettingKey.MIN_WALLET_TO_GO_ONLINE,

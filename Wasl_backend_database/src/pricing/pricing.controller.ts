@@ -1,13 +1,23 @@
-import { Controller, Post, Body, BadRequestException } from '@nestjs/common';
+import {
+  Controller,
+  Post,
+  Body,
+  BadRequestException,
+  UseGuards,
+} from '@nestjs/common';
 import { PricingService } from './pricing.service';
+import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { QuoteDto } from './dto/quote.dto';
 import { isValidCoordinate } from '../common/geo.util';
 
 /**
- * Public pricing quote endpoint. The customer app calls this before creating
- * an order to show the estimated delivery fee up front.
+ * Pricing quote endpoint. The customer app calls this before creating an order
+ * to show the estimated delivery fee up front. Logged-in only: the response
+ * exposes our commission split and tier table, which is business config, not
+ * public data. (The Flutter client already sends the token here.)
  */
 @Controller('pricing')
+@UseGuards(JwtAuthGuard)
 export class PricingController {
   constructor(private readonly pricingService: PricingService) {}
 

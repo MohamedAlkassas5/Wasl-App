@@ -1,9 +1,25 @@
 import 'package:flutter/material.dart';
 // 🎯 تأكد من صحة مسار عمل import لكلاس الألوان بحسب مشروعك
 import 'package:wasl_app/core/theme/app_colors.dart';
+import 'package:wasl_app/services/whatsapp_otp_service.dart';
 
+/// آخر خطوة في استعادة الحساب.
+///
+/// الشاشة دي كانت بتعرض "تم تحديث كلمة المرور بنجاح" من غير ما تكلّم السيرفر
+/// خالص — كلمة المرور القديمة كانت بتفضل شغالة. دلوقتي بتبعت الرقم + الكود +
+/// كلمة المرور الجديدة لـ /auth/otp/reset-password، والسيرفر بيتحقق من الكود
+/// تاني قبل ما يغيّر أي حاجة.
 class WaslResetPasswordScreen extends StatefulWidget {
-  const WaslResetPasswordScreen({Key? key}) : super(key: key);
+  /// الرقم اللي اتأكد بالـ OTP، والكود نفسه — السيرفر بيطلبهم الاتنين علشان
+  /// التغيير يفضل مربوط برمز مُثبَت، مش برقم هاتف لوحده.
+  final String phone;
+  final String code;
+
+  const WaslResetPasswordScreen({
+    Key? key,
+    required this.phone,
+    required this.code,
+  }) : super(key: key);
 
   @override
   State<WaslResetPasswordScreen> createState() => _WaslResetPasswordScreenState();
@@ -14,6 +30,7 @@ class _WaslResetPasswordScreenState extends State<WaslResetPasswordScreen> {
   final TextEditingController _confirmPassController = TextEditingController();
   bool _obscurePass = true;
   bool _obscureConfirm = true;
+  bool _isSubmitting = false;
 
   @override
   void dispose() {
@@ -22,34 +39,52 @@ class _WaslResetPasswordScreenState extends State<WaslResetPasswordScreen> {
     super.dispose();
   }
 
-  void _handleResetPassword() {
+  void _handleResetPassword() async {
+    if (_isSubmitting) return;
+
     if (_passController.text.isEmpty || _confirmPassController.text.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('يرجى ملء كافة الحقول', style: TextStyle(fontFamily: 'Cairo')),
-          backgroundColor: AppColors.danger, // 🎯 تم الإصلاح
-        ),
-      );
+      _showSnackBar('يرجى ملء كافة الحقول', AppColors.danger);
       return;
     }
 
     if (_passController.text != _confirmPassController.text) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('كلمتا المرور غير متطابقتين', style: TextStyle(fontFamily: 'Cairo')),
-          backgroundColor: AppColors.danger, // 🎯 تم الإصلاح
-        ),
-      );
+      _showSnackBar('كلمتا المرور غير متطابقتين', AppColors.danger);
       return;
     }
 
+    if (_passController.text.length < 6) {
+      _showSnackBar('كلمة المرور يجب أن تكون 6 أحرف على الأقل', AppColors.danger);
+      return;
+    }
+
+    setState(() => _isSubmitting = true);
+
+    final result = await WhatsappOtpService().resetPassword(
+      phone: widget.phone,
+      code: widget.code,
+      newPassword: _passController.text,
+    );
+
+    if (!mounted) return;
+    setState(() => _isSubmitting = false);
+
+    if (result['success'] != true) {
+      _showSnackBar(result['message'] ?? 'تعذّر تحديث كلمة المرور', AppColors.danger);
+      return;
+    }
+
+    _showSnackBar('تم تحديث كلمة المرور بنجاح! 🎉', AppColors.success);
+    Navigator.of(context).popUntil((route) => route.isFirst);
+  }
+
+  void _showSnackBar(String text, Color bg) {
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('تم تحديث كلمة المرور بنجاح! 🎉', style: TextStyle(fontFamily: 'Cairo')),
-        backgroundColor: AppColors.success, // 🎯 تم الإصلاح
+      SnackBar(
+        content: Text(text, style: const TextStyle(fontFamily: 'Cairo')),
+        backgroundColor: bg,
+        behavior: SnackBarBehavior.floating,
       ),
     );
-    Navigator.of(context).popUntil((route) => route.isFirst);
   }
 
   @override
@@ -199,14 +234,22 @@ class _WaslResetPasswordScreenState extends State<WaslResetPasswordScreen> {
                           ),
                           child: Row(
                             mainAxisAlignment: MainAxisAlignment.center,
-                            children: const [
-                              Text(
-                                'تحديث كلمة المرور',
-                                style: TextStyle(fontSize: 16, color: AppColors.white, fontWeight: FontWeight.bold, fontFamily: 'Cairo'),
-                              ),
-                              SizedBox(width: 8),
-                              Icon(Icons.done_all, color: AppColors.white, size: 18),
-                            ],
+                            children: _isSubmitting
+                                ? const [
+                                    SizedBox(
+                                      width: 20,
+                                      height: 20,
+                                      child: CircularProgressIndicator(color: AppColors.white, strokeWidth: 2),
+                                    ),
+                                  ]
+                                : const [
+                                    Text(
+                                      'تحديث كلمة المرور',
+                                      style: TextStyle(fontSize: 16, color: AppColors.white, fontWeight: FontWeight.bold, fontFamily: 'Cairo'),
+                                    ),
+                                    SizedBox(width: 8),
+                                    Icon(Icons.done_all, color: AppColors.white, size: 18),
+                                  ],
                           ),
                         ),
                       ),

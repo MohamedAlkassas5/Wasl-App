@@ -1,7 +1,9 @@
 import { Module } from '@nestjs/common';
+import { APP_GUARD } from '@nestjs/core';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ScheduleModule } from '@nestjs/schedule'; // 🎯 استيراد موديل الجدولة الزمني الحركي
 import { ConfigModule } from '@nestjs/config'; // 🎯 استيراد موديل الإعدادات للبيئة السحابية لاحقاً
+import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 
 // استيراد الـ Entities
 import { User } from './users/entities/user.entity';
@@ -26,6 +28,7 @@ import { PricingModule } from './pricing/pricing.module';
 import { DeliveryModule } from './delivery/delivery.module';
 import { OtpModule } from './otp/otp.module';
 import { PaymentsModule } from './payments/payments.module';
+import { FilesModule } from './files/files.module';
 
 @Module({
   imports: [
@@ -35,6 +38,13 @@ import { PaymentsModule } from './payments/payments.module';
     // 🎯 تفعيل الـ ConfigModule ليقوم بقراءة ملف الـ .env (جاهز للاستخدام السحابي)
     ConfigModule.forRoot({
       isGlobal: true,
+    }),
+
+    // 🛡️ Baseline per-IP rate limit for every route. Abuse-prone endpoints
+    // (OTP send, login, register) tighten this further with @Throttle().
+    // ttl is in milliseconds.
+    ThrottlerModule.forRoot({
+      throttlers: [{ name: 'default', ttl: 60_000, limit: 120 }],
     }),
 
     // 💻 Database connection.
@@ -82,6 +92,12 @@ import { PaymentsModule } from './payments/payments.module';
     CategoriesModule,
     StoresModule,
     UsersModule,
+    FilesModule,
+  ],
+  providers: [
+    // Applies the rate limiter globally; individual routes opt out with
+    // @SkipThrottle() or tighten it with @Throttle().
+    { provide: APP_GUARD, useClass: ThrottlerGuard },
   ],
 })
 export class AppModule {}

@@ -27,3 +27,20 @@
 # OS
 .DS_Store
 Thumbs.db
+
+# ⚠️ مستندات المستخدمين الحقيقية (بطاقات رقم قومي، سيلفي، إثباتات تحويل).
+# الفولدر ده فيه بيانات شخصية — عمره ما يتثبّت في git.
+# (مؤقت أصلاً على Render/Railway — بند 11 بينقله لـ S3/Cloudinary)
+**/uploads/
+
+# 🔐 أسرار
+Database pass.txt
+codes.txt
+.env
+*.env
+!.env.example
+
+# 🔑 مفاتيح توقيع أندرويد
+**/key.properties
+*.jks
+*.keystore

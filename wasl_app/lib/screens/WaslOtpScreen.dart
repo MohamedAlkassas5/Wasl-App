@@ -247,8 +247,13 @@ import 'package:wasl_app/screens/WaslDeliveryIdentityScreen.dart';
 import 'package:wasl_app/screens/WaslMerchantRegisterScreen.dart';
 import 'package:wasl_app/customer_screen/screens/auth/WaslResetPasswordScreen.dart';
 import 'package:wasl_app/services/auth_service.dart';
+import 'package:wasl_app/services/whatsapp_otp_service.dart';
 import 'package:wasl_app/core/theme/app_colors.dart';
 
+/// Phone verification step. The code is generated, delivered and checked by the
+/// backend (`/auth/otp/*`) — this screen only collects the digits. Nothing here
+/// decides whether a phone is verified; the server does, and `/auth/register`
+/// refuses any phone it hasn't cleared.
 class WaslOtpScreen extends StatefulWidget {
   final int currentRoleIndex;
   final String? name;
@@ -256,7 +261,6 @@ class WaslOtpScreen extends StatefulWidget {
   final String? password;
   final String? role;
   final bool isFromForgotPassword;
-  final String? verificationId; // 🎯 متغير الـ ID الجديد القادم من فايربيز
 
   const WaslOtpScreen({
     Key? key,
@@ -266,7 +270,6 @@ class WaslOtpScreen extends StatefulWidget {
     this.password,
     this.role,
     this.isFromForgotPassword = false,
-    this.verificationId, // 🎯 استقبال الـ verificationId هنا
   }) : super(key: key);
 
   @override
@@ -277,9 +280,11 @@ class _WaslOtpScreenState extends State<WaslOtpScreen> {
   Timer? _timer;
   int _startSeconds = 58;
   bool _canResend = false;
+  bool _isBusy = false;
 
   final List<TextEditingController> _controllers = List.generate(6, (_) => TextEditingController());
   final FlutterAuthService _authService = FlutterAuthService();
+  final WhatsappOtpService _otpService = WhatsappOtpService();
 
   @override
   void initState() { super.initState(); _startTimer(); }
@@ -288,6 +293,7 @@ class _WaslOtpScreenState extends State<WaslOtpScreen> {
   void dispose() { _timer?.cancel(); for (var c in _controllers) { c.dispose(); } super.dispose(); }
 
   void _startTimer() {
+    _timer?.cancel();
     setState(() { _startSeconds = 58; _canResend = false; });
     _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
       if (_startSeconds == 0) { setState(() { _timer?.cancel(); _canResend = true; }); }
@@ -295,8 +301,31 @@ class _WaslOtpScreenState extends State<WaslOtpScreen> {
     });
   }
 
-  // 🎯 الدالة اللوجستية المحدثة بالربط الهجين (Firebase + NestJS)
+  // 🔁 الزرار ده كان بيصفّر العدّاد وبس من غير ما يطلب كود جديد من السيرفر.
+  void _resendOtp() async {
+    if (_isBusy) return;
+    setState(() => _isBusy = true);
+
+    final result = await _otpService.sendOtp(widget.phone ?? '');
+
+    if (!mounted) return;
+    setState(() => _isBusy = false);
+
+    if (result['success'] == true) {
+      for (final c in _controllers) { c.clear(); }
+      _startTimer();
+      _showSnackBar('تم إرسال رمز جديد عبر واتساب 📲', const Color(0xFF22C55E));
+    } else {
+      _showSnackBar(result['message'] ?? 'تعذّر إرسال رمز جديد', AppColors.danger);
+    }
+  }
+
+  // 📡 التحقق بيتم على السيرفر: لو الكود صح، السيرفر بيفكّر الرقم كمُتحقَّق منه
+  // لمدة محدودة، وبعدين التسجيل بيعدّي. لو الرقم له حساب بالفعل، السيرفر بيرجّع
+  // توكن جاهز بدل ما نسجّل من جديد.
   void _verifyOtpAndProceed() async {
+    if (_isBusy) return;
+
     String code = _controllers.map((c) => c.text).join();
 
     if (code.length < 6) {
@@ -305,67 +334,115 @@ class _WaslOtpScreenState extends State<WaslOtpScreen> {
     }
 
     // إظهار مؤشر تحميل (Loading) لمنع النقرات العشوائية المتكررة
+    setState(() => _isBusy = true);
     showDialog(
       context: context,
       barrierDismissible: false,
       builder: (_) => const Center(child: CircularProgressIndicator(color: AppColors.primary)),
     );
 
-    // 📡 استدعاء دالة التحقق والدخول الهجينة الجديدة (تتحقق من فايربيز أولاً ثم ترحل الحساب لـ NestJS)
-    final result = await _authService.verifyOtpAndRegisterInNest(
-      verificationId: widget.verificationId ?? '',
-      smsCode: code,
+    final verification = await _otpService.verifyOtp(
+      phone: widget.phone ?? '',
+      code: code,
+    );
+
+    if (!mounted) return;
+
+    if (verification['success'] != true) {
+      Navigator.pop(context); // إغلاق الـ Loading
+      setState(() => _isBusy = false);
+      // 🛑 الكود خاطئ أو انتهت صلاحيته — السيستم يقفل مكانه ولا يمرّر أي حاجة
+      _showSnackBar(verification['message'] ?? 'كود التحقق غير صحيح، راجع رسائل واتساب', AppColors.danger);
+      return;
+    }
+
+    final bool alreadyRegistered = verification['data']?['registered'] == true;
+
+    // 🔑 مسار استعادة كلمة المرور: الرقم اتأكد، نروح نحط كلمة مرور جديدة.
+    // الكود بيتمرر معانا لأن السيرفر بيطلبه تاني مع كلمة المرور الجديدة.
+    if (widget.isFromForgotPassword) {
+      Navigator.pop(context); // إغلاق الـ Loading
+      setState(() => _isBusy = false);
+
+      if (!alreadyRegistered) {
+        _showSnackBar('لا يوجد حساب مرتبط بهذا الرقم، أنشئ حساباً جديداً', AppColors.danger);
+        return;
+      }
+
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (_) => WaslResetPasswordScreen(
+            phone: widget.phone ?? '',
+            code: code,
+          ),
+        ),
+      );
+      return;
+    }
+
+    // الرقم متسجل قبل كده — التسجيل هيترفض من السيرفر، فنوجّهه لتسجيل الدخول.
+    if (alreadyRegistered) {
+      Navigator.pop(context); // إغلاق الـ Loading
+      setState(() => _isBusy = false);
+      _showSnackBar('هذا الرقم مسجل بالفعل، سجّل الدخول بكلمة المرور', AppColors.danger);
+      return;
+    }
+
+    // 🚚 المندوب والمتجر بيكمّلوا رفع المستندات الأول، والتسجيل بيحصل هناك —
+    // التحقق صالح لنص ساعة فده وقت كفاية للخطوة اللي جاية.
+    if (widget.currentRoleIndex != 0) {
+      Navigator.pop(context); // إغلاق الـ Loading
+      setState(() => _isBusy = false);
+
+      if (widget.currentRoleIndex == 1) {
+        Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => WaslDeliveryIdentityScreen(name: widget.name, phone: widget.phone, password: widget.password, role: widget.role)));
+      } else {
+        Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => WaslMerchantRegisterScreen(name: widget.name, phone: widget.phone, password: widget.password, role: widget.role)));
+      }
+      return;
+    }
+
+    // 👤 العميل: مفيش مستندات، فالحساب بيتعمل هنا على طول
+    final result = await _authService.register(
       name: widget.name ?? '',
       phone: widget.phone ?? '',
       password: widget.password ?? '',
       role: widget.role ?? 'customer',
-      // ملحوظة: حقول الملفات والصور سيتم رفعها في الخطوات التالية للمناديب والمتاجر
     );
 
     if (!mounted) return;
     Navigator.pop(context); // إغلاق الـ Loading
+    setState(() => _isBusy = false);
 
-    if (result['success'] == true) {
-      if (widget.isFromForgotPassword) {
-        Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const WaslResetPasswordScreen()));
-        return;
-      }
-
-      final data = result['data'];
-      final userData = data['user'];
-      final String token = data['token'] ?? '';
-
-      // إذا كان الحساب "عميل"، تنتهي دائرته اللوجستية هنا ويتم حفظ جلسته فوراً ودخوله للتطبيق
-      if (widget.currentRoleIndex == 0) {
-        // الحفظ الديناميكي لبيانات العميل بالـ Provider لمنع الـ IDs الثابتة
-        Provider.of<UserProvider>(context, listen: false).saveUserSession(
-          id: userData['id'] ?? 0,
-          name: userData['name'] ?? widget.name,
-          phone: userData['phone'] ?? widget.phone,
-          role: userData['role'] ?? 'customer',
-          token: token,
-        );
-
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.setInt('user_id', userData['id'] ?? 0);
-        await prefs.setString('user_name', userData['name'] ?? widget.name ?? '');
-        await prefs.setString('user_phone', userData['phone'] ?? widget.phone ?? '');
-        await prefs.setString('user_role', userData['role'] ?? 'customer');
-        await prefs.setString('access_token', token);
-
-        _showSnackBar('تم إنشاء حساب العميل بنجاح! 🎉', const Color(0xFF22C55E));
-        Navigator.of(context).popUntil((route) => route.isFirst);
-      }
-      // إذا كان مندوب أو متجر، نمررهم للمراحل التالية لرفع المستندات (مع تمرير البيانات الموثقة الراجعة)
-      else if (widget.currentRoleIndex == 1) {
-        Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => WaslDeliveryIdentityScreen(name: widget.name, phone: widget.phone, password: widget.password, role: widget.role)));
-      } else if (widget.currentRoleIndex == 2) {
-        Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => WaslMerchantRegisterScreen(name: widget.name, phone: widget.phone, password: widget.password, role: widget.role)));
-      }
-    } else {
-      // 🛑 الكود خاطئ أو فشل السيرفر! السيستم يرفض التمرير ويقفل مكانه لحماية الحساب
-      _showSnackBar(result['message'] ?? 'كود التحقق غير صحيح، راجع الرسائل النصية الخاصة بك', AppColors.danger);
+    if (result['success'] != true) {
+      _showSnackBar(result['message'] ?? 'تعذّر إنشاء الحساب، حاول مرة أخرى', AppColors.danger);
+      return;
     }
+
+    final data = result['data'];
+    final userData = data['user'];
+    final String token = data['token'] ?? '';
+
+    // الحفظ الديناميكي لبيانات العميل بالـ Provider لمنع الـ IDs الثابتة
+    Provider.of<UserProvider>(context, listen: false).saveUserSession(
+      id: userData['id'] ?? 0,
+      name: userData['name'] ?? widget.name,
+      phone: userData['phone'] ?? widget.phone,
+      role: userData['role'] ?? 'customer',
+      token: token,
+    );
+
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt('user_id', userData['id'] ?? 0);
+    await prefs.setString('user_name', userData['name'] ?? widget.name ?? '');
+    await prefs.setString('user_phone', userData['phone'] ?? widget.phone ?? '');
+    await prefs.setString('user_role', userData['role'] ?? 'customer');
+    await prefs.setString('access_token', token);
+
+    if (!mounted) return;
+    _showSnackBar('تم إنشاء حساب العميل بنجاح! 🎉', const Color(0xFF22C55E));
+    Navigator.of(context).popUntil((route) => route.isFirst);
   }
 
   void _showSnackBar(String text, Color bg) {
@@ -424,7 +501,7 @@ class _WaslOtpScreenState extends State<WaslOtpScreen> {
                     children: [
                       const Text('كود التحقق الخاص بك', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.textPrimary, fontFamily: 'Cairo')),
                       const SizedBox(height: 8),
-                      const Text('أدخل الرمز المكون من 6 أرقام المرسل إلى هاتف الجوال الخاص بك للتحقق', textAlign: TextAlign.center, style: TextStyle(fontSize: 13, color: AppColors.textSecondary, fontFamily: 'Cairo')),
+                      Text('أدخل الرمز المكون من 6 أرقام المرسل عبر واتساب إلى ${widget.phone ?? 'رقمك'}', textAlign: TextAlign.center, style: const TextStyle(fontSize: 13, color: AppColors.textSecondary, fontFamily: 'Cairo')),
                       const SizedBox(height: 28),
 
                       Row(
@@ -433,7 +510,7 @@ class _WaslOtpScreenState extends State<WaslOtpScreen> {
                       ),
                       const SizedBox(height: 32),
                       _canResend
-                          ? GestureDetector(onTap: _startTimer, child: const Text('إعادة إرسال الرمز الآن', style: TextStyle(color: AppColors.secondary, fontWeight: FontWeight.bold, fontFamily: 'Cairo', decoration: TextDecoration.underline)))
+                          ? GestureDetector(onTap: _resendOtp, child: const Text('إعادة إرسال الرمز الآن', style: TextStyle(color: AppColors.secondary, fontWeight: FontWeight.bold, fontFamily: 'Cairo', decoration: TextDecoration.underline)))
                           : Text('إعادة إرسال خلال ${_startSeconds.toString().padLeft(2, '0')} ثانية', style: const TextStyle(color: AppColors.textSecondary, fontWeight: FontWeight.bold, fontFamily: 'Cairo')),
                       const SizedBox(height: 32),
                       GestureDetector(

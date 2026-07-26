@@ -1,13 +1,16 @@
 import {
   Injectable,
+  Inject,
+  forwardRef,
   BadRequestException,
   UnauthorizedException,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Like } from 'typeorm';
+import { Repository } from 'typeorm';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
+import { OtpService } from '../otp/otp.service';
 import { User, UserRole, AccountStatus } from '../users/entities/user.entity';
 import {
   DeliveryPartner,
@@ -26,6 +29,11 @@ export class AuthService {
     @InjectRepository(Merchant)
     private readonly merchantRepository: Repository<Merchant>,
     private readonly jwtService: JwtService,
+    // forwardRef: OtpController needs AuthService to issue a session after a
+    // code checks out, and AuthService needs OtpService to refuse a
+    // registration whose phone was never verified. Genuinely mutual.
+    @Inject(forwardRef(() => OtpService))
+    private readonly otpService: OtpService,
   ) {}
 
   // 🎯 1️⃣ دالة تسجيل الحسابات الشاملة (تستقبل طلب الـ Multipart المباشر من الفلاتر)
@@ -49,6 +57,16 @@ export class AuthService {
     } = registerDto;
 
     const cleanPhone = phone.replace(/[^0-9]/g, '');
+
+    // 🔐 The phone must have passed a server-side OTP challenge first. Without
+    // this the OTP screen is decorative — anyone could POST straight to
+    // /auth/register with someone else's number and own that identity.
+    const phoneVerified = await this.otpService.isPhoneVerified(cleanPhone);
+    if (!phoneVerified) {
+      throw new BadRequestException(
+        'يجب التحقق من رقم الهاتف عبر رمز واتساب قبل إنشاء الحساب',
+      );
+    }
 
     const existingUser = await this.userRepository.findOne({
       where: { phone: cleanPhone },
@@ -93,6 +111,10 @@ export class AuthService {
       });
       await this.merchantRepository.save(merchantRecord);
     }
+
+    // The verification has now been spent — burn it so the same code can't be
+    // replayed for anything else inside its window.
+    await this.otpService.consumeVerification(cleanPhone);
 
     const token = this.generateToken(savedUser);
     return {
@@ -153,41 +175,47 @@ export class AuthService {
     };
   }
 
-  // 🎯 3️⃣ دالة فحص الحساب الاجتماعي بالبريد أو الـ UID لصالح الـ Controller
-  async findOneByEmailOrUid(
-    email: string,
-    firebaseUid: string,
-  ): Promise<User | null> {
-    if (!email && !firebaseUid) return null;
+  // 🗑️ Removed with the social-check route: `findOneByEmailOrUid` +
+  // `generateJwtToken` existed only to mint a session from an unverified email
+  // address. See the comment on AuthController.socialCheck before reviving them.
 
-    return await this.userRepository.findOne({
-      where: [{ firebaseUid: firebaseUid }, { email: email }],
-    });
+  // 🎯 دالة حذف الحساب بكل متعلقاته اللوجستية من السيرفر
+  //
+  // Deletion is keyed on the **id from the verified JWT**, never on a phone
+  // number taken from the URL. The old suffix match (`LIKE '%1234567 89'`) could
+  // also resolve to a different account whose number merely ended the same way.
+  async deleteAccountById(
+    userId: number,
+  ): Promise<{ success: boolean; message: string }> {
+    const user = await this.userRepository.findOne({ where: { id: userId } });
+
+    if (!user) {
+      throw new NotFoundException('عفواً، الحساب غير موجود في المنظومة');
+    }
+
+    return this.deleteUserRecord(user);
   }
 
-  // 🎯 4️⃣ [تم الإصلاح ومسح async] دالة جسرية لتوليد توكن الـ JWT لصالح الـ Controller الاجتماعي
-  generateJwtToken(user: User): string {
-    return this.generateToken(user);
-  }
-
-  // 🎯 5️⃣ دالة حذف الحساب بكل متعلقاته اللوجستية من السيرفر
+  /** Admin-only lookup path: exact phone match, no fuzzy suffix matching. */
   async deleteAccountByPhone(
     phone: string,
   ): Promise<{ success: boolean; message: string }> {
     const cleanPhone = phone.replace(/[^0-9]/g, '');
-    const phoneSuffix =
-      cleanPhone.length > 9
-        ? cleanPhone.substring(cleanPhone.length - 9)
-        : cleanPhone;
 
     const user = await this.userRepository.findOne({
-      where: { phone: Like(`%${phoneSuffix}`) },
+      where: { phone: cleanPhone },
     });
 
     if (!user) {
       throw new NotFoundException('عفواً، الحساب غير موجود في المنظومة');
     }
 
+    return this.deleteUserRecord(user);
+  }
+
+  private async deleteUserRecord(
+    user: User,
+  ): Promise<{ success: boolean; message: string }> {
     if (user.role === UserRole.DELIVERY) {
       await this.deliveryRepository.delete({ userId: user.id });
     } else if (user.role === UserRole.MERCHANT) {
@@ -235,6 +263,33 @@ export class AuthService {
         firebaseUid: user.firebaseUid || '',
         adminNotes: user.admin_notes || '',
       },
+    };
+  }
+
+  /**
+   * Set a new password for a phone whose ownership was just proven by OTP.
+   * Called only from OtpController *after* the code has been checked, which is
+   * why no current password is required — possession of the WhatsApp code is
+   * the credential here.
+   *
+   * A non-existent phone is not reported as such: the caller gets the same
+   * generic failure either way, so this can't be used to test which numbers
+   * have accounts.
+   */
+  async resetPasswordWithVerifiedPhone(phone: string, newPassword: string) {
+    const cleanPhone = phone.replace(/[^0-9]/g, '');
+    const user = await this.userRepository.findOne({
+      where: { phone: cleanPhone },
+    });
+
+    if (user) {
+      user.passwordHash = await bcrypt.hash(newPassword, 10);
+      await this.userRepository.save(user);
+    }
+
+    return {
+      success: true,
+      message: 'تم تحديث كلمة المرور بنجاح، يمكنك تسجيل الدخول الآن',
     };
   }
 

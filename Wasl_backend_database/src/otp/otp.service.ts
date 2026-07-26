@@ -22,6 +22,10 @@ export class OtpService {
   private static readonly RESEND_COOLDOWN_MS = 60 * 1000; // 1 min between sends
   private static readonly SEND_WINDOW_MS = 60 * 60 * 1000; // rolling 1h window
   private static readonly MAX_SENDS_PER_WINDOW = 5; // sends per phone / hour
+  // How long a *successful* verification stays usable as proof of phone
+  // ownership. Generous enough for a delivery partner to finish uploading
+  // documents after verifying, short enough that a stale record is worthless.
+  private static readonly VERIFIED_WINDOW_MS = 30 * 60 * 1000;
 
   constructor(
     @InjectRepository(OtpVerification)
@@ -90,6 +94,7 @@ export class OtpService {
     record.expiresAt = expiresAt;
     record.attempts = 0;
     record.verified = false;
+    record.verifiedAt = null;
     record.lastSentAt = now;
     record.sendsInWindow = sendsInWindow;
     record.windowStartedAt = windowStartedAt;
@@ -114,8 +119,13 @@ export class OtpService {
       throw new BadRequestException('لم يتم طلب رمز تحقق لهذا الرقم');
     }
     if (record.verified) {
-      // Already verified — allow (idempotent) so registration can proceed.
-      return true;
+      // Already verified — idempotent so a client can re-submit the same code
+      // (e.g. a retried request) without being locked out. Still bounded by the
+      // verification window, so a long-stale record is not a free pass.
+      if (this.isWithinVerifiedWindow(record)) {
+        return true;
+      }
+      throw new BadRequestException('انتهت صلاحية الرمز، اطلب رمزاً جديداً');
     }
     if (new Date() > new Date(record.expiresAt)) {
       throw new BadRequestException('انتهت صلاحية الرمز، اطلب رمزاً جديداً');
@@ -134,14 +144,37 @@ export class OtpService {
     }
 
     record.verified = true;
+    record.verifiedAt = new Date();
     await this.otpRepository.save(record);
     return true;
   }
 
-  /** Whether a phone currently holds a successfully-verified OTP. */
+  private isWithinVerifiedWindow(record: OtpVerification): boolean {
+    if (!record.verified || !record.verifiedAt) return false;
+    return (
+      Date.now() - new Date(record.verifiedAt).getTime() <
+      OtpService.VERIFIED_WINDOW_MS
+    );
+  }
+
+  /**
+   * Whether a phone currently holds a fresh, successfully-verified OTP.
+   * This is the gate that registration and password reset stand behind — it is
+   * the only server-side proof that the caller controls the number.
+   */
   async isPhoneVerified(rawPhone: string): Promise<boolean> {
     const phone = this.cleanPhone(rawPhone);
     const record = await this.otpRepository.findOne({ where: { phone } });
-    return !!record?.verified;
+    return !!record && this.isWithinVerifiedWindow(record);
+  }
+
+  /**
+   * Burn the verification once it has been spent (account created, password
+   * reset). Without this a single verified code could be replayed for the whole
+   * 30-minute window.
+   */
+  async consumeVerification(rawPhone: string): Promise<void> {
+    const phone = this.cleanPhone(rawPhone);
+    await this.otpRepository.delete({ phone });
   }
 }

@@ -1,83 +1,82 @@
-import { Injectable } from '@nestjs/common';
-import { HttpService } from '@nestjs/axios';
+import { BadRequestException, Injectable } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Not, IsNull, Repository } from 'typeorm';
 
+import { Merchant, MerchantStatus } from '../merchant/entities/merchant.entity';
+import { SettingsService, SettingKey } from '../settings/settings.service';
+import { haversineKm, roundKm, isValidCoordinate } from '../common/geo.util';
+
+/**
+ * Shape returned to the customer app. The `merchant_store_*` / `distance` keys
+ * are the ones the Flutter store card already reads.
+ */
+export interface NearbyStore {
+  id: number;
+  merchant_store_name: string;
+  merchant_store_type: string;
+  logo?: string;
+  addressDetails?: string;
+  latitude: number;
+  longitude: number;
+  distance: number;
+}
+
+/**
+ * Nearby partner stores, from the `merchants` table.
+ *
+ * This used to fabricate four stores ("مطعم وكافيه الشرقاوي"…) by nudging the
+ * customer's own coordinates a few hundred metres and calling the offsets a
+ * distance — so the app always looked populated no matter what was in the
+ * database. It now returns only real, admin-approved merchants that have
+ * coordinates, and an honest empty list when there are none.
+ */
 @Injectable()
 export class StoresService {
-  constructor(private readonly httpService: HttpService) {}
+  constructor(
+    @InjectRepository(Merchant)
+    private readonly merchantRepository: Repository<Merchant>,
+    private readonly settings: SettingsService,
+  ) {}
 
-  // 🎯 [تم الإصلاح]: إزالة async لتفادي تحذير ESLint لأن الدالة تولد البيانات فورياً
-  getNearbyStores(lat: number, lng: number): Promise<Record<string, any>[]> {
-    console.log(
-      `📡 [NEJS LIVE LOG] استقبال طلب جغرافي حقيقي للـ GPS: Lat: ${lat}, Lng: ${lng}`,
-    );
-
-    try {
-      // 🎯 توليد شبكة متاجر حية ديناميكياً تدور حول موقع العميل الحالي بالملي
-      // ده بيضمن إنك لو غيرت موقع المحاكي لأي مكان في العالم، المحلات هتتولد حوله فوراً وتتغير المسافات لايف
-      const stores = [
-        {
-          merchant_store_name: `مطعم وكافيه الشرقاوي - الفرع الأقرب`,
-          merchant_store_type: 'مطاعم • مأكولات حية',
-          distance: this.calculateFlatDistance(
-            lat,
-            lng,
-            lat + 0.005,
-            lng + 0.003,
-          ).toFixed(2),
-        },
-        {
-          merchant_store_name: `صيدلية العزبي الحية بالمنطقة`,
-          merchant_store_type: 'صيدليات • رعاية صحية',
-          distance: this.calculateFlatDistance(
-            lat,
-            lng,
-            lat - 0.004,
-            lng - 0.006,
-          ).toFixed(2),
-        },
-        {
-          merchant_store_name: `سوبر ماركت الأمانة والخير`,
-          merchant_store_type: 'تموينك • سلع غذائية',
-          distance: this.calculateFlatDistance(
-            lat,
-            lng,
-            lat + 0.008,
-            lng - 0.002,
-          ).toFixed(2),
-        },
-        {
-          merchant_store_name: `مخبز وحلواني العائلات الحقيقي`,
-          merchant_store_type: 'مخابز • حلويات',
-          distance: this.calculateFlatDistance(
-            lat,
-            lng,
-            lat - 0.002,
-            lng + 0.009,
-          ).toFixed(2),
-        },
-      ];
-
-      // إرجاع البيانات مغلفة بـ Promise لتطابق الـ Return Type الأصلي بدون مشاكل
-      return Promise.resolve(stores);
-    } catch (error) {
-      console.error('💥 عطل لوجستي مفاجئ:', error);
-      return Promise.resolve([]);
+  async getNearbyStores(
+    lat: number,
+    lng: number,
+    radiusKm?: number,
+  ): Promise<NearbyStore[]> {
+    if (!isValidCoordinate(lat, lng)) {
+      throw new BadRequestException('إحداثيات الموقع غير صالحة');
     }
-  }
 
-  // دالة حساب المسافة الفورية الدقيقة بالكيلومتر
-  private calculateFlatDistance(
-    lat1: number,
-    lon1: number,
-    lat2: number,
-    lon2: number,
-  ): number {
-    const p = 0.017453292519943295; // Math.PI / 180
-    const c = Math.cos;
-    const a =
-      0.5 -
-      c((lat2 - lat1) * p) / 2 +
-      (c(lat1 * p) * c(lat2 * p) * (1 - c((lon2 - lon1) * p))) / 2;
-    return 12742 * Math.asin(Math.sqrt(a)); // 2 * R; R = 6371 km
+    const radius =
+      radiusKm ?? this.settings.getNumber(SettingKey.STORE_SEARCH_RADIUS_KM, 10);
+
+    const merchants = await this.merchantRepository.find({
+      where: {
+        status: MerchantStatus.APPROVED,
+        latitude: Not(IsNull()),
+        longitude: Not(IsNull()),
+      },
+    });
+
+    const origin = { latitude: lat, longitude: lng };
+
+    return merchants
+      .map((m) => ({
+        id: m.id,
+        merchant_store_name: m.storeName,
+        merchant_store_type: m.storeType,
+        logo: m.logo,
+        addressDetails: m.addressDetails,
+        latitude: Number(m.latitude),
+        longitude: Number(m.longitude),
+        distance: roundKm(
+          haversineKm(origin, {
+            latitude: Number(m.latitude),
+            longitude: Number(m.longitude),
+          }),
+        ),
+      }))
+      .filter((s) => s.distance <= radius)
+      .sort((a, b) => a.distance - b.distance);
   }
 }

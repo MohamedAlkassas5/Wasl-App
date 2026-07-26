@@ -11,7 +11,45 @@ let token = localStorage.getItem('wasl_admin_token') || '';
 
 /* ---------- helpers ---------- */
 const $ = (id) => document.getElementById(id);
-const fileUrl = (p) => (p ? `${API_BASE}/${String(p).replace(/^\/+/, '')}` : '');
+
+/* ---------- protected documents ----------
+   `uploads/` is no longer a public static folder: national IDs, selfies and
+   payment proofs need a Bearer token now. An <img src> cannot send headers, so
+   we fetch the bytes ourselves and hand the tag a blob: URL instead. */
+const docCache = new Map();
+
+async function docBlobUrl(path) {
+  const key = String(path).replace(/^\/+/, '');
+  if (docCache.has(key)) return docCache.get(key);
+
+  const res = await fetch(`${API_BASE}/${key}`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+  if (!res.ok) throw new Error(`تعذّر تحميل المستند (${res.status})`);
+
+  const url = URL.createObjectURL(await res.blob());
+  docCache.set(key, url);
+  return url;
+}
+
+/** Placeholder tag; `hydrateDocs` fills in the real image after render. */
+const docThumb = (p) =>
+  `<img class="doc-thumb" data-doc="${String(p).replace(/"/g, '&quot;')}" alt="مستند" onclick="showImage(this.src)" />`;
+
+async function hydrateDocs(root) {
+  for (const img of (root || document).querySelectorAll('img[data-doc]')) {
+    const path = img.dataset.doc;
+    img.removeAttribute('data-doc');
+    try {
+      img.src = await docBlobUrl(path);
+    } catch {
+      const note = document.createElement('span');
+      note.className = 'muted';
+      note.textContent = 'تعذّر عرض المستند';
+      img.replaceWith(note);
+    }
+  }
+}
 
 async function api(path, { method = 'GET', body } = {}) {
   const res = await fetch(`${API_BASE}${path}`, {
@@ -70,6 +108,9 @@ $('loginForm').addEventListener('submit', async (e) => {
 $('logoutBtn').addEventListener('click', () => {
   localStorage.removeItem('wasl_admin_token');
   token = '';
+  // Drop the cached document blobs with the session, not just the token.
+  docCache.forEach((url) => URL.revokeObjectURL(url));
+  docCache.clear();
   $('appView').classList.add('hidden');
   $('loginView').classList.remove('hidden');
 });
@@ -134,6 +175,7 @@ async function loadRegs() {
     const list = await api(`/admin/registrations?${q}`);
     if (!list.length) { $('regList').innerHTML = '<div class="empty">لا توجد طلبات</div>'; return; }
     $('regList').innerHTML = list.map(regRow).join('');
+    hydrateDocs($('regList'));
   } catch (e) { $('regList').innerHTML = `<div class="empty">${e.message}</div>`; }
 }
 
@@ -141,7 +183,7 @@ function regRow(u) {
   const d = u.details || {};
   const docs = [d.nationalIdFront, d.nationalIdBack, d.selfie, d.vehicleImage, d.logo]
     .filter((x) => x && !String(x).startsWith('pending_'))
-    .map((x) => `<img class="doc-thumb" src="${fileUrl(x)}" onclick="showImage('${fileUrl(x)}')" />`)
+    .map(docThumb)
     .join('') || '<span class="muted">لا توجد مستندات مرفوعة</span>';
   const roleLbl = u.role === 'delivery' ? 'مندوب' : 'متجر';
   return `
@@ -197,13 +239,14 @@ async function loadTopups() {
     const list = await api(`/admin/payments/topup-requests${status ? '?status=' + status : ''}`);
     if (!list.length) { $('topupList').innerHTML = '<div class="empty">لا توجد طلبات شحن</div>'; return; }
     $('topupList').innerHTML = list.map(topupRow).join('');
+    hydrateDocs($('topupList'));
   } catch (e) { $('topupList').innerHTML = `<div class="empty">${e.message}</div>`; }
 }
 
 function topupRow(r) {
   const method = r.method === 'vodafone_cash' ? 'فودافون كاش' : 'إنستاباي';
   const proof = r.proofImageUrl
-    ? `<img class="doc-thumb" src="${fileUrl(r.proofImageUrl)}" onclick="showImage('${fileUrl(r.proofImageUrl)}')" />`
+    ? docThumb(r.proofImageUrl)
     : '<span class="muted">بدون إثبات</span>';
   const actions = r.status === 'pending'
     ? `<button class="btn btn-sm btn-green" onclick="reviewTopup(${r.id},'approve')">توثيق وإضافة الرصيد</button>
