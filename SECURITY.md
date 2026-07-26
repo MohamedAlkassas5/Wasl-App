@@ -29,10 +29,14 @@ already made.)
 - [ ] **Any real user passwords** that appear in `codes.txt` (test/personal
       accounts). Reset them from the app, or delete those accounts.
 - [ ] **`JWT_SECRET`.** Was a committed fallback until AUDIT §2.13. Set a fresh
-      random value in the host env (`node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"`).
-      **Every token signed with the old value is forgeable** — rotating it
-      invalidates them, forcing a clean re-login. Required in production; the
-      app refuses to boot without it.
+      random value in the host env. **Every token signed with the old value is
+      forgeable** — rotating it invalidates them, forcing a clean re-login.
+      Required in production; the app refuses to boot without it.
+
+> Shortcut: `npm run secrets:gen` prints fresh `JWT_SECRET` and `ADMIN_PASSWORD`
+> values ready to paste into your host's environment. It only generates — it
+> never reads or transmits anything. The DB and WhatsApp secrets still have to
+> be rotated in their provider dashboards by hand.
 - [ ] **WhatsApp Cloud API token** (`WHATSAPP_TOKEN`), if one was ever committed
       or shared — regenerate it in Meta and set it in the host env.
 

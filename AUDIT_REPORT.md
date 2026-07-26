@@ -461,11 +461,14 @@ an empty DB, then booted the app on a **fresh** DB with `synchronize` off —
 journey (§2.15) ran 16/16 green** on the migration-built schema, commission
 ledger included. `npm test`: 49 passed.
 
-> First deploy note: an **existing** database that was built by `synchronize`
-> already has these tables, so `migration:run` would fail trying to re-create
-> them. Fake the baseline as applied there once —
-> `INSERT INTO migrations(timestamp, name) VALUES (...)` for InitialSchema (or
-> `migration:run` only on fresh DBs) — then let later migrations flow normally.
+> Existing databases are handled automatically. A DB first built by
+> `synchronize` already has every table, so a naive `migration:run` would throw
+> "already exists". `InitialSchema.up()` guards for this: if `users` already
+> exists it does **no DDL** and just lets TypeORM record the migration as
+> applied — so the app boots on both fresh and pre-existing databases with no
+> manual baseline step. Verified: on a DB with the tables present but no
+> migration row, re-running the migration no-ops and records InitialSchema
+> instead of crashing (6/6 checks).
 
 ### 2.17 ✅ Storage seam for uploads (S3-ready)
 

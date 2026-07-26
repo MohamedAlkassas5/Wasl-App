@@ -4,6 +4,18 @@ export class InitialSchema1785039931464 implements MigrationInterface {
     name = 'InitialSchema1785039931464'
 
     public async up(queryRunner: QueryRunner): Promise<void> {
+        // 🩹 Baseline guard for adopting migrations on a database that was first
+        // built by the old `synchronize: true`. There, every table already
+        // exists, so the CREATE TABLE statements below would throw "already
+        // exists" and the app would refuse to boot. If the schema is already
+        // present we do NO DDL and simply return — TypeORM then records this
+        // migration as applied, so later migrations run normally against the
+        // existing schema. A genuinely fresh database has no `users` table and
+        // falls through to the full create below.
+        if (await queryRunner.hasTable("users")) {
+            return;
+        }
+
         await queryRunner.query(`CREATE TYPE "public"."delivery_partners_vehicletype_enum" AS ENUM('motorcycle', 'scooter', 'car', 'bicycle')`);
         await queryRunner.query(`CREATE TYPE "public"."delivery_partners_verificationstatus_enum" AS ENUM('pending', 'approved', 'rejected')`);
         await queryRunner.query(`CREATE TABLE "delivery_partners" ("user_id" integer NOT NULL, "national_id_front" character varying NOT NULL, "national_id_back" character varying NOT NULL, "selfie" character varying NOT NULL, "vehicle_image" character varying NOT NULL, "vehicleType" "public"."delivery_partners_vehicletype_enum" NOT NULL, "license_number" character varying, "verificationStatus" "public"."delivery_partners_verificationstatus_enum" NOT NULL DEFAULT 'pending', "admin_notes" text, "balance" numeric(10,2) NOT NULL DEFAULT '0', "is_online" boolean NOT NULL DEFAULT false, "current_latitude" double precision, "current_longitude" double precision, "last_location_update" TIMESTAMP, "availability_radius_km" double precision NOT NULL DEFAULT '5', "rating" numeric(3,2) NOT NULL DEFAULT '5', "created_at" TIMESTAMP NOT NULL DEFAULT now(), "updated_at" TIMESTAMP NOT NULL DEFAULT now(), CONSTRAINT "PK_6263f85f19ca48264691b74aecc" PRIMARY KEY ("user_id"))`);
