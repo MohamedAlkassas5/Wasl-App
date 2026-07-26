@@ -216,7 +216,8 @@ No tables/endpoints for saved addresses, favorites, coupons, customer wallet, or
 search. Flutter screens for wallet/offers exist with no backend behind them.
 
 ### 2.8 Operational gaps 🟡
-- `synchronize: true` in production — no migrations; schema drift/data-loss risk.
+- ~~`synchronize: true` in production — no migrations; schema drift/data-loss
+  risk.~~ ✅ **FIXED** — see §2.16.
 - No push notifications (FCM) — notifications are DB rows the app must poll.
 - No live driver→customer tracking channel (no sockets); tracking is polling.
 - ~~Uploaded ID/selfie documents are served from a public, unauthenticated
@@ -429,6 +430,35 @@ ran as live HTTP:
 
 The differentiator flow is genuinely working and correctly authorized, on real
 persistence. (Marketplace / merchant side, §2.2–2.3, still unbuilt.)
+
+### 2.16 ✅ `synchronize: true` replaced with migrations
+
+`synchronize: true` lets TypeORM ALTER/DROP live columns on every boot to match
+the entities — the classic path from an innocent entity edit to lost production
+data. Replaced with an explicit migration workflow:
+
+- `src/database/data-source.ts` — a single `DataSource` shared by the app and
+  the TypeORM CLI (via `buildDataSourceOptions()`), so `migration:generate`
+  always diffs against the same DB/entity set the app uses; they can't drift.
+  `synchronize` is hard-off with a comment saying why it must stay off. Adds an
+  optional `DB_POOL_MAX` for managed tiers with low connection caps.
+- `app.module.ts` now spreads that config and sets `migrationsRun: true`, so a
+  deploy applies pending migrations before serving.
+- `src/database/migrations/…-InitialSchema.ts` — the generated baseline: 10
+  tables, 9 enums, 6 foreign keys. `up()` only creates; `down()` only drops.
+- `package.json` scripts: `migration:generate|run|revert|show`.
+
+**Verified against a real Postgres** (PGlite): generated the migration against
+an empty DB, then booted the app on a **fresh** DB with `synchronize` off —
+`migration:show` reported `[X] InitialSchema` executed, and the **full order
+journey (§2.15) ran 16/16 green** on the migration-built schema, commission
+ledger included. `npm test`: 49 passed.
+
+> First deploy note: an **existing** database that was built by `synchronize`
+> already has these tables, so `migration:run` would fail trying to re-create
+> them. Fake the baseline as applied there once —
+> `INSERT INTO migrations(timestamp, name) VALUES (...)` for InitialSchema (or
+> `migration:run` only on fresh DBs) — then let later migrations flow normally.
 
 ---
 

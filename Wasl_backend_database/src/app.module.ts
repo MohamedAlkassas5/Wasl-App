@@ -5,16 +5,8 @@ import { ScheduleModule } from '@nestjs/schedule'; // 🎯 استيراد مود
 import { ConfigModule } from '@nestjs/config'; // 🎯 استيراد موديل الإعدادات للبيئة السحابية لاحقاً
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 
-// استيراد الـ Entities
-import { User } from './users/entities/user.entity';
-import { DeliveryPartner } from './delivery/entities/delivery-partner.entity';
-import { Merchant } from './merchant/entities/merchant.entity';
-import { Order, OrderOffer } from './orders/entities/order.entity';
-import { InAppNotification } from './orders/entities/notification.entity'; // 1️⃣ أولاً: استدعاء الـ Entity الجديد هنا 🎯
-import { AppSetting } from './settings/entities/app-setting.entity';
-import { OtpVerification } from './otp/entities/otp-verification.entity';
-import { WalletTopUpRequest } from './payments/entities/wallet-topup-request.entity';
-import { WalletTransaction } from './payments/entities/wallet-transaction.entity';
+// الـ Entities وإعدادات الاتصال مصدرها ملف واحد يشاركه الـ migration CLI
+import { buildDataSourceOptions } from './database/data-source';
 
 // استيراد الموديلات (Modules)
 import { AuthModule } from './auth/auth.module';
@@ -47,38 +39,17 @@ import { FilesModule } from './files/files.module';
       throttlers: [{ name: 'default', ttl: 60_000, limit: 120 }],
     }),
 
-    // 💻 Database connection.
-    // - Cloud (Render/Railway/Neon): set DATABASE_URL → connects over SSL.
-    // - Local dev: falls back to localhost Postgres (override via env vars).
-    // No secrets are hardcoded; the local fallback password is dev-only.
+    // 💻 Database connection — settings come from `database/data-source.ts`,
+    // the same file the migration CLI uses, so the app and the migrations can
+    // never disagree about which database or entities are in play.
+    //
+    // `synchronize` is OFF (see the note in data-source.ts). The schema is now
+    // owned by migrations, which run automatically on boot so a deploy brings
+    // the database up to date before the app starts serving.
     TypeOrmModule.forRoot({
-      type: 'postgres',
-      ...(process.env.DATABASE_URL
-        ? {
-            url: process.env.DATABASE_URL,
-            ssl: { rejectUnauthorized: false },
-          }
-        : {
-            host: process.env.DB_HOST || 'localhost',
-            port: Number(process.env.DB_PORT || 5432),
-            username: process.env.DB_USERNAME || 'postgres',
-            password: process.env.DB_PASSWORD || '147258369',
-            database: process.env.DB_NAME || 'wasl_delivery_db',
-          }),
-      entities: [
-        User,
-        DeliveryPartner,
-        Merchant,
-        Order,
-        OrderOffer,
-        InAppNotification,
-        AppSetting,
-        OtpVerification,
-        WalletTopUpRequest,
-        WalletTransaction,
-      ],
+      ...buildDataSourceOptions(),
       autoLoadEntities: true,
-      synchronize: true, // auto-creates tables; fine for MVP. Move to migrations before scale.
+      migrationsRun: true,
     }),
 
     AuthModule,
