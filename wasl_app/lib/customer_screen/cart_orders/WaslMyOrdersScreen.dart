@@ -57,8 +57,11 @@ class _WaslMyOrdersScreenState extends State<WaslMyOrdersScreen> with SingleTick
               status == 'delivering';
         }).toList();
 
+        // 🐞 كان بيفلتر 'completed' بس، فالطلبات الملغية كانت بتختفي من الشاشتين
+        // خالص — العميل ميعرفش إن طلبه اتلغى أصلاً. دلوقتي بتظهر في السجل.
         _completedOrders = allOrders.where((order) {
-          return order['status']?.toString().toLowerCase() == 'completed';
+          final status = order['status']?.toString().toLowerCase();
+          return status == 'completed' || status == 'cancelled';
         }).toList();
 
         _isLoading = false;
@@ -83,6 +86,8 @@ class _WaslMyOrdersScreenState extends State<WaslMyOrdersScreen> with SingleTick
         return 'الكابتن في طريقه إليك الآن 🚴';
       case 'completed':
         return 'تم التوصيل بنجاح 🎉';
+      case 'cancelled':
+        return 'تم إلغاء الطلب ❌';
       default:
         return 'قيد المعالجة...';
     }

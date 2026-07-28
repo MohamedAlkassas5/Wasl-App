@@ -1,8 +1,12 @@
 import 'package:shared_preferences/shared_preferences.dart';
 
 class WaslApiConfig {
-  static const String baseUrl = 'http://10.0.2.2:3000';
-  // static const String baseUrl = 'https://wasl-backend-production-97ef.up.railway.app';
+  // 📱 Real phone via USB cable → localhost, tunnelled to the laptop with
+  //    `adb reverse tcp:3000 tcp:3000` (no WiFi/firewall needed).
+  static const String baseUrl = 'http://localhost:3000';
+  // 🖥️ Android emulator only → 'http://10.0.2.2:3000'
+  // 📶 Phone over WiFi → the laptop's LAN IP, e.g. 'http://192.168.1.7:3000'
+  // ☁️ Production → 'https://wasl-backend-production-97ef.up.railway.app'
 
   static const Map<String, String> jsonHeaders = {
     'Content-Type': 'application/json',

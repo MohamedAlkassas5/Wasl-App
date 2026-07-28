@@ -528,7 +528,13 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:wasl_app/core/theme/app_colors.dart';
+import 'package:wasl_app/core/theme/wasl_assets.dart';
 import 'package:wasl_app/customer_screen/screens/home/WaslCategoryDetailsScreen.dart';
+import 'package:wasl_app/customer_screen/restaurants/WaslRestaurantDetailsScreen.dart';
+import 'package:wasl_app/customer_screen/restaurants/WaslFloatingCartBar.dart';
+import 'package:wasl_app/customer_screen/restaurants/WaslOffersCarousel.dart';
+import 'package:wasl_app/customer_screen/screens/home/wasl_home_categories.dart';
+import 'package:wasl_app/customer_screen/screens/home/WaslServiceComingSoonScreen.dart';
 import 'package:wasl_app/customer_screen/order_anywhere/WaslOrderCategoryScreen.dart';
 import 'package:wasl_app/customer_screen/profile/WaslSettingsScreen.dart';
 import 'package:wasl_app/customer_screen/cart_orders/WaslMyOrdersScreen.dart';
@@ -542,6 +548,15 @@ class WaslCustomerHomeScreen extends StatefulWidget {
 
   @override
   State<WaslCustomerHomeScreen> createState() => _WaslCustomerHomeScreenState();
+}
+
+/// Lets other screens switch the shell's bottom tab without a full router.
+/// Used after placing an order so "تتبّع طلباتي" lands on the orders tab.
+class WaslHomeShell {
+  static void Function(int index)? _selectTab;
+
+  /// Orders is index 1 in the bottom bar.
+  static void openOrdersTab() => _selectTab?.call(1);
 }
 
 class _WaslCustomerHomeScreenState extends State<WaslCustomerHomeScreen> {
@@ -564,6 +579,16 @@ class _WaslCustomerHomeScreenState extends State<WaslCustomerHomeScreen> {
   void initState() {
     super.initState();
     _initLiveLocationAndData();
+    // Allow post-checkout navigation to jump straight to the orders tab.
+    WaslHomeShell._selectTab = (index) {
+      if (mounted) setState(() => _currentIndex = index);
+    };
+  }
+
+  @override
+  void dispose() {
+    WaslHomeShell._selectTab = null;
+    super.dispose();
   }
 
   Future<void> _initLiveLocationAndData() async {
@@ -693,6 +718,42 @@ class _WaslCustomerHomeScreenState extends State<WaslCustomerHomeScreen> {
     }
   }
 
+  /// Sends each home tile to its own workflow. Services that aren't built yet
+  /// land on a finished-looking "coming soon" screen with a working
+  /// alternative, rather than a blank page.
+  void _openService(WaslHomeCategory service) {
+    switch (service.id) {
+      case 'restaurants':
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => const WaslCategoryDetailsScreen(
+              categoryFilter: 'مطاعم',
+              title: 'مطاعم',
+            ),
+          ),
+        );
+        break;
+
+      // "وصللي" و"هاتلي" الاتنين بيخدمهم مسار "اطلب من أي مكان" الشغّال فعلاً.
+      case 'wasly':
+      case 'hatly':
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => const WaslOrderCategoryScreen()),
+        );
+        break;
+
+      default:
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => WaslServiceComingSoonScreen(category: service),
+          ),
+        );
+    }
+  }
+
   Widget _buildHomeBody() {
     return RefreshIndicator(
       color: AppColors.primary,
@@ -799,38 +860,63 @@ class _WaslCustomerHomeScreenState extends State<WaslCustomerHomeScreen> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                const Text('التصنيفات المتاحة', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: AppColors.textPrimary, fontFamily: 'Cairo')),
+                const Text('تصفّح الفئات', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.textPrimary, fontFamily: 'Cairo')),
                 GestureDetector(
                   onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const WaslOrderCategoryScreen())),
-                  child: Text('عرض الكل ▾', style: TextStyle(color: AppColors.primary, fontSize: 12, fontWeight: FontWeight.bold, fontFamily: 'Cairo')),
+                  child: Text('عرض الكل', style: TextStyle(color: AppColors.primary, fontSize: 12, fontWeight: FontWeight.bold, fontFamily: 'Cairo')),
                 ),
               ],
             ),
             const SizedBox(height: 14),
 
-            _isLoadingCategories
-                ? const Center(child: Padding(padding: EdgeInsets.all(16.0), child: CircularProgressIndicator(color: AppColors.primary)))
-                : GridView.builder(
+            // 🎯 الخدمات الخمسة اللي بنشتغل عليها دلوقتي. دي وجهات تنقّل — كل
+            // واحدة بتفتح مسار مختلف — عشان كده معرّفة في التطبيق مش جاية من
+            // `/categories` (اللي لسه بيغذّي شاشة "اطلب من أي مكان" القديمة).
+            GridView.builder(
               shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
-              itemCount: _liveCategories.length > 4 ? 4 : _liveCategories.length,
-              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 4, mainAxisSpacing: 10, crossAxisSpacing: 10, childAspectRatio: 0.9),
+              itemCount: kWaslHomeCategories.length,
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 3, mainAxisSpacing: 12, crossAxisSpacing: 12, childAspectRatio: 0.86),
               itemBuilder: (context, i) {
-                final cat = _liveCategories[i];
+                final service = kWaslHomeCategories[i];
                 return GestureDetector(
-                  onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const WaslCategoryDetailsScreen())),
+                  onTap: () => _openService(service),
+                  // 🎨 نفس تخطيط المرجع: الصورة بتاخد أغلب الكارت من فوق،
+                  // والاسم في شريط تحتها في نفس الكارت.
                   child: Container(
+                    padding: const EdgeInsets.all(8),
                     decoration: BoxDecoration(
                       color: AppColors.white,
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: const Color(0xFFF1F5F9), width: 1),
+                      borderRadius: BorderRadius.circular(20),
+                      boxShadow: [
+                        BoxShadow(
+                          color: AppColors.textPrimary.withOpacity(0.05),
+                          blurRadius: 12,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
                     ),
                     child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Icon(_getIconData(cat['iconName']), color: AppColors.primary, size: 22),
+                        Expanded(
+                          child: Image.asset(
+                            service.assetPath,
+                            fit: BoxFit.contain,
+                            errorBuilder: (_, __, ___) => Icon(
+                              service.fallbackIcon,
+                              size: 40,
+                              color: AppColors.primary,
+                            ),
+                          ),
+                        ),
                         const SizedBox(height: 6),
-                        Text(cat['name'] ?? '', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppColors.textPrimary, fontFamily: 'Cairo'), maxLines: 1, overflow: TextOverflow.ellipsis),
+                        Text(
+                          service.name,
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: AppColors.textPrimary, fontFamily: 'Cairo'),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
                       ],
                     ),
                   ),
@@ -839,8 +925,28 @@ class _WaslCustomerHomeScreenState extends State<WaslCustomerHomeScreen> {
             ),
             const SizedBox(height: 26),
 
+            // 🍔 شريط "عروض المطاعم" الأفقي — نفس ترتيب المرجع (بعد الفئات
+            // وقبل قائمة المتاجر). بيخفي نفسه لو مفيش عروض.
+            const WaslOffersCarousel(),
+            const SizedBox(height: 26),
+
             // 🏪 المتاجر النشطة (Premium Store Cards)
-            const Text('متاجر نشطة قريبة منك حالياً', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: AppColors.textPrimary, fontFamily: 'Cairo')),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text('مطاعم ومتاجر قريبة منك', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.textPrimary, fontFamily: 'Cairo')),
+                if (_liveStores.isNotEmpty)
+                  GestureDetector(
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const WaslCategoryDetailsScreen(title: 'المطاعم والمتاجر'),
+                      ),
+                    ),
+                    child: const Text('عرض الكل', style: TextStyle(color: AppColors.primary, fontSize: 12, fontWeight: FontWeight.bold, fontFamily: 'Cairo')),
+                  ),
+              ],
+            ),
             const SizedBox(height: 12),
 
             if (_isLoadingStores)
@@ -874,10 +980,28 @@ class _WaslCustomerHomeScreenState extends State<WaslCustomerHomeScreen> {
                 itemBuilder: (context, index) {
                   final store = _liveStores[index];
                   final distance = double.tryParse(store['distance']?.toString() ?? '');
-                  return _buildLiveStoreCard(
-                    name: store['merchant_store_name'] ?? 'متجر وصل شريك',
-                    tags: store['merchant_store_type'] ?? '',
-                    dist: distance == null ? '' : '${distance.toStringAsFixed(1)} كم',
+                  final storeName = (store['merchant_store_name'] ?? 'متجر شريك').toString();
+                  final storeType = (store['merchant_store_type'] ?? '').toString();
+                  // 🎯 الكارت بقى بيفتح المتجر بدل ما يكون مجرد عرض ساكن.
+                  return GestureDetector(
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => WaslRestaurantDetailsScreen(
+                          merchantId: (store['id'] as num?)?.toInt() ?? 0,
+                          merchantName: storeName,
+                          merchantType: storeType.isEmpty ? null : storeType,
+                          addressDetails: store['addressDetails']?.toString(),
+                          distanceKm: distance,
+                        ),
+                      ),
+                    ),
+                    child: _buildLiveStoreCard(
+                      name: storeName,
+                      tags: storeType,
+                      dist: distance == null ? '' : '${distance.toStringAsFixed(1)} كم',
+                      merchantId: (store['id'] as num?)?.toInt() ?? index,
+                    ),
                   );
                 },
               ),
@@ -890,7 +1014,7 @@ class _WaslCustomerHomeScreenState extends State<WaslCustomerHomeScreen> {
   // ⚠️ التقييم ووقت التوصيل ورسوم التوصيل كانت بتتحسب هنا بأرقام مخترعة
   // (4.7 ثابت، والمسافة×10+5 دقيقة، والمسافة×5+10 جنيه) — ورقم الرسوم ده كان
   // بيخالف محرك التسعير الحقيقي في السيرفر. اتشالوا لحد ما يبقى ليهم مصدر حقيقي.
-  Widget _buildLiveStoreCard({required String name, required String tags, required String dist}) {
+  Widget _buildLiveStoreCard({required String name, required String tags, required String dist, int merchantId = 0}) {
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(12),
@@ -901,11 +1025,21 @@ class _WaslCustomerHomeScreenState extends State<WaslCustomerHomeScreen> {
       ),
       child: Row(
         children: [
-          Container(
+          // 🖼️ غلاف المطعم — صورة مؤقتة ثابتة لكل متجر (نفس الـ id ⇒ نفس الصورة)
+          ClipRRect(
+            borderRadius: BorderRadius.circular(12),
+            child: Image.asset(
+              WaslAssets.coverFor(merchantId),
               width: 64,
               height: 64,
-              decoration: BoxDecoration(color: AppColors.background, borderRadius: BorderRadius.circular(12)),
-              child: const Icon(Icons.storefront_rounded, color: AppColors.primary, size: 24)
+              fit: BoxFit.cover,
+              errorBuilder: (_, __, ___) => Container(
+                width: 64,
+                height: 64,
+                decoration: BoxDecoration(color: AppColors.background, borderRadius: BorderRadius.circular(12)),
+                child: const Icon(Icons.storefront_rounded, color: AppColors.primary, size: 24),
+              ),
+            ),
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -994,9 +1128,18 @@ class _WaslCustomerHomeScreenState extends State<WaslCustomerHomeScreen> {
           : null,
       body: Directionality(
         textDirection: TextDirection.rtl,
-        child: IndexedStack(
-          index: _currentIndex,
-          children: _pages,
+        child: Column(
+          children: [
+            Expanded(
+              child: IndexedStack(
+                index: _currentIndex,
+                children: _pages,
+              ),
+            ),
+            // 🛒 السلة كانت بتوصل بس من جوّه شاشة المطعم — تخرج منها تفضل
+            // الأصناف موجودة بس مخفية. الشريط ده بيظهر بس لما يكون فيه أصناف.
+            const WaslFloatingCartBar(),
+          ],
         ),
       ),
       bottomNavigationBar: BottomNavigationBar(

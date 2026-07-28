@@ -4,6 +4,54 @@ import 'package:wasl_app/core/theme/app_colors.dart';
 /// Reusable building blocks for the redesigned Wasl UI. Screens compose these
 /// instead of re-implementing buttons/cards/states, keeping the look consistent.
 
+/// Marks a screen whose content is sample data, not real merchant data.
+///
+/// This app previously shipped invented shops, ratings and prices that looked
+/// identical to real ones, so a customer could tap a store that did not exist.
+/// Any screen backed by placeholder data shows this banner, and it disappears
+/// on its own the moment that screen is wired to a real source.
+class WaslDemoDataBanner extends StatelessWidget {
+  final String message;
+
+  const WaslDemoDataBanner({
+    super.key,
+    this.message = 'عرض تجريبي — الأصناف والأسعار هنا للتصميم فقط وليست بيانات حقيقية',
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: AppColors.warning.withOpacity(0.12),
+        borderRadius: BorderRadius.circular(WaslSpacing.radiusSm),
+        border: Border.all(color: AppColors.warning.withOpacity(0.35)),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.info_outline_rounded,
+              size: 18, color: AppColors.warning),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              message,
+              style: const TextStyle(
+                fontSize: 11,
+                height: 1.4,
+                color: AppColors.textPrimary,
+                fontFamily: 'Cairo',
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 /// Primary gradient action button with a built-in loading state.
 class WaslButton extends StatelessWidget {
   final String label;

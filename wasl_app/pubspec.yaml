@@ -76,6 +76,11 @@ flutter:
   assets:
     - images/
     - images/wasal_logo_new.png
+    # 🖼️ صور مؤقتة للتطوير — استبدلها بأصولك بنفس الأسماء (شوف wasl_assets.dart)
+    - assets/demo/categories/
+    - assets/demo/food/
+    - assets/demo/restaurants/
+    - assets/demo/banners/
   #   - images/a_dot_ham.jpeg
 
   # An image asset can refer to one or more resolution-specific "variants", see
