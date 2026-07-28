@@ -1,167 +1,234 @@
 # 🤖 AI Development Instructions
 
-> **Role:** Lead Software Engineer • Product Architect • Senior Code Reviewer
+> **Role:** Lead Software Engineer • Software Architect • Senior Backend Engineer • Senior Flutter Engineer • DevOps Engineer • Code Reviewer • QA Engineer
 
-This repository is intended to be developed collaboratively with AI coding assistants such as **Claude Code**, **Cursor AI**, **GitHub Copilot Agent**, or **Gemini CLI**.
+---
 
-## Mission
+# Mission
 
-Your mission is **NOT** to rebuild this project.
+You are responsible for transforming this repository into a **production-ready MVP (V1)**.
 
-Your mission is to understand the existing architecture, audit the codebase, and complete the project into a production-ready MVP while preserving the original business vision.
+Your objective is **NOT** to rewrite or recreate the project.
+
+Your objective is to understand, improve, complete, and stabilize the existing codebase while preserving the current architecture and business vision.
+
+Always think like a senior engineer working on an existing production product—not like a code generator.
 
 ---
 
 # Project
 
-**Wasl (وصل)**
+## Wasl (وصل)
 
-A local delivery marketplace connecting:
+A hyper-local delivery marketplace connecting:
 
 - 👤 Customers
 - 🛵 Delivery Drivers
 - 🏪 Merchants
 
-Initial launch target:
+Initial launch city:
 
 **Kom Hamada, El Beheira, Egypt**
 
-The architecture must remain scalable for future expansion.
+The architecture must remain scalable for nationwide expansion.
 
 ---
 
-# Primary Objectives
+# Engineering Principles
 
-Before writing any code:
+Always follow these principles:
 
-- Read the entire project.
-- Understand every module.
-- Understand navigation.
-- Understand architecture.
-- Understand state management.
-- Understand backend modules.
-- Understand database design.
-
-Never make assumptions.
+- Analyze before coding.
+- Never make assumptions.
+- Never replace working code.
+- Never duplicate functionality.
+- Never redesign the application without a technical reason.
+- Never hardcode business logic.
+- Never leave unfinished work.
+- Never create placeholder implementations.
+- Never create fake APIs.
+- Never ignore compile warnings.
+- Prefer extending existing modules over creating new ones.
+- Keep changes incremental and maintainable.
 
 ---
 
 # Development Workflow
 
-## Phase 1 — Audit
-
-Create a complete audit report including:
-
-- Existing features
-- Missing features
-- Broken screens
-- Broken APIs
-- Duplicate code
-- Architecture issues
-- Missing validation
-- Database inconsistencies
-- Performance issues
-- Security issues
-- Technical debt
-
-Do **NOT** modify anything until the audit is complete.
+The project must be completed using the following phases.
 
 ---
 
-## Phase 2 — Architecture Review
+# Phase 1 — Codebase Audit
 
-Review the project's:
+Read the **entire project** before making any changes.
 
-- Flutter Architecture
-- Clean Architecture implementation
-- Feature modules
+Understand:
+
+- Flutter architecture
+- Folder structure
+- Navigation
+- State management
 - Dependency Injection
-- Routing
-- Riverpod providers
+- Shared widgets
+- Feature modules
+- Models
 - Repositories
 - Services
-- DTOs
-- Entities
-- NestJS modules
+- APIs
+- Backend modules
 - Database schema
+- Environment configuration
+- Assets
+- Build configuration
 
-Refactor only where necessary.
+Do not write code until the audit is complete.
 
 ---
 
-## Phase 3 — Implementation
+## Audit Report
 
-Complete the missing functionality while preserving:
+Generate a detailed report including:
 
-- Existing design language
-- Existing color palette
+### Flutter
+
+- Existing features
+- Missing screens
+- Broken navigation
+- UI inconsistencies
+- Responsive issues
+- Accessibility issues
+- Duplicate widgets
+- Dead code
+- Unused assets
+- Unused packages
+- Missing localization
+
+### Backend
+
+- Existing modules
+- Missing endpoints
+- Incorrect DTO validation
+- Missing authentication
+- Missing authorization
+- Security issues
+- Database inconsistencies
+- Performance bottlenecks
+- Missing indexes
+- Transaction issues
+
+### General
+
+- Technical debt
+- Architecture violations
+- Dependency problems
+- Code smells
+- Potential bugs
+- Missing tests
+
+Do not modify code before completing this report.
+
+---
+
+# Phase 2 — Architecture Review
+
+Review the architecture and improve only when necessary.
+
+Keep:
+
+- Existing design system
+- Existing UI
 - Existing navigation
-- Existing UI components
-- Existing architecture
-- Existing business logic
+- Existing branding
+- Existing business idea
 
-Do not redesign the application.
+Improve:
+
+- Maintainability
+- Scalability
+- Performance
+- Security
+- Testability
 
 ---
 
-# Core Features
+# Phase 3 — MVP Completion
 
-## Customer
+Complete every missing feature required for MVP V1.
+
+Do not leave partially implemented functionality.
+
+Every feature must be fully integrated.
+
+---
+
+# Customer Features
+
+Implement and verify:
 
 - Phone Authentication
 - WhatsApp OTP
 - Profile
 - Home
-- Search
 - Categories
+- Search
 - Stores
 - Products
 - Cart
 - Checkout
 - Saved Addresses
+- Favorites
 - Wallet
 - Coupons
-- Favorites
 - Notifications
 - Order Tracking
 - Live Driver Tracking
 
 ---
 
-## Driver
+# Driver Features
+
+Implement:
 
 - Registration
-- Documents
+- Document Upload
 - Vehicle Information
+- Approval Workflow
 - Online / Offline
 - Nearby Orders
-- Accept / Reject Orders
-- Delivery Pricing
-- Navigation
+- Accept Orders
+- Reject Orders
+- Counter Offer
 - Earnings
 - Wallet
 - Commission History
+- Navigation
+- Delivery Completion
 
 ---
 
-## Merchant
+# Merchant Features
 
-- Registration
+Implement:
+
+- Merchant Registration
 - Store Management
-- Products
+- Product Management
+- Categories
 - Inventory
 - Orders
-- Status Updates
+- Order Status
+- Store Profile
 
 ---
 
-# Required Order Types
+# Marketplace Orders
 
-## Marketplace Orders
+Support full marketplace flow.
 
-Customer purchases from registered stores.
+Customer
 
-Flow:
+↓
 
 Category
 
@@ -187,24 +254,32 @@ Payment
 
 ↓
 
+Driver Assignment
+
+↓
+
+Tracking
+
+↓
+
 Delivery
 
 ---
 
-## Send Anything
+# Send Anything Orders
 
-Customer creates a custom delivery request.
+Support custom delivery requests.
 
-Required:
+Required fields:
 
 - Pickup Location
 - Destination
-- Item Description
+- Description
 - Images
 - Voice Note
-- Instructions
+- Notes
 
-Example:
+Examples:
 
 - Documents
 - Medicine
@@ -213,39 +288,39 @@ Example:
 
 ---
 
-# Required Backend Improvements
+# GPS & Maps
 
-Implement production-ready services.
+Never use hardcoded coordinates.
 
-## GPS System
+Implement:
 
-Never hardcode coordinates.
-
-Support:
-
-- GPS
+- Device GPS
 - Live Driver Tracking
-- Address Saving
-- Radius Search
+- Manual Map Selection
+- Saved Addresses
+- Reverse Geocoding
 - ETA
 - Distance Calculation
+
+Backend must support:
+
+- Latitude
+- Longitude
+- Spatial Queries
+- Radius Search
 
 Recommended:
 
 - PostgreSQL
 - PostGIS
-- Latitude / Longitude
-- Spatial Queries
 
 ---
 
-## Driver Matching
+# Driver Matching Engine
 
-Create a nearest-driver algorithm.
+Implement nearest driver algorithm.
 
-Example:
-
-Initial search:
+Radius expansion:
 
 5 km
 
@@ -259,13 +334,24 @@ Initial search:
 
 ↓
 
+30 km
+
+↓
+
 Until driver found.
+
+Prioritize:
+
+- Online
+- Available
+- Closest
+- Highest Rating
 
 ---
 
-## Delivery Pricing Engine
+# Delivery Pricing Engine
 
-Never calculate prices inside Flutter.
+Pricing must exist only in backend.
 
 Create:
 
@@ -273,39 +359,28 @@ Create:
 DeliveryPricingService
 ```
 
+Requirements:
+
+- Base fee
+- Distance pricing
+- Area pricing
+- Surge pricing support
+- Configurable commission
+- Future promo support
+
 Example:
 
-| Distance | Price |
-|----------|------:|
+| Distance | Delivery Fee |
+|-----------|-------------:|
 | 0–5 KM | 20 EGP |
 | 5–15 KM | 40 EGP |
 | 15+ KM | Dynamic |
 
-Configurable commission.
-
-Example:
-
-Delivery Fee:
-
-40 EGP
-
-Commission:
-
-20%
-
-Driver:
-
-32 EGP
-
-Platform:
-
-8 EGP
-
 ---
 
-## WhatsApp OTP
+# Authentication
 
-Create abstraction:
+Create provider-independent OTP service.
 
 ```text
 OtpService
@@ -317,134 +392,189 @@ Supported providers:
 - Twilio WhatsApp
 - WhatsApp Business API
 
-Never couple the implementation to a single provider.
+Implementation must be provider-agnostic.
 
 ---
 
-## Payment
+# Payments
 
-MVP:
+Current MVP
 
-Cash On Delivery
+Customer:
 
-Driver wallet:
+- Cash on Delivery
 
-Automatic commission deduction after successful delivery.
+Driver:
 
----
+- Wallet
+- Automatic commission deduction
 
-# Code Quality Rules
+Future-ready architecture for:
 
-✅ Keep working code.
-
-✅ Remove dead code.
-
-✅ No duplicated widgets.
-
-✅ No duplicated APIs.
-
-✅ No hardcoded business logic.
-
-✅ No fake APIs.
-
-✅ No placeholder implementations.
-
-✅ No TODOs.
-
-✅ Proper validation.
-
-✅ Error handling.
-
-✅ Logging.
-
-✅ Clean architecture.
+- Stripe
+- Paymob
+- Fawry
 
 ---
 
-# Flutter Requirements
+# Flutter Standards
 
 Improve:
 
-- Responsive UI
-- Loading states
-- Empty states
-- Error states
+- Responsiveness
 - Animations
-- Accessibility
-- Performance
+- UX
+- Error Handling
+- Empty States
+- Loading States
+- Form Validation
+- Offline Handling
 
-Keep:
+Maintain:
 
-- Theme
-- Navigation
-- UI Style
+- Existing Theme
+- Existing Colors
+- Existing Components
 
 ---
 
-# Backend Requirements
+# Backend Standards
 
 Use:
 
 - NestJS
-- DTO Validation
+- JWT Authentication
 - Guards
-- JWT
+- DTO Validation
 - Repository Pattern
 - Service Layer
 - PostgreSQL
 - PostGIS
+- Redis (if appropriate)
+- Transaction Support
+
+---
+
+# Code Quality
+
+Follow:
+
+- SOLID
+- Clean Architecture
+- DRY
+- KISS
+- Repository Pattern
+- Dependency Injection
+
+Remove:
+
+- Duplicate code
+- Dead code
+- Unused imports
+- Magic numbers
+- Hardcoded values
 
 ---
 
 # Testing
 
-After every major change execute:
+After every significant implementation execute:
 
-Flutter
+## Flutter
 
 ```bash
 flutter analyze
-
 flutter test
-
-flutter build apk
+flutter build apk --debug
 ```
 
-Backend
+## Backend
 
 ```bash
+npm run lint
+npm run test
 npm run build
 ```
 
-Fix every warning before continuing.
+Resolve all errors before proceeding.
 
 ---
 
 # Final Delivery
 
-Provide:
+Provide a complete engineering report containing:
 
-- ✅ Completed Features
-- ✅ Modified Files
-- ✅ New Files
-- ✅ Database Changes
-- ✅ API Changes
-- ✅ Test Results
-- ✅ Remaining Issues
-- ✅ MVP Readiness Percentage
+## Completed Features
+
+List every implemented feature.
+
+## Modified Files
+
+List every changed file.
+
+## New Files
+
+List every created file.
+
+## Database Changes
+
+Include:
+
+- New tables
+- New columns
+- Indexes
+- Constraints
+- Migrations
+
+## API Changes
+
+List:
+
+- New endpoints
+- Modified endpoints
+- Removed endpoints
+
+## Security Improvements
+
+Describe:
+
+- Authentication
+- Authorization
+- Validation
+- Rate limiting
+- Input sanitization
+
+## Performance Improvements
+
+Describe:
+
+- Query optimization
+- Caching
+- Widget optimization
+- Memory improvements
+
+## Remaining Issues
+
+List only real blockers.
+
+## MVP Readiness
+
+Provide a realistic percentage with justification.
 
 ---
 
-# Important Rules
+# Success Criteria
 
-Never rebuild the project.
+The project is considered complete only when:
 
-Never change the business idea.
-
-Never redesign the UI unnecessarily.
-
-Always preserve the existing architecture unless a refactor is clearly justified.
-
-Always analyze before coding.
-
-The goal is to deliver a **production-ready Wasl MVP V1** suitable for real-world testing in **Kom Hamada, El Beheira, Egypt**, while maintaining a scalable architecture for future expansion.
+- No compile errors
+- No analyzer errors
+- No duplicate code
+- No placeholder implementations
+- No fake APIs
+- All navigation works
+- All required screens are functional
+- Backend builds successfully
+- Flutter builds successfully
+- MVP is ready for real-world testing in Kom Hamada, Egypt
+- Architecture remains scalable for future expansion
