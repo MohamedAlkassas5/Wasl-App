@@ -1,0 +1,21 @@
+npm install
+
+npm install --save-dev @types/node @types/express @types/multer @types/bcrypt
+
+npm run start:dev
+
+
+flutter clean
+
+flutter pub get
+
+
+
+
+
+
+admin: 01097978232 ,     WasalAdmin@147
+
+user: 01553792360 , Ahmed@147
+
+delivary: 01099799361 , Ahmed@0155#

@@ -611,8 +611,14 @@ class _WaslLoginScreenState extends State<WaslLoginScreen> {
                   ),
                   const SizedBox(height: 16),
                   const Text(
-                    'أهلاً بك في وصل',
-                    style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900, color: AppColors.textPrimary, fontFamily: 'Cairo', letterSpacing: -0.5),
+                    'أهلاً بك في فلاش توصيل (Flash Tawseel)',
+                    style: TextStyle(
+                      fontSize: 22,
+                      fontWeight: FontWeight.w900,
+                      color: AppColors.textPrimary,
+                      fontFamily: 'Cairo',
+                      letterSpacing: -0.5,
+                    ),
                   ),
                   const SizedBox(height: 2),
                   const Text(

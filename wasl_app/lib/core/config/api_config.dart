@@ -1,12 +1,21 @@
+import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class WaslApiConfig {
-  // 📱 Real phone via USB cable → localhost, tunnelled to the laptop with
-  //    `adb reverse tcp:3000 tcp:3000` (no WiFi/firewall needed).
-  static const String baseUrl = 'http://localhost:3000';
-  // 🖥️ Android emulator only → 'http://10.0.2.2:3000'
-  // 📶 Phone over WiFi → the laptop's LAN IP, e.g. 'http://192.168.1.7:3000'
-  // ☁️ Production → 'https://wasl-backend-production-97ef.up.railway.app'
+  /// 🎯 عنوان السيرفر الرئيسي (ديناميكي)
+  /// 🖥️ Android emulator → 'http://10.0.2.2:3000'
+  /// 📱 Real phone (USB via ADB) / Web / iOS → 'http://localhost:3000'
+  /// 📶 Phone over WiFi → 'http://192.168.1.X:3000' (يمكنك تبديله عند الحاجة)
+  static String get baseUrl {
+    // إذا كان التطبيق يعمل داخل محاكي Android
+    if (!kIsWeb && Platform.isAndroid) {
+      return 'http://10.0.2.2:3000';
+    }
+    // للموبايل الحقيقي المتصل بكابل USB بعد أمر: adb reverse tcp:3000 tcp:3000
+    // أو المحاكي على iOS/Web
+    return 'http://localhost:3000';
+  }
 
   static const Map<String, String> jsonHeaders = {
     'Content-Type': 'application/json',

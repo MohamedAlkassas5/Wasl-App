@@ -35,7 +35,8 @@ class WaslTheme {
         ),
       ),
 
-      cardTheme: CardThemeData(
+      // 🎯 [تم التصحيح]: تغيير CardThemeData إلى CardTheme
+      cardTheme: CardTheme(
         color: AppColors.surface,
         surfaceTintColor: Colors.transparent,
         elevation: 0,
@@ -77,7 +78,7 @@ class WaslTheme {
         filled: true,
         fillColor: AppColors.background,
         contentPadding:
-            const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+        const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
         hintStyle: const TextStyle(color: AppColors.textSecondary, fontSize: 14),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(WaslSpacing.radiusSm),
@@ -124,9 +125,7 @@ class WaslTheme {
         elevation: 0,
       ),
 
-      // Cairo across the whole app (Arabic-first). google_fonts registers the
-      // 'Cairo' family at runtime, so inline `fontFamily: 'Cairo'` styles used
-      // throughout the existing screens now resolve correctly too.
+      // Cairo across the whole app (Arabic-first).
       fontFamily: GoogleFonts.cairo().fontFamily,
       textTheme: GoogleFonts.cairoTextTheme(base.textTheme).copyWith(
         headlineSmall: GoogleFonts.cairo(
@@ -137,7 +136,7 @@ class WaslTheme {
             fontWeight: FontWeight.w700, color: AppColors.textPrimary),
         bodyMedium: GoogleFonts.cairo(color: AppColors.textPrimary, height: 1.5),
         bodySmall:
-            GoogleFonts.cairo(color: AppColors.textSecondary, height: 1.5),
+        GoogleFonts.cairo(color: AppColors.textSecondary, height: 1.5),
       ),
     );
   }

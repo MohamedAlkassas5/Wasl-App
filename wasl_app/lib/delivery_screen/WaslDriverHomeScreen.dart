@@ -1,7 +1,5 @@
-// import 'dart:async'; // 🎯 مستدعى ومفعل للمزامنة الآنية
-// import 'dart:convert';
+// import 'dart:async';
 // import 'package:flutter/material.dart';
-// import 'package:http/http.dart' as http;
 // import 'package:shared_preferences/shared_preferences.dart';
 // import 'package:wasl_app/core/theme/app_colors.dart';
 // import 'package:wasl_app/delivery_screen/WaslDriverMarketplaceScreen.dart';
@@ -9,6 +7,9 @@
 // import 'package:wasl_app/delivery_screen/WaslDriverProfileScreen.dart';
 // import 'package:wasl_app/screens/WaslNotificationBell.dart';
 // import 'package:wasl_app/delivery_screen/WaslDeliveryPaymentScreen.dart';
+// import 'package:wasl_app/services/orders_service.dart';
+// import 'package:wasl_app/services/location_service.dart';
+// import 'package:wasl_app/services/location_api_service.dart';
 //
 // class WaslDriverHomeScreen extends StatefulWidget {
 //   const WaslDriverHomeScreen({Key? key}) : super(key: key);
@@ -17,10 +18,13 @@
 //   State<WaslDriverHomeScreen> createState() => _WaslDriverHomeScreenState();
 // }
 //
-// class _WaslDriverHomeScreenState extends State<WaslDriverHomeScreen> {
+// class _WaslDriverHomeScreenState extends State<WaslDriverHomeScreen> with WidgetsBindingObserver {
+//   final FlutterOrdersService _ordersService = FlutterOrdersService();
+//   final LocationApiService _locationApi = LocationApiService();
+//   Timer? _locationTimer;
 //   bool _isOnline = false;
 //   String _driverName = 'جاري التحميل...';
-//   int? _driverId;
+//   int _driverId = 21; // القيمة الافتراضية المعتمدة لـ MVP V1
 //
 //   double _walletBalance = 0.00;
 //   bool _isLoadingBalance = true;
@@ -35,77 +39,128 @@
 //   @override
 //   void initState() {
 //     super.initState();
+//     WidgetsBinding.instance.addObserver(this); // لمراقبة عودة الكابتن للتطبيق من الخلفية
 //     _loadDriverSessionAndInitialize();
-//   }
-//
-//   Future<void> _loadDriverSessionAndInitialize() async {
-//     final prefs = await SharedPreferences.getInstance();
-//     final id = prefs.getInt('user_id') ?? 21;
-//     final name = prefs.getString('user_name') ?? 'كابتن وصل';
-//
-//     setState(() {
-//       _driverId = id;
-//       _driverName = name;
-//     });
-//
-//     await _fetchLiveDashboardStats(id);
-//     _startLiveDashboardUpdates();
-//   }
-//
-//   void _startLiveDashboardUpdates() {
-//     _dashboardTimer = Timer.periodic(const Duration(seconds: 5), (timer) async {
-//       if (_driverId != null) {
-//         await _fetchLiveDashboardStats(_driverId!);
-//       }
-//     });
-//   }
-//
-//   Future<void> _fetchLiveDashboardStats(int driverId) async {
-//     final url = Uri.parse('http://10.0.2.2:3000/orders/driver/$driverId/dashboard-stats');
-//
-//     try {
-//       final response = await http.get(
-//         url,
-//         headers: {'Content-Type': 'application/json', 'Accept': 'application/json'},
-//       ).timeout(const Duration(seconds: 8));
-//
-//       if (response.statusCode == 200 && mounted) {
-//         final data = jsonDecode(response.body);
-//
-//         if (data != null) {
-//           setState(() {
-//             // معالجة مرنة لقراءة الحقول الحية اليومية أو الإجمالية لتجنب الأصفار
-//             _walletBalance = double.tryParse(data['balance']?.toString() ?? '') ??
-//                 double.tryParse(data['walletBalance']?.toString() ?? '0.0') ?? 0.0;
-//
-//             _todayOrdersCount = int.tryParse(data['todayOrdersCount']?.toString() ?? '') ??
-//                 int.tryParse(data['completedOrdersCount']?.toString() ?? '0') ?? 0;
-//
-//             _todayEarnings = double.tryParse(data['todayEarnings']?.toString() ?? '') ??
-//                 double.tryParse(data['totalEarnings']?.toString() ?? '0.0') ?? 0.0;
-//
-//             _todayCommissions = double.tryParse(data['todayCommissions']?.toString() ?? '') ??
-//                 double.tryParse(data['totalCommissions']?.toString() ?? '0.0') ?? 0.0;
-//
-//             _driverRating = double.tryParse(data['rating']?.toString() ?? '4.95') ?? 4.95;
-//             _isLoadingBalance = false;
-//           });
-//           return;
-//         }
-//       }
-//     } catch (e) {
-//       debugPrint('💥 [LIVE STATS FETCH ERROR]: $e');
-//     }
-//     if (mounted) setState(() => _isLoadingBalance = false);
 //   }
 //
 //   @override
 //   void dispose() {
-//     _dashboardTimer?.cancel();
+//     _stopLiveDashboardUpdates();
+//     _stopLocationUpdates();
+//     WidgetsBinding.instance.removeObserver(this);
 //     super.dispose();
 //   }
 //
-//   void _toggleOnlineStatus(bool value) {
+//   // 🎯 تحديث البيانات تلقائياً لو الكابتن فتح الموبايل بعد قفله
+//   @override
+//   void didChangeAppLifecycleState(AppLifecycleState state) {
+//     if (state == AppLifecycleState.resumed) {
+//       _fetchLiveDashboardStats(_driverId);
+//       _fetchOnlineStatus(_driverId);
+//       _startLiveDashboardUpdates();
+//     } else if (state == AppLifecycleState.paused) {
+//       _stopLiveDashboardUpdates();
+//       _stopLocationUpdates();
+//     }
+//   }
+//
+//   Future<void> _loadDriverSessionAndInitialize() async {
+//     final prefs = await SharedPreferences.getInstance();
+//     await prefs.reload(); // تحديث قاطع لذاكرة الكاش
+//
+//     // 🛡️ تأمين جلب الـ ID بشكل مرن سواء كان مخزناً كـ String أو Int في السيرفر
+//     final storedId = prefs.get('user_id');
+//     final id = int.tryParse(storedId?.toString() ?? '') ?? 21;
+//     final name = prefs.getString('user_name') ?? 'كابتن وصل';
+//
+//     if (mounted) {
+//       setState(() {
+//         _driverId = id;
+//         _driverName = name;
+//       });
+//     }
+//
+//     await _fetchLiveDashboardStats(id);
+//     await _fetchOnlineStatus(id);
+//     _startLiveDashboardUpdates();
+//   }
+//
+//   Future<void> _fetchOnlineStatus(int driverId) async {
+//     final result = await _ordersService.getDriverOnlineStatus(driverId);
+//     if (mounted && result['success'] == true) {
+//       final online = result['isOnline'] == true;
+//       setState(() => _isOnline = online);
+//       // Resume/stop live location push to match the restored session state.
+//       if (online) {
+//         _startLocationUpdates();
+//       } else {
+//         _stopLocationUpdates();
+//       }
+//     }
+//   }
+//
+//   void _startLiveDashboardUpdates() {
+//     _dashboardTimer?.cancel(); // منع تداخل المؤقتات في الخلفية
+//     _dashboardTimer = Timer.periodic(const Duration(seconds: 5), (timer) async {
+//       await _fetchLiveDashboardStats(_driverId);
+//     });
+//   }
+//
+//   // 🛰️ بث موقع الكابتن الحي للسيرفر أثناء الأونلاين ليظهر في بحث "الأقرب"
+//   Future<void> _pushLocationOnce() async {
+//     final pos = await LocationService.instance.getCurrentPosition();
+//     if (pos == null) return;
+//     await _locationApi.updateDriverLocation(
+//       driverId: _driverId,
+//       latitude: pos.latitude,
+//       longitude: pos.longitude,
+//     );
+//   }
+//
+//   void _startLocationUpdates() {
+//     _locationTimer?.cancel();
+//     _pushLocationOnce(); // بث فوري أول ما يبقى أونلاين
+//     _locationTimer = Timer.periodic(
+//       const Duration(seconds: 20),
+//       (_) => _pushLocationOnce(),
+//     );
+//   }
+//
+//   void _stopLocationUpdates() {
+//     _locationTimer?.cancel();
+//     _locationTimer = null;
+//   }
+//
+//   void _stopLiveDashboardUpdates() {
+//     _dashboardTimer?.cancel();
+//     _dashboardTimer = null;
+//   }
+//
+//   Future<void> _fetchLiveDashboardStats(int driverId) async {
+//     final result = await _ordersService.getDriverDashboardStats(driverId);
+//
+//     if (result['success'] == true && mounted) {
+//       setState(() {
+//         _walletBalance = double.tryParse(result['balance']?.toString() ?? '') ?? 0.0;
+//         _todayOrdersCount = int.tryParse(result['todayOrdersCount']?.toString() ?? '') ?? 0;
+//         _todayEarnings = double.tryParse(result['todayEarnings']?.toString() ?? '') ?? 0.0;
+//         _todayCommissions = double.tryParse(result['todayCommissions']?.toString() ?? '') ?? 0.0;
+//         _driverRating = double.tryParse(result['rating']?.toString() ?? '4.95') ?? 4.95;
+//         _isLoadingBalance = false;
+//
+//         if (_walletBalance < 5 && _isOnline) {
+//           _isOnline = false;
+//         }
+//       });
+//       return;
+//     }
+//
+//     if (mounted && _isLoadingBalance) {
+//       setState(() => _isLoadingBalance = false);
+//     }
+//   }
+//
+//   void _toggleOnlineStatus(bool value) async {
 //     if (value && _walletBalance < 5.0) {
 //       ScaffoldMessenger.of(context).showSnackBar(
 //         const SnackBar(
@@ -117,14 +172,37 @@
 //       return;
 //     }
 //
-//     setState(() {
-//       _isOnline = value;
-//     });
+//     final result = await _ordersService.setDriverOnlineStatus(
+//       driverId: _driverId,
+//       isOnline: value,
+//     );
+//
+//     if (!mounted) return;
+//
+//     if (result['success'] != true) {
+//       ScaffoldMessenger.of(context).showSnackBar(
+//         SnackBar(
+//           content: Text(result['message'] ?? 'فشل تحديث حالة الاتصال', style: const TextStyle(fontFamily: 'Cairo')),
+//           backgroundColor: AppColors.danger,
+//           behavior: SnackBarBehavior.floating,
+//         ),
+//       );
+//       return;
+//     }
+//
+//     setState(() => _isOnline = result['isOnline'] == true);
+//
+//     // 🛰️ Start/stop live GPS push so this driver appears in nearby search.
+//     if (_isOnline) {
+//       _startLocationUpdates();
+//     } else {
+//       _stopLocationUpdates();
+//     }
 //
 //     ScaffoldMessenger.of(context).showSnackBar(
 //       SnackBar(
 //         content: Text(
-//           _isOnline ? 'أنت أونلاين الآن! مستعد استقبال عروض الأسعار ⚡' : 'تم تحويل حسابك أوفلاين بنجاح.',
+//           _isOnline ? 'أنت أونلاين الآن! مستعد لاستقبال الطلبات ⚡' : 'تم تحويل حسابك أوفلاين.',
 //           style: const TextStyle(fontFamily: 'Cairo'),
 //         ),
 //         backgroundColor: _isOnline ? const Color(0xFF16A34A) : AppColors.textSecondary,
@@ -143,22 +221,27 @@
 //         backgroundColor: AppColors.white,
 //         elevation: 0.5,
 //         automaticallyImplyLeading: false,
-//         leadingWidth: 56,
+//         leadingWidth: 64,
 //         leading: Padding(
-//           padding: const EdgeInsets.only(right: 16.0, top: 8.0, bottom: 8.0),
+//           padding: const EdgeInsets.only(right: 12.0, top: 6.0, bottom: 6.0),
 //           child: GestureDetector(
-//             onTap: () {
-//               Navigator.push(
+//             onTap: () async {
+//               _stopLiveDashboardUpdates(); // إيقاف مؤقت للراحة أثناء تصفح البروفايل
+//               await Navigator.push(
 //                 context,
 //                 MaterialPageRoute(builder: (_) => const WaslDriverProfileScreen()),
 //               );
+//               _loadDriverSessionAndInitialize(); // 🎯 إعادة تشغيل الفحص فور العودة للشاشة الرئيسية
 //             },
 //             child: Container(
 //               decoration: BoxDecoration(
-//                 color: AppColors.primary.withOpacity(0.06),
+//                 color: AppColors.primary.withOpacity(0.08),
 //                 shape: BoxShape.circle,
+//                 border: Border.all(color: AppColors.primary.withOpacity(0.2), width: 1.5),
 //               ),
-//               child: const Icon(Icons.person_rounded, color: AppColors.primary, size: 20),
+//               child: const Center(
+//                 child: Icon(Icons.person_rounded, color: AppColors.primary, size: 22),
+//               ),
 //             ),
 //           ),
 //         ),
@@ -172,14 +255,15 @@
 //             margin: const EdgeInsets.symmetric(vertical: 8),
 //             decoration: BoxDecoration(color: AppColors.background, shape: BoxShape.circle),
 //             child: IconButton(
-//               icon: const Icon(Icons.assignment_rounded, color: AppColors.textPrimary, size: 18),
+//               icon: const Icon(Icons.assignment_rounded, color: AppColors.textPrimary, size: 20),
+//               tooltip: 'رحلاتي وتكليفاتي',
 //               onPressed: () {
 //                 Navigator.push(context, MaterialPageRoute(builder: (_) => const WaslDriverOrdersScreen()));
 //               },
 //             ),
 //           ),
-//           const SizedBox(width: 4),
-//           WaslNotificationBell(userId: _driverId ?? 21),
+//           const SizedBox(width: 8),
+//           WaslNotificationBell(userId: _driverId),
 //           const SizedBox(width: 16),
 //         ],
 //       ),
@@ -253,11 +337,13 @@
 //                   ),
 //                   child: InkWell(
 //                     borderRadius: BorderRadius.circular(20),
-//                     onTap: () {
-//                       Navigator.push(
+//                     onTap: () async {
+//                       _stopLiveDashboardUpdates();
+//                       await Navigator.push(
 //                         context,
 //                         MaterialPageRoute(builder: (_) => const WaslDeliveryPaymentScreen()),
 //                       );
+//                       _loadDriverSessionAndInitialize();
 //                     },
 //                     child: Padding(
 //                       padding: const EdgeInsets.all(20),
@@ -302,7 +388,7 @@
 //                 ),
 //                 const SizedBox(height: 24),
 //
-//                 // 3️⃣ تقارير الأداء الفلات الاحترافية
+//                 // 3️⃣ تقارير الأداء اليومية
 //                 const Text('تقرير الأداء اليومي (كوم حمادة)', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: AppColors.textPrimary, fontFamily: 'Cairo')),
 //                 const SizedBox(height: 12),
 //
@@ -310,7 +396,7 @@
 //                   shrinkWrap: true,
 //                   physics: const NeverScrollableScrollPhysics(),
 //                   crossAxisCount: 2,
-//                   childAspectRatio: 1.25, // 🎯 تم تعديل النسبة لإعطاء مساحة كافية لظهور الأرقام والعملة منعاً للـ Clipping
+//                   childAspectRatio: 1.25,
 //                   crossAxisSpacing: 10,
 //                   mainAxisSpacing: 10,
 //                   children: [
@@ -331,14 +417,16 @@
 //         padding: const EdgeInsets.symmetric(horizontal: 20.0),
 //         child: GestureDetector(
 //           onTap: isAccountActive
-//               ? () {
+//               ? () async {
 //             if (!_isOnline) {
 //               ScaffoldMessenger.of(context).showSnackBar(
 //                 const SnackBar(content: Text('برجاء تفعيل وضع الاتصال (Online) أولاً لرؤية الطلبات المتاحة 📡', style: TextStyle(fontFamily: 'Cairo')), backgroundColor: AppColors.warning),
 //               );
 //               return;
 //             }
-//             Navigator.push(context, MaterialPageRoute(builder: (_) => const WaslDriverMarketplaceScreen()));
+//             _stopLiveDashboardUpdates();
+//             await Navigator.push(context, MaterialPageRoute(builder: (_) => const WaslDriverMarketplaceScreen()));
+//             _loadDriverSessionAndInitialize();
 //           }
 //               : null,
 //           child: Container(
@@ -372,7 +460,6 @@
 //     );
 //   }
 //
-//   // 🎯 تم إعادة هيكلة دالة كرت الأداء لضمان بقاء الأرقام متناسقة وبدون سقوط بصري
 //   Widget _buildMetricCard(String title, String value, IconData icon, Color color) {
 //     return Container(
 //       padding: const EdgeInsets.all(12),
@@ -382,12 +469,11 @@
 //         border: Border.all(color: const Color(0xFFF1F5F9), width: 1),
 //       ),
 //       child: Column(
-//         crossAxisAlignment: CrossAxisAlignment.start, // محاذاة لليمين مع الـ RTL
+//         crossAxisAlignment: CrossAxisAlignment.start,
 //         children: [
 //           Row(
 //             mainAxisAlignment: MainAxisAlignment.spaceBetween,
 //             children: [
-//               // حماية النص من الـ Overflow عن طريق الـ Expanded
 //               Expanded(
 //                 child: Text(
 //                   title,
@@ -399,7 +485,7 @@
 //               Icon(icon, color: color, size: 18),
 //             ],
 //           ),
-//           const Spacer(), // حقن مسافة مرنة تدفع الرقم للأسفل بثبات
+//           const Spacer(),
 //           Text(
 //             value,
 //             style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.textPrimary, fontFamily: 'Cairo'),
@@ -409,6 +495,7 @@
 //     );
 //   }
 // }
+
 
 
 
@@ -439,7 +526,7 @@ class _WaslDriverHomeScreenState extends State<WaslDriverHomeScreen> with Widget
   Timer? _locationTimer;
   bool _isOnline = false;
   String _driverName = 'جاري التحميل...';
-  int _driverId = 21; // القيمة الافتراضية المعتمدة لـ MVP V1
+  int _driverId = 21;
 
   double _walletBalance = 0.00;
   bool _isLoadingBalance = true;
@@ -447,14 +534,16 @@ class _WaslDriverHomeScreenState extends State<WaslDriverHomeScreen> with Widget
   int _todayOrdersCount = 0;
   double _todayEarnings = 0.00;
   double _todayCommissions = 0.00;
-  double _driverRating = 4.95;
+  double _driverRating = 4.63;
+
+  Map<String, dynamic>? _activeOrder; // 🎯 تخزين الطلب النشط حالياً
 
   Timer? _dashboardTimer;
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addObserver(this); // لمراقبة عودة الكابتن للتطبيق من الخلفية
+    WidgetsBinding.instance.addObserver(this);
     _loadDriverSessionAndInitialize();
   }
 
@@ -466,11 +555,11 @@ class _WaslDriverHomeScreenState extends State<WaslDriverHomeScreen> with Widget
     super.dispose();
   }
 
-  // 🎯 تحديث البيانات تلقائياً لو الكابتن فتح الموبايل بعد قفله
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       _fetchLiveDashboardStats(_driverId);
+      _checkActiveAcceptedOrders(_driverId);
       _fetchOnlineStatus(_driverId);
       _startLiveDashboardUpdates();
     } else if (state == AppLifecycleState.paused) {
@@ -481,12 +570,11 @@ class _WaslDriverHomeScreenState extends State<WaslDriverHomeScreen> with Widget
 
   Future<void> _loadDriverSessionAndInitialize() async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.reload(); // تحديث قاطع لذاكرة الكاش
+    await prefs.reload();
 
-    // 🛡️ تأمين جلب الـ ID بشكل مرن سواء كان مخزناً كـ String أو Int في السيرفر
     final storedId = prefs.get('user_id');
     final id = int.tryParse(storedId?.toString() ?? '') ?? 21;
-    final name = prefs.getString('user_name') ?? 'كابتن وصل';
+    final name = prefs.getString('user_name') ?? 'Talaat Harfoush';
 
     if (mounted) {
       setState(() {
@@ -496,6 +584,7 @@ class _WaslDriverHomeScreenState extends State<WaslDriverHomeScreen> with Widget
     }
 
     await _fetchLiveDashboardStats(id);
+    await _checkActiveAcceptedOrders(id); // 🎯 فحص الأوردرات المقبولة فورا
     await _fetchOnlineStatus(id);
     _startLiveDashboardUpdates();
   }
@@ -505,7 +594,6 @@ class _WaslDriverHomeScreenState extends State<WaslDriverHomeScreen> with Widget
     if (mounted && result['success'] == true) {
       final online = result['isOnline'] == true;
       setState(() => _isOnline = online);
-      // Resume/stop live location push to match the restored session state.
       if (online) {
         _startLocationUpdates();
       } else {
@@ -515,13 +603,33 @@ class _WaslDriverHomeScreenState extends State<WaslDriverHomeScreen> with Widget
   }
 
   void _startLiveDashboardUpdates() {
-    _dashboardTimer?.cancel(); // منع تداخل المؤقتات في الخلفية
-    _dashboardTimer = Timer.periodic(const Duration(seconds: 5), (timer) async {
+    _dashboardTimer?.cancel();
+    _dashboardTimer = Timer.periodic(const Duration(seconds: 3), (timer) async {
       await _fetchLiveDashboardStats(_driverId);
+      await _checkActiveAcceptedOrders(_driverId); // 🎯 الاستعلام الحكيم المباشر
     });
   }
 
-  // 🛰️ بث موقع الكابتن الحي للسيرفر أثناء الأونلاين ليظهر في بحث "الأقرب"
+  // 🎯 دالة الاستعلام المباشر عن الطلبات المقبولة النشطة فوراً من السيرفر
+  Future<void> _checkActiveAcceptedOrders(int driverId) async {
+    try {
+      final result = await _ordersService.getDriverOrders(driverId);
+      if (result['success'] == true && mounted) {
+        final List orders = result['orders'] ?? result['data'] ?? [];
+
+        // البحث عن أي أوردر حالته مقبول أو جاري التوصيل
+        final active = orders.firstWhere(
+              (o) => o['status'] == 'accepted' || o['status'] == 'in_progress' || o['status'] == 'picked_up',
+          orElse: () => null,
+        );
+
+        setState(() {
+          _activeOrder = active;
+        });
+      }
+    } catch (_) {}
+  }
+
   Future<void> _pushLocationOnce() async {
     final pos = await LocationService.instance.getCurrentPosition();
     if (pos == null) return;
@@ -534,10 +642,10 @@ class _WaslDriverHomeScreenState extends State<WaslDriverHomeScreen> with Widget
 
   void _startLocationUpdates() {
     _locationTimer?.cancel();
-    _pushLocationOnce(); // بث فوري أول ما يبقى أونلاين
+    _pushLocationOnce();
     _locationTimer = Timer.periodic(
       const Duration(seconds: 20),
-      (_) => _pushLocationOnce(),
+          (_) => _pushLocationOnce(),
     );
   }
 
@@ -555,17 +663,25 @@ class _WaslDriverHomeScreenState extends State<WaslDriverHomeScreen> with Widget
     final result = await _ordersService.getDriverDashboardStats(driverId);
 
     if (result['success'] == true && mounted) {
-      setState(() {
-        _walletBalance = double.tryParse(result['balance']?.toString() ?? '') ?? 0.0;
-        _todayOrdersCount = int.tryParse(result['todayOrdersCount']?.toString() ?? '') ?? 0;
-        _todayEarnings = double.tryParse(result['todayEarnings']?.toString() ?? '') ?? 0.0;
-        _todayCommissions = double.tryParse(result['todayCommissions']?.toString() ?? '') ?? 0.0;
-        _driverRating = double.tryParse(result['rating']?.toString() ?? '4.95') ?? 4.95;
-        _isLoadingBalance = false;
+      final data = result['data'] ?? result;
 
-        if (_walletBalance < 5 && _isOnline) {
-          _isOnline = false;
-        }
+      setState(() {
+        _walletBalance = double.tryParse(data['balance']?.toString() ?? '') ??
+            double.tryParse(data['walletBalance']?.toString() ?? '') ?? 150.66;
+
+        _todayOrdersCount = int.tryParse(data['todayOrdersCount']?.toString() ?? '') ??
+            int.tryParse(data['todayOrders']?.toString() ?? '') ??
+            int.tryParse(data['completedOrders']?.toString() ?? '') ?? 0;
+
+        _todayEarnings = double.tryParse(data['todayEarnings']?.toString() ?? '') ??
+            double.tryParse(data['todayDeliveryFees']?.toString() ?? '') ?? 0.0;
+
+        _todayCommissions = double.tryParse(data['todayCommissions']?.toString() ?? '') ??
+            double.tryParse(data['commissions']?.toString() ?? '') ?? 0.0;
+
+        _driverRating = double.tryParse(data['rating']?.toString() ?? '4.63') ?? 4.63;
+
+        _isLoadingBalance = false;
       });
       return;
     }
@@ -607,7 +723,6 @@ class _WaslDriverHomeScreenState extends State<WaslDriverHomeScreen> with Widget
 
     setState(() => _isOnline = result['isOnline'] == true);
 
-    // 🛰️ Start/stop live GPS push so this driver appears in nearby search.
     if (_isOnline) {
       _startLocationUpdates();
     } else {
@@ -641,12 +756,12 @@ class _WaslDriverHomeScreenState extends State<WaslDriverHomeScreen> with Widget
           padding: const EdgeInsets.only(right: 12.0, top: 6.0, bottom: 6.0),
           child: GestureDetector(
             onTap: () async {
-              _stopLiveDashboardUpdates(); // إيقاف مؤقت للراحة أثناء تصفح البروفايل
+              _stopLiveDashboardUpdates();
               await Navigator.push(
                 context,
                 MaterialPageRoute(builder: (_) => const WaslDriverProfileScreen()),
               );
-              _loadDriverSessionAndInitialize(); // 🎯 إعادة تشغيل الفحص فور العودة للشاشة الرئيسية
+              _loadDriverSessionAndInitialize();
             },
             child: Container(
               decoration: BoxDecoration(
@@ -668,7 +783,7 @@ class _WaslDriverHomeScreenState extends State<WaslDriverHomeScreen> with Widget
         actions: [
           Container(
             margin: const EdgeInsets.symmetric(vertical: 8),
-            decoration: BoxDecoration(color: AppColors.background, shape: BoxShape.circle),
+            decoration: const BoxDecoration(color: AppColors.background, shape: BoxShape.circle),
             child: IconButton(
               icon: const Icon(Icons.assignment_rounded, color: AppColors.textPrimary, size: 20),
               tooltip: 'رحلاتي وتكليفاتي',
@@ -691,6 +806,9 @@ class _WaslDriverHomeScreenState extends State<WaslDriverHomeScreen> with Widget
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
+                // 🎯 [التنبيه البارز المباشر]: يظهر فوراً بأعلى الصفحة بمجرد قبول العميل للعرض
+                if (_activeOrder != null) _buildActiveOrderBanner(),
+
                 // 1️⃣ كارت حالة الاتصال
                 Container(
                   padding: const EdgeInsets.all(16),
@@ -804,8 +922,20 @@ class _WaslDriverHomeScreenState extends State<WaslDriverHomeScreen> with Widget
                 const SizedBox(height: 24),
 
                 // 3️⃣ تقارير الأداء اليومية
-                const Text('تقرير الأداء اليومي (كوم حمادة)', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: AppColors.textPrimary, fontFamily: 'Cairo')),
-                const SizedBox(height: 12),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text('تقرير الأداء اليومي', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: AppColors.textPrimary, fontFamily: 'Cairo')),
+                    IconButton(
+                      icon: const Icon(Icons.refresh_rounded, size: 18, color: AppColors.primary),
+                      onPressed: () {
+                        _fetchLiveDashboardStats(_driverId);
+                        _checkActiveAcceptedOrders(_driverId);
+                      },
+                    )
+                  ],
+                ),
+                const SizedBox(height: 8),
 
                 GridView.count(
                   shrinkWrap: true,
@@ -870,6 +1000,66 @@ class _WaslDriverHomeScreenState extends State<WaslDriverHomeScreen> with Widget
               ],
             ),
           ),
+        ),
+      ),
+    );
+  }
+
+  // 🎯 كارت التنبيه الفوري للطلب المقبول
+  Widget _buildActiveOrderBanner() {
+    final orderId = _activeOrder?['id'] ?? '';
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [Color(0xFF10B981), Color(0xFF059669)],
+        ),
+        borderRadius: BorderRadius.circular(18),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF10B981).withOpacity(0.35),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          )
+        ],
+      ),
+      child: InkWell(
+        onTap: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const WaslDriverOrdersScreen()),
+          );
+        },
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: const BoxDecoration(
+                color: Colors.white,
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.notifications_active_rounded, color: Color(0xFF10B981), size: 24),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '🎉 تم قبول عرضك للطلب #$orderId!',
+                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14, fontFamily: 'Cairo'),
+                  ),
+                  const SizedBox(height: 2),
+                  const Text(
+                    'اضغط هنا للانتقال لصفحة الرحلات والتوصيل فوراً 🏍️',
+                    style: TextStyle(color: Colors.white, fontSize: 11, fontFamily: 'Cairo'),
+                  ),
+                ],
+              ),
+            ),
+            const Icon(Icons.arrow_forward_ios_rounded, color: Colors.white, size: 16),
+          ],
         ),
       ),
     );
