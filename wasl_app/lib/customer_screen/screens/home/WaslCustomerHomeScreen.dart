@@ -581,7 +581,11 @@ class _WaslCustomerHomeScreenState extends State<WaslCustomerHomeScreen> {
     _initLiveLocationAndData();
     // Allow post-checkout navigation to jump straight to the orders tab.
     WaslHomeShell._selectTab = (index) {
-      if (mounted) setState(() => _currentIndex = index);
+      if (!mounted) return;
+      setState(() => _currentIndex = index);
+      // التبويبات في IndexedStack فبتفضل حيّة و initState مبيتنفذش تاني —
+      // من غير التحديث ده العميل بيشوف نتيجة قديمة من وقت فتح التطبيق.
+      if (index == 1) WaslMyOrdersScreen.refreshNow();
     };
   }
 
@@ -1144,7 +1148,11 @@ class _WaslCustomerHomeScreenState extends State<WaslCustomerHomeScreen> {
       ),
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _currentIndex,
-        onTap: (index) => setState(() => _currentIndex = index),
+        onTap: (index) {
+          setState(() => _currentIndex = index);
+          // نفس سبب الـ hook: التبويبات حيّة فمفيش initState تاني.
+          if (index == 1) WaslMyOrdersScreen.refreshNow();
+        },
         type: BottomNavigationBarType.fixed,
         selectedItemColor: AppColors.primary,
         unselectedItemColor: AppColors.textSecondary,

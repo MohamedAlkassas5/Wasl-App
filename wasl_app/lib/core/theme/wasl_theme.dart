@@ -35,8 +35,9 @@ class WaslTheme {
         ),
       ),
 
-      // 🎯 [تم التصحيح]: تغيير CardThemeData إلى CardTheme
-      cardTheme: CardTheme(
+      // ⚠️ لازم CardThemeData مش CardTheme — من Flutter 3.4x الخاصية دي بقت
+      // بتاخد النوع الـ *Data، وأي رجوع لـ CardTheme بيوقف البناء.
+      cardTheme: CardThemeData(
         color: AppColors.surface,
         surfaceTintColor: Colors.transparent,
         elevation: 0,

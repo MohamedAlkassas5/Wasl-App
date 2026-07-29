@@ -470,6 +470,30 @@ class FlutterOrdersService {
     }
   }
 
+  /// Cancels the customer's own order. The server only allows this while the
+  /// order is still waiting for offers.
+  Future<Map<String, dynamic>> cancelOrder(int orderId) async {
+    final url = Uri.parse('$baseUrl/orders/$orderId/cancel');
+    try {
+      final response = await http
+          .patch(url, headers: await _headers())
+          .timeout(const Duration(seconds: 15));
+
+      final decoded = response.body.isEmpty ? {} : jsonDecode(response.body);
+      if (response.statusCode >= 200 && response.statusCode < 300) {
+        return {'success': true, 'data': decoded};
+      }
+      return {
+        'success': false,
+        'message': decoded['message'] ?? 'تعذّر إلغاء الطلب',
+      };
+    } on TimeoutException {
+      return {'success': false, 'message': 'انتهى وقت الاتصال، حاول مرة أخرى'};
+    } catch (e) {
+      return {'success': false, 'message': 'خطأ في الاتصال: $e'};
+    }
+  }
+
   // 🎯 2️⃣ إنشاء طلب يحتوي على صورة المشتريات/الفاتورة
   Future<Map<String, dynamic>> createOrderWithImage({
     required int customerId,

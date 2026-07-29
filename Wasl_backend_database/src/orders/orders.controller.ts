@@ -335,6 +335,19 @@ export class OrdersController {
     );
   }
 
+  /**
+   * Customer cancels their own order while it is still waiting for offers.
+   * Ownership comes from the token; the service refuses once a driver has
+   * accepted.
+   */
+  @Patch(':id/cancel')
+  cancelOrder(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseIntPipe) orderId: number,
+  ) {
+    return this.ordersService.cancelOrderByCustomer(orderId, user);
+  }
+
   // 🔐 Only the order's assigned driver (or an admin) may move its status —
   // previously any caller could mark any order completed.
   @Patch(':id/status')

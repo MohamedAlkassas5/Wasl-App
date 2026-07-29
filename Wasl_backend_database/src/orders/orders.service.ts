@@ -5,7 +5,7 @@ import {
   ForbiddenException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, LessThan } from 'typeorm';
+import { Repository, LessThan, In } from 'typeorm';
 import { Interval } from '@nestjs/schedule';
 
 import { Order, OrderOffer, OrderStatus } from './entities/order.entity';
@@ -635,25 +635,55 @@ export class OrdersService {
     };
   }
 
-  @Interval(60000)
-  async handleAutoCancelOrders() {
-    const tenMinutesAgo = new Date();
-    tenMinutesAgo.setMinutes(tenMinutesAgo.getMinutes() - 10);
+  /**
+   * 🔴 The automatic 10-minute cancellation was removed.
+   *
+   * It originally `delete()`d stale pending orders outright: the row vanished,
+   * so a customer's order disappeared from "طلباتي" with no record and no
+   * reason. Marking them `cancelled` fixed the data loss, but the behaviour
+   * itself was still wrong — an order with no bids yet is not a failed order,
+   * it is simply waiting, and cancelling it out from under the customer after
+   * ten minutes is a decision only they should make.
+   *
+   * An order now stays in `pending_offers` until a driver accepts it or the
+   * customer cancels it themselves (see {@link cancelOrderByCustomer}).
+   *
+   * If a cleanup policy is ever needed again, it belongs on a much longer
+   * horizon and must notify the customer — not run silently every minute.
+   */
 
-    console.log(
-      `⏱️ [CRON JOB] جاري تنظيف الساحة من الطلبات المعلقة القديمة...`,
-    );
+  /**
+   * Customer-initiated cancellation.
+   *
+   * Only allowed while the order is still `pending_offers`: once a driver has
+   * accepted, they may already be on their way to the shop, so cancelling has
+   * to go through support rather than a button. Ownership is enforced from the
+   * token, so nobody can cancel someone else's order.
+   */
+  async cancelOrderByCustomer(orderId: number, user: AuthUser) {
+    const order = await this.getOrderFor(orderId, user, 'customer');
 
-    const result = await this.orderRepository.delete({
-      status: OrderStatus.PENDING_OFFERS,
-      createdAt: LessThan(tenMinutesAgo),
-    });
-
-    if (result.affected && result.affected > 0) {
-      console.log(
-        `🗑️ [CRON JOB SUCCESS] تم حذف ${result.affected} طلب معلق لتجاوزهم حاجز الـ 10 دقائق بدون مزايدة.`,
+    if (order.status !== OrderStatus.PENDING_OFFERS) {
+      throw new BadRequestException(
+        order.status === OrderStatus.CANCELLED
+          ? 'الطلب ملغي بالفعل'
+          : 'لا يمكن إلغاء الطلب بعد قبول كابتن له، تواصل مع الدعم',
       );
     }
+
+    order.status = OrderStatus.CANCELLED;
+    await this.orderRepository.save(order);
+
+    // Drop any offers so a driver can't accept a cancelled order.
+    await this.offerRepository.delete({ orderId });
+
+    await this.createNotification(
+      order.customerId,
+      '❌ تم إلغاء طلبك',
+      `تم إلغاء طلبك رقم FL-${orderId} بناءً على طلبك.`,
+    );
+
+    return { success: true, message: 'تم إلغاء الطلب بنجاح' };
   }
 
   // 🎯 حذف إشعار فردي من قاعدة البيانات (لصاحبه فقط)

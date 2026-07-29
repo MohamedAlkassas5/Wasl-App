@@ -8,6 +8,16 @@ import 'package:wasl_app/services/orders_service.dart';
 class WaslMyOrdersScreen extends StatefulWidget {
   const WaslMyOrdersScreen({Key? key}) : super(key: key);
 
+  /// Lets the shell refresh this screen when its tab is opened.
+  ///
+  /// The tabs live in an IndexedStack, so this widget is built once at app
+  /// start and kept alive — initState never runs again. Without this hook the
+  /// list a customer sees is whatever was fetched when the app launched, so an
+  /// order placed a minute ago simply is not there.
+  static Future<void> Function()? refreshHook;
+
+  static Future<void> refreshNow() async => refreshHook?.call();
+
   @override
   State<WaslMyOrdersScreen> createState() => _WaslMyOrdersScreenState();
 }
@@ -26,6 +36,7 @@ class _WaslMyOrdersScreenState extends State<WaslMyOrdersScreen> with SingleTick
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
     _loadCustomerSessionAndFetchOrders();
+    WaslMyOrdersScreen.refreshHook = _loadCustomerSessionAndFetchOrders;
   }
 
   Future<void> _loadCustomerSessionAndFetchOrders() async {
@@ -95,6 +106,7 @@ class _WaslMyOrdersScreenState extends State<WaslMyOrdersScreen> with SingleTick
 
   @override
   void dispose() {
+    WaslMyOrdersScreen.refreshHook = null;
     _tabController?.dispose();
     super.dispose();
   }
@@ -235,12 +247,104 @@ class _WaslMyOrdersScreenState extends State<WaslMyOrdersScreen> with SingleTick
                     style: const TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold, color: Colors.white, fontSize: 14),
                   ),
                 ),
+                // الإلغاء متاح طالما مفيش كابتن قبل الطلب. بعد القبول الزرار
+                // بيختفي خالص لأن الكابتن ممكن يكون بدأ يتحرك للمحل.
+                if (isPendingOffers) ...[
+                  const SizedBox(height: 8),
+                  OutlinedButton.icon(
+                    onPressed: () => _confirmCancelOrder(order),
+                    icon: const Icon(Icons.close_rounded,
+                        size: 18, color: AppColors.danger),
+                    label: const Text(
+                      'إلغاء الطلب',
+                      style: TextStyle(
+                        fontFamily: 'Cairo',
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.danger,
+                        fontSize: 13,
+                      ),
+                    ),
+                    style: OutlinedButton.styleFrom(
+                      minimumSize: const Size.fromHeight(44),
+                      side: const BorderSide(color: AppColors.danger),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10)),
+                    ),
+                  ),
+                ],
               ],
             ),
           ),
         );
       },
     );
+  }
+
+  /// Asks before cancelling, then calls the server. The server is the authority
+  /// on whether cancelling is still allowed — if a driver accepted in the
+  /// meantime it refuses, and we surface that instead of pretending it worked.
+  Future<void> _confirmCancelOrder(dynamic order) async {
+    final orderId = order['id'];
+    final int parsedId =
+        orderId is num ? orderId.toInt() : int.tryParse('$orderId') ?? 0;
+    if (parsedId == 0) return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: AlertDialog(
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: const Text('إلغاء الطلب؟',
+              style: TextStyle(
+                  fontFamily: 'Cairo',
+                  fontWeight: FontWeight.bold,
+                  fontSize: 17)),
+          content: Text(
+            'هيتم إلغاء طلبك رقم WS-$parsedId. تقدر تطلب تاني في أي وقت.',
+            style: const TextStyle(
+                fontFamily: 'Cairo', fontSize: 13, height: 1.6),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('تراجع',
+                  style: TextStyle(
+                      fontFamily: 'Cairo', color: AppColors.textSecondary)),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('إلغاء الطلب',
+                  style: TextStyle(
+                      fontFamily: 'Cairo',
+                      color: AppColors.danger,
+                      fontWeight: FontWeight.bold)),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    final result = await _ordersService.cancelOrder(parsedId);
+    if (!mounted) return;
+
+    final ok = result['success'] == true;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        backgroundColor: ok ? AppColors.success : AppColors.danger,
+        content: Text(
+          ok
+              ? 'تم إلغاء الطلب'
+              : (result['message'] ?? 'تعذّر إلغاء الطلب').toString(),
+          style: const TextStyle(fontFamily: 'Cairo'),
+        ),
+      ),
+    );
+
+    await _fetchCustomerOrdersFromServer();
   }
 
   Widget _buildCompletedOrdersList() {
@@ -255,6 +359,10 @@ class _WaslMyOrdersScreenState extends State<WaslMyOrdersScreen> with SingleTick
       itemBuilder: (context, index) {
         final order = _completedOrders[index];
         final orderId = order['id'] ?? '';
+        // 🐞 كان بيكتب "مكتمل ✓" لأي طلب في التبويب ده — يعني الطلب الملغي كان
+        // بيتعرض للعميل كإنه اتوصّل. الحالة بقت من الطلب نفسه.
+        final bool isCancelled =
+            order['status']?.toString().toLowerCase() == 'cancelled';
 
         final double deliveryFee = double.tryParse(order['finalDeliveryFee']?.toString() ?? '0') ?? 0;
         final double itemsPrice = double.tryParse(order['itemsPrice']?.toString() ?? '0') ?? 0;
@@ -278,7 +386,17 @@ class _WaslMyOrdersScreenState extends State<WaslMyOrdersScreen> with SingleTick
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Text('طلب رقم: WS-$orderId', style: const TextStyle(fontFamily: 'monospace', color: AppColors.textSecondary, fontWeight: FontWeight.bold)),
-                    const Text('مكتمل ✓', style: TextStyle(fontSize: 11, color: Color(0xFF16A34A), fontFamily: 'Cairo', fontWeight: FontWeight.bold)),
+                    Text(
+                      isCancelled ? 'ملغي ✕' : 'مكتمل ✓',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: isCancelled
+                            ? AppColors.danger
+                            : const Color(0xFF16A34A),
+                        fontFamily: 'Cairo',
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
                   ],
                 ),
                 const Divider(height: 24, color: Color(0xFFF1F5F9)),

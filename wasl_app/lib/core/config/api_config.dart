@@ -1,21 +1,24 @@
-import 'dart:io';
-import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class WaslApiConfig {
-  /// 🎯 عنوان السيرفر الرئيسي (ديناميكي)
-  /// 🖥️ Android emulator → 'http://10.0.2.2:3000'
-  /// 📱 Real phone (USB via ADB) / Web / iOS → 'http://localhost:3000'
-  /// 📶 Phone over WiFi → 'http://192.168.1.X:3000' (يمكنك تبديله عند الحاجة)
-  static String get baseUrl {
-    // إذا كان التطبيق يعمل داخل محاكي Android
-    if (!kIsWeb && Platform.isAndroid) {
-      return 'http://10.0.2.2:3000';
-    }
-    // للموبايل الحقيقي المتصل بكابل USB بعد أمر: adb reverse tcp:3000 tcp:3000
-    // أو المحاكي على iOS/Web
-    return 'http://localhost:3000';
-  }
+  /// 🎯 عنوان السيرفر.
+  ///
+  /// ⚠️ `Platform.isAndroid` بيبقى true على **الموبايل الحقيقي** زي المحاكي
+  /// بالظبط، فما ينفعش نفرّق بيهم بالطريقة دي — النسخة اللي كانت بترجّع
+  /// `10.0.2.2` لكل أندرويد كانت بتكسر الاتصال على الموبايل الحقيقي، لأن
+  /// `10.0.2.2` ده عنوان المحاكي وحده.
+  ///
+  /// `localhost` بيشتغل على **الاتنين** طالما عامل:
+  ///     adb reverse tcp:3000 tcp:3000
+  /// وده أبسط وأضمن من التخمين.
+  ///
+  /// للنشر أو للواي فاي، مرّر العنوان وقت البناء من غير ما تعدّل الملف:
+  ///     flutter run --dart-define=API_BASE_URL=https://api.example.com
+  static const String _override =
+      String.fromEnvironment('API_BASE_URL', defaultValue: '');
+
+  static String get baseUrl =>
+      _override.isNotEmpty ? _override : 'http://localhost:3000';
 
   static const Map<String, String> jsonHeaders = {
     'Content-Type': 'application/json',
