@@ -48,3 +48,7 @@ codes.txt
 # مادة مرجعية للتصميم (سكرين شوتس تطبيقات تانية) — مش جزء من المشروع
 مطاعم/
 Code and accounts.txt
+
+# ملفات تطوير محلية
+dev-scripts/node_modules/
+dev-scripts/pgdata/

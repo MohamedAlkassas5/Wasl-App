@@ -1,0 +1,10 @@
+{
+  "name": "wasl-dev-scripts",
+  "private": true,
+  "type": "module",
+  "description": "Local dev helpers: PGlite Postgres for the NestJS backend.",
+  "dependencies": {
+    "@electric-sql/pglite": "0.3.3",
+    "@electric-sql/pglite-socket": "^0.0.8"
+  }
+}
