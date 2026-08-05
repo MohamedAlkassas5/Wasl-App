@@ -8,13 +8,17 @@ echo   تشغيل قاعدة البيانات والسيرفر
 echo ========================================
 echo.
 
-echo [1/2] تشغيل قاعدة البيانات (PGlite)...
+echo [1/3] تشغيل قاعدة البيانات (PGlite في الذاكرة)...
 start "Wasl Database" cmd /c "cd /d %~dp0 && node pglite-server.mjs & pause"
 
 echo       في انتظار قاعدة البيانات...
 timeout /t 6 /nobreak >nul
 
-echo [2/2] تشغيل السيرفر (NestJS) على المنفذ 3000...
+echo [2/3] تجهيز الحسابات والمطاعم بعد إقلاع السيرفر...
+REM قاعدة البيانات في الذاكرة، فبتفضى مع كل تشغيل — بنملأها تلقائيًا.
+start "Wasl Seed" cmd /c "cd /d %~dp0 && timeout /t 14 /nobreak >nul && node seed-dev-data.mjs & pause"
+
+echo [3/3] تشغيل السيرفر (NestJS) على المنفذ 3000...
 echo.
 echo   العنوان: http://localhost:3000
 echo   لوحة الأدمن: 01555000111 / LocalReviewAdmin#2026
