@@ -623,7 +623,7 @@ class _WaslDriverMarketplaceScreenState extends State<WaslDriverMarketplaceScree
               const SizedBox(width: 10),
               Expanded(
                 child: ElevatedButton(
-                  onPressed: () => _navigateToDetails(job),
+                  onPressed: () => _acceptOrder(job),
                   style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary),
                   child: const Text('تفاصيل وعرض', style: TextStyle(fontFamily: 'Cairo', color: Colors.white)),
                 ),
@@ -636,4 +636,16 @@ class _WaslDriverMarketplaceScreenState extends State<WaslDriverMarketplaceScree
   }
 
   Widget _buildEmptyState() => ListView(children: [const SizedBox(height: 200), const Center(child: Text('لا توجد طلبات متاحة حالياً', style: TextStyle(fontFamily: 'Cairo')))],);
+  Future<void> _acceptOrder(Map<String, dynamic> job) async {
+    final id = int.tryParse(job['id']?.toString() ?? '');
+    if (id == null) return;
+    final result = await _ordersService.acceptAvailableOrder(id);
+    if (!mounted) return;
+    if (result['success'] == true) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('تم إسناد الطلب إليك')));
+      _refreshAvailableJobs();
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(result['message']?.toString() ?? 'تعذر قبول الطلب')));
+    }
+  }
 }

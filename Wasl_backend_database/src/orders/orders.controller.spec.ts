@@ -20,10 +20,15 @@ describe('OrdersController (authorization)', () => {
   const ADMIN: AuthUser = { sub: 1, role: UserRole.ADMIN };
 
   let controller: OrdersController;
-  let service: jest.Mocked<Pick<
-    OrdersService,
-    'createOrder' | 'getCustomerOrders' | 'deleteDriverProfile' | 'submitOffer'
-  >>;
+  let service: jest.Mocked<
+    Pick<
+      OrdersService,
+      | 'createOrder'
+      | 'getCustomerOrders'
+      | 'deleteDriverProfile'
+      | 'submitOffer'
+    >
+  >;
 
   beforeEach(async () => {
     service = {
@@ -31,7 +36,7 @@ describe('OrdersController (authorization)', () => {
       getCustomerOrders: jest.fn().mockResolvedValue([]),
       deleteDriverProfile: jest.fn().mockResolvedValue(undefined),
       submitOffer: jest.fn().mockResolvedValue({ success: true }),
-    } as unknown as typeof service;
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       // JwtAuthGuard is attached to the controller, so Nest instantiates it —
@@ -51,7 +56,11 @@ describe('OrdersController (authorization)', () => {
   it('ignores a client-supplied customerId and books the order for the token owner', () => {
     const dto = { customerId: 999, items: [] } as unknown as CreateOrderDto;
 
-    controller.create(CUSTOMER, undefined as unknown as Express.Multer.File, dto);
+    controller.create(
+      CUSTOMER,
+      undefined as unknown as Express.Multer.File,
+      dto,
+    );
 
     expect(dto.customerId).toBe(CUSTOMER.sub);
     expect(service.createOrder).toHaveBeenCalledWith(CUSTOMER.sub, dto);

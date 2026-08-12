@@ -12,11 +12,7 @@ import {
 import { DeliveryService } from './delivery.service';
 import { UpdateLocationDto } from './dto/update-location.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
-import {
-  CurrentUser,
-  AuthUser,
-  assertSelfOrAdmin,
-} from '../auth/current-user';
+import { CurrentUser, AuthUser, assertSelfOrAdmin } from '../auth/current-user';
 
 /**
  * Driver location + nearby-driver endpoints. All routes require a valid JWT

@@ -5,10 +5,15 @@ import {
   ForbiddenException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, LessThan, In } from 'typeorm';
-import { Interval } from '@nestjs/schedule';
+import { Repository } from 'typeorm';
 
-import { Order, OrderOffer, OrderStatus } from './entities/order.entity';
+import {
+  Order,
+  OrderOffer,
+  OrderStatus,
+  PaymentMethod,
+  PaymentStatus,
+} from './entities/order.entity';
 import { DeliveryPartner } from '../delivery/entities/delivery-partner.entity';
 import { InAppNotification } from './entities/notification.entity';
 import { CreateOrderDto } from './dto/create-order.dto';
@@ -121,13 +126,19 @@ export class OrdersService {
     // 🧮 Compute trip distance + a price estimate when a pickup point exists.
     let distanceKm: number | undefined;
     let estimatedDeliveryFee = 0;
-    if (
+    if (orderData.pickupZoneId && orderData.dropoffZoneId) {
+      const quote = await this.pricingService.quoteForZones(
+        orderData.pickupZoneId,
+        orderData.dropoffZoneId,
+      );
+      estimatedDeliveryFee = quote.deliveryFee;
+    } else if (
       isValidCoordinate(orderData.pickupLatitude, orderData.pickupLongitude)
     ) {
       distanceKm = roundKm(
         haversineKm(
           {
-            latitude: orderData.pickupLatitude!,
+            latitude: orderData.pickupLatitude,
             longitude: orderData.pickupLongitude!,
           },
           { latitude: orderData.latitude, longitude: orderData.longitude },
@@ -156,10 +167,21 @@ export class OrdersService {
       pickupAddressText: orderData.pickupAddressText,
       pickupLatitude: orderData.pickupLatitude,
       pickupLongitude: orderData.pickupLongitude,
+      pickupZoneId: orderData.pickupZoneId,
+      dropoffZoneId: orderData.dropoffZoneId,
       distanceKm,
       estimatedDeliveryFee,
 
       itemsPrice: Number(orderData.itemsPrice) || 0,
+      paymentMethod: Object.values(PaymentMethod).includes(
+        orderData.paymentMethod as PaymentMethod,
+      )
+        ? orderData.paymentMethod
+        : PaymentMethod.COD,
+      paymentStatus:
+        orderData.paymentMethod === PaymentMethod.COD
+          ? PaymentStatus.COD_DUE
+          : PaymentStatus.PENDING,
       itemsImageUrl: orderData.itemsImageUrl,
       voiceNoteUrl: orderData.voiceNoteUrl,
 
@@ -174,6 +196,51 @@ export class OrdersService {
     await this.notifyNearbyDrivers(savedOrder);
 
     return savedOrder;
+  }
+
+  /**
+   * Atomically assigns a fixed-price order to the first eligible driver who
+   * accepts it. The row lock prevents two nearby drivers from winning the same
+   * order when their requests arrive at nearly the same time.
+   */
+  async acceptAvailableOrder(orderId: number, driverId: number) {
+    const result = await this.orderRepository.manager.transaction(
+      async (manager) => {
+        const orders = manager.getRepository(Order);
+        const drivers = manager.getRepository(DeliveryPartner);
+        const order = await orders.findOne({
+          where: { id: orderId },
+          lock: { mode: 'pessimistic_write' },
+        });
+        if (!order) throw new NotFoundException('الطلب غير موجود');
+        if (order.status !== OrderStatus.PENDING_OFFERS) {
+          throw new BadRequestException('الطلب تم إسناده أو لم يعد متاحًا');
+        }
+
+        const driver = await drivers.findOne({ where: { userId: driverId } });
+        if (!driver || !driver.isOnline) {
+          throw new BadRequestException('يجب أن تكون متصلًا لاستقبال الطلبات');
+        }
+        if (Number(driver.balance) < -10) {
+          throw new BadRequestException(
+            'رصيد المحفظة لا يسمح باستقبال الطلبات',
+          );
+        }
+
+        order.acceptedDriverId = driverId;
+        order.finalDeliveryFee = Number(order.estimatedDeliveryFee);
+        order.status = OrderStatus.ACCEPTED;
+        const saved = await orders.save(order);
+        return { order: saved, customerId: saved.customerId };
+      },
+    );
+
+    await this.createNotification(
+      result.customerId,
+      'تم إسناد الكابتن',
+      `تم قبول طلبك رقم ${result.order.id} وسيبدأ الكابتن التنفيذ قريبًا.`,
+    );
+    return result.order;
   }
 
   /**
@@ -730,9 +797,7 @@ export class OrdersService {
     });
 
     if (!completedTogether) {
-      throw new ForbiddenException(
-        'يمكنك تقييم الكابتن فقط بعد إتمام طلب معه',
-      );
+      throw new ForbiddenException('يمكنك تقييم الكابتن فقط بعد إتمام طلب معه');
     }
 
     const driver = await this.deliveryRepository.findOne({
@@ -754,5 +819,4 @@ export class OrdersService {
     );
     return { success: true, rating: driver.rating };
   }
-
 }

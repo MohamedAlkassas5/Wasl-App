@@ -9,6 +9,18 @@ export class QuoteDto {
   @IsOptional()
   @Type(() => Number)
   @IsNumber()
+  @Min(1)
+  pickupZoneId?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(1)
+  dropoffZoneId?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
   @Min(0)
   distanceKm?: number;
 

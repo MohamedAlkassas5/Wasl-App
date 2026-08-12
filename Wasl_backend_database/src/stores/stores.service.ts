@@ -48,7 +48,8 @@ export class StoresService {
     }
 
     const radius =
-      radiusKm ?? this.settings.getNumber(SettingKey.STORE_SEARCH_RADIUS_KM, 10);
+      radiusKm ??
+      this.settings.getNumber(SettingKey.STORE_SEARCH_RADIUS_KM, 10);
 
     const merchants = await this.merchantRepository.find({
       where: {

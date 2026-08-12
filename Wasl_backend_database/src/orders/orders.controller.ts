@@ -22,11 +22,9 @@ import { OrdersService } from './orders.service';
 import { OrderStatus } from './entities/order.entity';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
-import {
-  CurrentUser,
-  AuthUser,
-  assertSelfOrAdmin,
-} from '../auth/current-user';
+import { CurrentUser, AuthUser, assertSelfOrAdmin } from '../auth/current-user';
+import { imageUploadPolicy } from '../common/upload-policy';
+import { UserRole } from '../users/entities/user.entity';
 
 const orderUploadPath = './uploads/orders';
 
@@ -43,6 +41,7 @@ export class OrdersController {
   @Post('create')
   @UseInterceptors(
     FileInterceptor('itemsImage', {
+      ...imageUploadPolicy,
       storage: diskStorage({
         destination: (_req, _file, cb) => {
           if (!existsSync(orderUploadPath)) {
@@ -106,6 +105,17 @@ export class OrdersController {
   @Get('available')
   getAvailable(@CurrentUser() user: AuthUser) {
     return this.ordersService.getAvailableOrders(user.sub);
+  }
+
+  @Post(':id/accept')
+  acceptAvailableOrder(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseIntPipe) orderId: number,
+  ) {
+    if (user.role !== UserRole.DELIVERY) {
+      throw new BadRequestException('هذا المسار مخصص للكباتن فقط');
+    }
+    return this.ordersService.acceptAvailableOrder(orderId, user.sub);
   }
 
   // 🎯 جلب طلبات عميل محدد فقط (بدون تسريب بيانات العملاء الآخرين)
@@ -300,6 +310,7 @@ export class OrdersController {
   @Post(':id/invoice')
   @UseInterceptors(
     FileInterceptor('invoiceImage', {
+      ...imageUploadPolicy,
       storage: diskStorage({
         destination: (_req, _file, cb) => {
           const invoicePath = './uploads/invoices';
@@ -361,11 +372,6 @@ export class OrdersController {
       itemsPrice: body?.itemsPrice ? Number(body.itemsPrice) : undefined,
       invoiceImageUrl: body?.invoiceImageUrl || undefined,
     };
-    return this.ordersService.updateStatus(
-      orderId,
-      status,
-      parsedBody,
-      user,
-    );
+    return this.ordersService.updateStatus(orderId, status, parsedBody, user);
   }
 }

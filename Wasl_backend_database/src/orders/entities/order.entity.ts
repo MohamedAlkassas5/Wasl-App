@@ -19,6 +19,19 @@ export enum OrderStatus {
   CANCELLED = 'cancelled',
 }
 
+export enum PaymentMethod {
+  COD = 'cod',
+  PAYMOB = 'paymob',
+  FAWRY = 'fawry',
+}
+
+export enum PaymentStatus {
+  PENDING = 'pending',
+  PAID = 'paid',
+  FAILED = 'failed',
+  COD_DUE = 'cod_due',
+}
+
 @Entity('orders')
 export class Order {
   @PrimaryGeneratedColumn()
@@ -108,6 +121,12 @@ export class Order {
   })
   pickupLongitude?: number;
 
+  @Column({ name: 'pickup_zone_id', nullable: true })
+  pickupZoneId?: number;
+
+  @Column({ name: 'dropoff_zone_id', nullable: true })
+  dropoffZoneId?: number;
+
   // 🧮 Trip distance (km) and the pricing-engine estimate, computed at creation.
   @Column({
     name: 'distance_km',
@@ -141,6 +160,25 @@ export class Order {
     default: 0,
   })
   finalDeliveryFee!: number;
+
+  @Column({
+    name: 'payment_method',
+    type: 'varchar',
+    length: 20,
+    default: PaymentMethod.COD,
+  })
+  paymentMethod!: PaymentMethod;
+
+  @Column({
+    name: 'payment_status',
+    type: 'varchar',
+    length: 20,
+    default: PaymentStatus.COD_DUE,
+  })
+  paymentStatus!: PaymentStatus;
+
+  @Column({ name: 'payment_reference', nullable: true })
+  paymentReference?: string;
 
   @Column({ nullable: true })
   acceptedDriverId?: number;

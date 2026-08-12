@@ -295,6 +295,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:wasl_app/core/theme/app_colors.dart';
+import 'package:wasl_app/core/utils/phone_format.dart';
 import 'package:wasl_app/delivery_screen/WaslDriverRatingScreen.dart';
 import 'package:wasl_app/customer_screen/order_anywhere/WaslOrderInvoiceScreen.dart';
 import 'package:wasl_app/services/orders_service.dart';
@@ -386,7 +387,7 @@ class _WaslOrderTrackingScreenState extends State<WaslOrderTrackingScreen> {
   Widget build(BuildContext context) {
     final driver = _liveOrder['acceptedDriver'] ?? {};
     final String name = driver['fullName'] ?? driver['name'] ?? 'كابتن وصل';
-    final String phone = driver['phone'] ?? 'غير متاح';
+    final String phone = formatPhoneForDisplay(driver['phone']);
     final String rating = driver['rating']?.toString() ?? '4.8';
 
     return Scaffold(

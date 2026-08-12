@@ -34,7 +34,8 @@ describe('AuthService (phone-verified registration)', () => {
             (where.id !== undefined && u.id === where.id),
         ) ?? null,
       ),
-    create: (data: Partial<User>) => ({ id: users.length + 1, ...data }) as User,
+    create: (data: Partial<User>) =>
+      ({ id: users.length + 1, ...data }) as User,
     save: (user: User) => {
       const existing = users.findIndex((u) => u.id === user.id);
       if (existing >= 0) users[existing] = user;
@@ -59,14 +60,13 @@ describe('AuthService (phone-verified registration)', () => {
     },
   };
 
-  const registerDto = (overrides: Partial<RegisterDto> = {}): RegisterDto =>
-    ({
-      name: 'أحمد',
-      phone: PHONE,
-      password: 'secret123',
-      role: UserRole.CUSTOMER,
-      ...overrides,
-    }) as RegisterDto;
+  const registerDto = (overrides: Partial<RegisterDto> = {}): RegisterDto => ({
+    name: 'أحمد',
+    phone: PHONE,
+    password: 'secret123',
+    role: UserRole.CUSTOMER,
+    ...overrides,
+  });
 
   beforeEach(async () => {
     users = [];

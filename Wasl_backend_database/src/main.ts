@@ -42,24 +42,43 @@ import { Logger, ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { AppModule } from './app.module';
+import type { Request, Response, NextFunction } from 'express';
 
 async function bootstrap() {
   // 🎯 تحديد نوع التطبيق كـ NestExpressApplication لإزالة أخطاء Unsafe Member Access
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
   const logger = new Logger('Bootstrap');
 
-  // 🌐 تفعيل الـ CORS لتأمين قنوات الاتصال وفك حظر المحاكي والأجهزة الخارجية
-  app.enableCors();
+  const allowedOrigins = (process.env.CORS_ORIGINS || '')
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+  if (process.env.NODE_ENV === 'production' && allowedOrigins.length === 0) {
+    throw new Error('CORS_ORIGINS is required in production.');
+  }
+  app.enableCors({
+    origin: allowedOrigins.length === 0 ? true : allowedOrigins,
+    methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE'],
+    allowedHeaders: ['Authorization', 'Content-Type'],
+  });
 
   // 🛡️ Behind Render/Railway the app sees the proxy's IP unless we trust the
   // X-Forwarded-For header. Without this the rate limiter would count every
   // request as coming from one address.
-  app.set('trust proxy', 1);
+  if (process.env.TRUST_PROXY === 'true') app.set('trust proxy', 1);
+
+  app.use((_request: Request, response: Response, next: NextFunction) => {
+    response.setHeader('X-Content-Type-Options', 'nosniff');
+    response.setHeader('X-Frame-Options', 'DENY');
+    response.setHeader('Referrer-Policy', 'no-referrer');
+    next();
+  });
 
   // 🎯 تفعيل الفحص البرمجي الشامل والتحويل التلقائي للبيانات بداخل السيرفر
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true, // يتجاهل تلقائياً أي حقول زائدة مرسلة ليست معرفة في الـ DTO لحماية قاعدة البيانات
+      forbidNonWhitelisted: true,
       transform: true, // تحويل أنواع البيانات المرسلة تلقائياً لتطابق الأنواع المعرفة (مثل تحويل النص إلى رقم)
     }),
   );

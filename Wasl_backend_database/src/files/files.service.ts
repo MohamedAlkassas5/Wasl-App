@@ -24,8 +24,7 @@ const SAFE_NAME = /^[A-Za-z0-9._-]+$/;
 
 /** How a resolved upload should be sent to the client. */
 export type ServePlan =
-  | { kind: 'local'; localPath: string }
-  | { kind: 'stream'; stream: Readable };
+  { kind: 'local'; localPath: string } | { kind: 'stream'; stream: Readable };
 
 @Injectable()
 export class FilesService {

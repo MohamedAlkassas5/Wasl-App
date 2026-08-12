@@ -576,6 +576,20 @@ class FlutterOrdersService {
     }
   }
 
+  Future<Map<String, dynamic>> acceptAvailableOrder(int orderId) async {
+    final url = Uri.parse('$baseUrl/orders/$orderId/accept');
+    try {
+      final response = await http.post(url, headers: await _headers()).timeout(const Duration(seconds: 15));
+      final decoded = jsonDecode(response.body);
+      if (response.statusCode >= 200 && response.statusCode < 300) return {'success': true, 'data': decoded};
+      return {'success': false, 'message': decoded is Map ? decoded['message'] : 'تعذر قبول الطلب'};
+    } on TimeoutException {
+      return {'success': false, 'message': 'انتهى وقت الاتصال.'};
+    } catch (e) {
+      return {'success': false, 'message': 'خطأ في الاتصال: $e'};
+    }
+  }
+
   // 🎯 4️⃣ جلب كافة العروض المتاحة لطلب محدد
   Future<Map<String, dynamic>> getOrderOffers(int orderId) async {
     final url = Uri.parse('$baseUrl/orders/$orderId/offers');
@@ -790,12 +804,12 @@ class FlutterOrdersService {
     required int driverId,
     required double amount,
   }) async {
-    final url = Uri.parse('$baseUrl/orders/driver/$driverId/topup-request');
+    final url = Uri.parse('$baseUrl/wallet/topup-requests');
     try {
-      final response = await http.patch(
+      final response = await http.post(
         url,
         headers: await _headers(),
-        body: jsonEncode({'amount': amount}),
+        body: jsonEncode({'amount': amount, 'method': 'instapay'}),
       ).timeout(const Duration(seconds: 15));
       if (response.statusCode >= 200 && response.statusCode < 300) {
         return {'success': true, 'data': jsonDecode(response.body)};

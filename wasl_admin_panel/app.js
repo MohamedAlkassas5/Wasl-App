@@ -1,16 +1,22 @@
 /* Wasl Admin Panel — vanilla SPA talking to the NestJS backend. */
 
-// API base: change this to your deployed backend URL after cloud deploy.
-// You can also override at runtime via ?api=https://your-backend
+// Set only by trusted deployment configuration, never by a URL parameter.
 const API_BASE =
-  new URLSearchParams(location.search).get('api') ||
-  localStorage.getItem('wasl_api') ||
-  'http://localhost:3000';
+  document.querySelector('meta[name="wasl-api-base"]')?.content.trim() ||
+  window.location.origin;
 
-let token = localStorage.getItem('wasl_admin_token') || '';
+// A refresh deliberately requires a new administrator login.
+let token = '';
 
 /* ---------- helpers ---------- */
 const $ = (id) => document.getElementById(id);
+const escapeHtml = (value) =>
+  String(value ?? '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
 
 /* ---------- protected documents ----------
    `uploads/` is no longer a public static folder: national IDs, selfies and
@@ -97,7 +103,6 @@ $('loginForm').addEventListener('submit', async (e) => {
     });
     if (data.user?.role !== 'admin') throw new Error('هذا الحساب ليس حساب مسؤول');
     token = data.token;
-    localStorage.setItem('wasl_admin_token', token);
     localStorage.setItem('wasl_admin_name', data.user.name || 'المسؤول');
     enterApp();
   } catch (err) {
@@ -106,7 +111,6 @@ $('loginForm').addEventListener('submit', async (e) => {
 });
 
 $('logoutBtn').addEventListener('click', () => {
-  localStorage.removeItem('wasl_admin_token');
   token = '';
   // Drop the cached document blobs with the session, not just the token.
   docCache.forEach((url) => URL.revokeObjectURL(url));
@@ -150,7 +154,7 @@ async function renderDashboard() {
         <div class="stat-card"><div class="num">${s.activeDrivers}</div><div class="lbl">مناديب نشطون</div></div>
         <div class="stat-card"><div class="num">${s.totalCustomers}</div><div class="lbl">إجمالي العملاء</div></div>
       </div>`;
-  } catch (e) { $('pageBody').innerHTML = `<div class="empty">${e.message}</div>`; }
+  } catch (e) { $('pageBody').innerHTML = `<div class="empty">${escapeHtml(e.message)}</div>`; }
 }
 
 /* ---------- registrations ---------- */
@@ -176,11 +180,12 @@ async function loadRegs() {
     if (!list.length) { $('regList').innerHTML = '<div class="empty">لا توجد طلبات</div>'; return; }
     $('regList').innerHTML = list.map(regRow).join('');
     hydrateDocs($('regList'));
-  } catch (e) { $('regList').innerHTML = `<div class="empty">${e.message}</div>`; }
+  } catch (e) { $('regList').innerHTML = `<div class="empty">${escapeHtml(e.message)}</div>`; }
 }
 
 function regRow(u) {
   const d = u.details || {};
+  const safe = (v) => escapeHtml(v == null ? '' : String(v));
   const docs = [d.nationalIdFront, d.nationalIdBack, d.selfie, d.vehicleImage, d.logo]
     .filter((x) => x && !String(x).startsWith('pending_'))
     .map(docThumb)
@@ -189,9 +194,9 @@ function regRow(u) {
   return `
     <div class="row">
       <div class="grow">
-        <div class="name">${u.name} <span class="muted">(${roleLbl})</span></div>
-        <div class="sub">📞 ${u.phone} ${u.details?.vehicleType ? '• 🏍️ ' + u.details.vehicleType : ''} ${u.details?.storeName ? '• 🏪 ' + u.details.storeName : ''}</div>
-        <div class="sub">${statusBadge(u.status)} ${u.adminNotes ? '• ملاحظة: ' + u.adminNotes : ''}</div>
+        <div class="name">${safe(u.name)} <span class="muted">(${safe(roleLbl)})</span></div>
+        <div class="sub">📞 ${safe(u.phone)} ${u.details?.vehicleType ? '• 🏍️ ' + safe(u.details.vehicleType) : ''} ${u.details?.storeName ? '• 🏪 ' + safe(u.details.storeName) : ''}</div>
+        <div class="sub">${statusBadge(u.status)} ${u.adminNotes ? '• ملاحظة: ' + safe(u.adminNotes) : ''}</div>
         <div class="docs" style="margin-top:10px">${docs}</div>
       </div>
       <div class="actions">
@@ -240,10 +245,11 @@ async function loadTopups() {
     if (!list.length) { $('topupList').innerHTML = '<div class="empty">لا توجد طلبات شحن</div>'; return; }
     $('topupList').innerHTML = list.map(topupRow).join('');
     hydrateDocs($('topupList'));
-  } catch (e) { $('topupList').innerHTML = `<div class="empty">${e.message}</div>`; }
+  } catch (e) { $('topupList').innerHTML = `<div class="empty">${escapeHtml(e.message)}</div>`; }
 }
 
 function topupRow(r) {
+  const safe = (v) => escapeHtml(v == null ? '' : String(v));
   const method = r.method === 'vodafone_cash' ? 'فودافون كاش' : 'إنستاباي';
   const proof = r.proofImageUrl
     ? docThumb(r.proofImageUrl)
@@ -255,8 +261,8 @@ function topupRow(r) {
   return `
     <div class="row">
       <div class="grow">
-        <div class="name">${r.amount} ج.م • ${method}</div>
-        <div class="sub">مندوب #${r.driverId} ${r.senderReference ? '• من: ' + r.senderReference : ''}</div>
+        <div class="name">${safe(r.amount)} ج.م • ${safe(method)}</div>
+        <div class="sub">مندوب #${safe(r.driverId)} ${r.senderReference ? '• من: ' + safe(r.senderReference) : ''}</div>
         <div class="sub">${statusBadge(r.status)} • ${new Date(r.createdAt).toLocaleString('ar-EG')}</div>
         <div class="docs" style="margin-top:10px">${proof}</div>
       </div>
@@ -295,16 +301,17 @@ async function renderSettings() {
           ${list.map(settingField).join('')}
         </div>
       </div>`;
-  } catch (e) { $('pageBody').innerHTML = `<div class="empty">${e.message}</div>`; }
+  } catch (e) { $('pageBody').innerHTML = `<div class="empty">${escapeHtml(e.message)}</div>`; }
 }
 
 function settingField(s) {
+  const safe = (v) => escapeHtml(v == null ? '' : String(v));
   return `
     <div class="field">
-      <label title="${s.key}">${s.description || s.key}</label>
+      <label title="${safe(s.key)}">${safe(s.description || s.key)}</label>
       <span style="display:flex; gap:8px">
-        <input id="set_${s.key}" value="${s.value ?? ''}" style="max-width:160px" />
-        <button class="btn btn-sm btn-primary" onclick="saveSetting('${s.key}')">حفظ</button>
+        <input id="set_${safe(s.key)}" value="${safe(s.value)}" style="max-width:160px" />
+        <button class="btn btn-sm btn-primary" onclick="saveSetting('${safe(s.key)}')">حفظ</button>
       </span>
     </div>`;
 }
@@ -317,4 +324,3 @@ async function saveSetting(key) {
 }
 
 /* ---------- boot ---------- */
-if (token) enterApp();

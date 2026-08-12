@@ -34,7 +34,9 @@ describe('OrdersService (order ownership)', () => {
           provide: getRepositoryToken(Order),
           useValue: {
             findOne: jest.fn().mockResolvedValue(orderRow),
-            save: jest.fn().mockImplementation((o: Order) => Promise.resolve(o)),
+            save: jest
+              .fn()
+              .mockImplementation((o: Order) => Promise.resolve(o)),
           },
         },
         {

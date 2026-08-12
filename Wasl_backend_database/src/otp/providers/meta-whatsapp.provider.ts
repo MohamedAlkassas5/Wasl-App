@@ -35,6 +35,9 @@ export class MetaWhatsAppProvider implements OtpProvider {
 
     // 🧪 Placeholder mode — no credentials configured yet.
     if (!token || !phoneNumberId) {
+      if (this.config.get<string>('NODE_ENV') === 'production') {
+        throw new Error('WhatsApp OTP is not configured in production');
+      }
       this.logger.warn(
         `📲 [OTP DEV MODE] WhatsApp not configured. Code for ${phone} is: ${code}`,
       );

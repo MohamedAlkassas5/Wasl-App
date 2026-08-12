@@ -24,7 +24,8 @@ describe('OtpService (proof of phone ownership)', () => {
   const repository = {
     findOne: ({ where }: { where: { phone: string } }) =>
       Promise.resolve(stored?.phone === where.phone ? stored : null),
-    create: (data: Partial<OtpVerification>) => ({ ...data }) as OtpVerification,
+    create: (data: Partial<OtpVerification>) =>
+      ({ ...data }) as OtpVerification,
     save: (record: OtpVerification) => {
       stored = record;
       return Promise.resolve(record);

@@ -80,6 +80,11 @@ import { AppSetting } from '../settings/entities/app-setting.entity';
 import { OtpVerification } from '../otp/entities/otp-verification.entity';
 import { WalletTopUpRequest } from '../payments/entities/wallet-topup-request.entity';
 import { WalletTransaction } from '../payments/entities/wallet-transaction.entity';
+import { DeliveryZone } from '../zones/entities/delivery-zone.entity';
+import { DeliveryZoneRate } from '../zones/entities/delivery-zone-rate.entity';
+import { Restaurant } from '../catalog/entities/restaurant.entity';
+import { MenuCategory } from '../catalog/entities/menu-category.entity';
+import { Product } from '../catalog/entities/product.entity';
 
 /**
  * Every entity that maps to a table.
@@ -95,6 +100,11 @@ export const ENTITIES = [
   OtpVerification,
   WalletTopUpRequest,
   WalletTransaction,
+  DeliveryZone,
+  DeliveryZoneRate,
+  Restaurant,
+  MenuCategory,
+  Product,
 ];
 
 export function buildDataSourceOptions(): DataSourceOptions {
@@ -108,7 +118,7 @@ export function buildDataSourceOptions(): DataSourceOptions {
           host: process.env.DB_HOST || 'localhost',
           port: Number(process.env.DB_PORT || 5432),
           username: process.env.DB_USERNAME || 'postgres',
-          password: process.env.DB_PASSWORD || '147258369', // 🎯 تم تحديث الباسورد الافتراضية لـ 147258369
+          password: process.env.DB_PASSWORD || '',
           database: process.env.DB_NAME || 'wasl_delivery_db',
         }),
     entities: ENTITIES,

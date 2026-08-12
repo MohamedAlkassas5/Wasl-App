@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { SettingsService, SettingKey } from '../settings/settings.service';
 import { haversineKm, roundKm, GeoPoint } from '../common/geo.util';
+import { ZonesService } from '../zones/zones.service';
 
 export interface PriceQuote {
   distanceKm: number;
@@ -22,7 +23,30 @@ export interface PriceQuote {
  */
 @Injectable()
 export class PricingService {
-  constructor(private readonly settings: SettingsService) {}
+  constructor(
+    private readonly settings: SettingsService,
+    private readonly zones: ZonesService,
+  ) {}
+
+  async quoteForZones(pickupZoneId: number, dropoffZoneId: number) {
+    const zoneQuote = await this.zones.quoteByZones(
+      pickupZoneId,
+      dropoffZoneId,
+    );
+    const commissionPercent = this.settings.getNumber(
+      SettingKey.COMMISSION_PERCENT,
+      20,
+    );
+    const commission = this.round2(
+      (zoneQuote.deliveryFee * commissionPercent) / 100,
+    );
+    return {
+      ...zoneQuote,
+      commissionPercent,
+      commission,
+      driverEarnings: this.round2(zoneQuote.deliveryFee - commission),
+    };
+  }
 
   /** Quote from an already-computed distance. */
   quoteForDistance(distanceKm: number): PriceQuote {

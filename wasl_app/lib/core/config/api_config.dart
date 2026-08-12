@@ -1,4 +1,5 @@
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter/foundation.dart';
 
 class WaslApiConfig {
   /// 🎯 عنوان السيرفر.
@@ -18,7 +19,9 @@ class WaslApiConfig {
       String.fromEnvironment('API_BASE_URL', defaultValue: '');
 
   static String get baseUrl =>
-      _override.isNotEmpty ? _override : 'http://localhost:3000';
+      _override.isNotEmpty
+          ? _override
+          : (kReleaseMode ? 'https://api.wasl.invalid' : 'http://localhost:3000');
 
   static const Map<String, String> jsonHeaders = {
     'Content-Type': 'application/json',

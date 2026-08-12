@@ -327,6 +327,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:wasl_app/core/theme/app_colors.dart';
+import 'package:wasl_app/core/utils/phone_format.dart';
 import 'package:wasl_app/delivery_screen/WaslSubmitBidDialog.dart';
 import 'package:wasl_app/services/orders_service.dart';
 
@@ -384,7 +385,7 @@ class _WaslDriverOrderDetailsScreenState extends State<WaslDriverOrderDetailsScr
         ]),
         const Divider(),
         _buildCustomerRow('الاسم:', _liveOrderData['customerName'] ?? 'غير متوفر'),
-        _buildCustomerRow('رقم الهاتف:', _liveOrderData['customerPhone'] ?? 'غير متوفر'),
+        _buildCustomerRow('رقم الهاتف:', formatPhoneForDisplay(_liveOrderData['customerPhone'])),
       ],
     ),
   );

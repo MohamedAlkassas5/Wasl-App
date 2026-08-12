@@ -1,3 +1,6 @@
+import 'dart:convert';
+import 'package:http/http.dart' as http;
+import '../../../core/config/api_config.dart';
 import 'restaurant_models.dart';
 
 /// Where restaurant menus come from.
@@ -7,7 +10,7 @@ import 'restaurant_models.dart';
 /// [MenuRepository.instance] — no screen has to be touched.
 abstract class MenuRepository {
   /// Swap this for the HTTP implementation once the menu endpoints exist.
-  static MenuRepository instance = PlaceholderMenuRepository();
+  static MenuRepository instance = HttpMenuRepository();
 
   /// True when the data is sample content rather than real merchant data.
   /// The UI surfaces this to the user so demo items can never be mistaken for
@@ -132,5 +135,42 @@ class PlaceholderMenuRepository implements MenuRepository {
         isAvailable: false,
       ),
     ];
+  }
+}
+
+/// Production repository. It deliberately returns an empty list on a valid
+/// empty catalogue; placeholder/demo data is never mixed into a production
+/// response.
+class HttpMenuRepository implements MenuRepository {
+  @override
+  bool get isPlaceholderData => false;
+
+  Future<Map<String, dynamic>> _get(int restaurantId) async {
+    final response = await http
+        .get(Uri.parse('${WaslApiConfig.baseUrl}/restaurants/$restaurantId/menu'),
+            headers: await WaslApiConfig.authHeaders())
+        .timeout(const Duration(seconds: 15));
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw Exception('تعذر تحميل قائمة المطعم (${response.statusCode})');
+    }
+    return jsonDecode(response.body) as Map<String, dynamic>;
+  }
+
+  @override
+  Future<List<MenuSection>> getSections(int merchantId) async {
+    final data = await _get(merchantId);
+    return ((data['categories'] as List?) ?? [])
+        .whereType<Map<String, dynamic>>()
+        .map(MenuSection.fromJson)
+        .toList();
+  }
+
+  @override
+  Future<List<Product>> getProducts(int merchantId) async {
+    final data = await _get(merchantId);
+    return ((data['products'] as List?) ?? [])
+        .whereType<Map<String, dynamic>>()
+        .map((item) => Product.fromJson({...item, 'merchantId': item['restaurantId']}))
+        .toList();
   }
 }

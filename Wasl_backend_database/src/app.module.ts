@@ -22,6 +22,8 @@ import { OtpModule } from './otp/otp.module';
 import { PaymentsModule } from './payments/payments.module';
 import { FilesModule } from './files/files.module';
 import { StorageModule } from './storage/storage.module';
+import { ZonesModule } from './zones/zones.module';
+import { CatalogModule } from './catalog/catalog.module';
 
 @Module({
   imports: [
@@ -54,6 +56,8 @@ import { StorageModule } from './storage/storage.module';
     }),
 
     StorageModule,
+    ZonesModule,
+    CatalogModule,
     AuthModule,
     AdminModule,
     SettingsModule,

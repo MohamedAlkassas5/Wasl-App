@@ -1,10 +1,4 @@
-import {
-  IsNumber,
-  IsEnum,
-  IsOptional,
-  IsString,
-  Min,
-} from 'class-validator';
+import { IsNumber, IsEnum, IsOptional, IsString, Min } from 'class-validator';
 import { Type } from 'class-transformer';
 import { TopUpMethod } from '../entities/wallet-topup-request.entity';
 

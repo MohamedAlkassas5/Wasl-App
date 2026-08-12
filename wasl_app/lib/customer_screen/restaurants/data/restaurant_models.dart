@@ -12,7 +12,7 @@ class MenuSection {
   const MenuSection({required this.id, required this.name});
 
   factory MenuSection.fromJson(Map<String, dynamic> json) => MenuSection(
-        id: json['id'] as int,
+        id: (json['id'] as num).toInt(),
         name: (json['name'] ?? '').toString(),
       );
 }
@@ -30,7 +30,7 @@ class ProductSize {
   });
 
   factory ProductSize.fromJson(Map<String, dynamic> json) => ProductSize(
-        id: json['id'] as int,
+        id: (json['id'] as num).toInt(),
         name: (json['name'] ?? '').toString(),
         price: double.tryParse(json['price'].toString()) ?? 0,
       );
@@ -92,13 +92,13 @@ class Product {
   bool get hasSizes => sizes.isNotEmpty;
 
   factory Product.fromJson(Map<String, dynamic> json) => Product(
-        id: json['id'] as int,
-        merchantId: json['merchantId'] as int,
-        sectionId: json['sectionId'] as int?,
+        id: (json['id'] as num).toInt(),
+        merchantId: ((json['merchantId'] ?? json['restaurantId']) as num).toInt(),
+        sectionId: (json['sectionId'] ?? json['categoryId']) as int?,
         name: (json['name'] ?? '').toString(),
         description: json['description']?.toString(),
         imageUrl: json['imageUrl']?.toString(),
-        basePrice: double.tryParse(json['basePrice'].toString()) ?? 0,
+        basePrice: double.tryParse((json['basePrice'] ?? json['price']).toString()) ?? 0,
         isPopular: json['isPopular'] == true,
         isAvailable: json['isAvailable'] != false,
         sizes: ((json['sizes'] as List?) ?? [])

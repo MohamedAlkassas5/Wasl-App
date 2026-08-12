@@ -81,10 +81,9 @@ class _WaslDeliveryPaymentScreenState extends State<WaslDeliveryPaymentScreen> {
       return;
     }
 
-    final webhookResult = await _ordersService.processPaymentWebhook(
-      driverId: _driverId!,
-      amount: amount,
-    );
+    // The server keeps this request pending until an administrator verifies
+    // the transfer. A client must never call or simulate a payment webhook.
+    final webhookResult = requestResult;
 
     if (!mounted) return;
     setState(() => _isLoading = false);

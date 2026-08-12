@@ -1,53 +1,87 @@
+/* eslint-disable @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-argument */
 import type { Readable } from 'stream';
+import { PassThrough } from 'stream';
+import {
+  S3Client,
+  PutObjectCommand,
+  HeadObjectCommand,
+  GetObjectCommand,
+} from '@aws-sdk/client-s3';
 import { StorageProvider } from './storage-provider';
 
-/**
- * ⛔ UNFINISHED adapter — a documented placeholder, not a working backend.
- *
- * Selecting it (`STORAGE_DRIVER=s3`) fails fast on boot rather than silently
- * losing files, so it can't be half-enabled by accident. To make it real:
- *
- * 1. `npm i @aws-sdk/client-s3` (or the Cloudinary SDK).
- * 2. Read config from env: STORAGE_BUCKET, STORAGE_REGION,
- *    AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY (or Cloudinary equivalents).
- * 3. Implement the four methods against the SDK:
- *    - save(key, data, contentType) → PutObjectCommand (key WITHOUT the
- *      leading `uploads/`, or keep it as the object prefix — just be
- *      consistent with what canRead() matches on).
- *    - exists(key) → HeadObjectCommand (true unless 404).
- *    - localPath(key) → return null (there is no local file).
- *    - createReadStream(key) → GetObjectCommand(...).Body as a stream.
- * 4. **Also route the write side through this provider.** The multer
- *    `diskStorage` engines in `auth.controller.ts` and `orders.controller.ts`
- *    still write to local disk. For S3 they must switch to `memoryStorage()`
- *    and call `storageProvider.save(key, file.buffer, file.mimetype)` in the
- *    handler; otherwise reads go to S3 while writes go to a disk that the next
- *    deploy wipes. FilesController's read path already goes through this
- *    interface and needs no further change.
- *
- * Until then the default `local-disk` backend is the only supported one.
- */
+/** Cloudflare R2 (or any S3-compatible object store) implementation. */
 export class S3StorageProvider implements StorageProvider {
-  readonly name = 's3';
+  readonly name = 'r2';
+  private readonly client: S3Client;
+  private readonly bucket: string;
 
   constructor() {
-    throw new Error(
-      "STORAGE_DRIVER=s3 selected, but the S3 adapter is not implemented yet. " +
-        'See src/storage/s3-storage.provider.ts for the steps, or unset ' +
-        'STORAGE_DRIVER to use local disk.',
+    const endpoint = process.env.R2_ENDPOINT || process.env.S3_ENDPOINT;
+    const accessKeyId = process.env.R2_ACCESS_KEY_ID || process.env.S3_ACCESS_KEY_ID;
+    const secretAccessKey = process.env.R2_SECRET_ACCESS_KEY || process.env.S3_SECRET_ACCESS_KEY;
+    this.bucket = process.env.R2_BUCKET || process.env.S3_BUCKET || '';
+    if (!endpoint || !accessKeyId || !secretAccessKey || !this.bucket) {
+      throw new Error(
+        'STORAGE_DRIVER=s3 requires R2_ENDPOINT, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY and R2_BUCKET',
+      );
+    }
+    this.client = new S3Client({
+      region: process.env.R2_REGION || process.env.S3_REGION || 'auto',
+      endpoint,
+      forcePathStyle: true,
+      credentials: { accessKeyId, secretAccessKey },
+    });
+  }
+
+  private key(key: string): string {
+    return key.replace(/^\/+/, '');
+  }
+
+  async save(key: string, data: Buffer, contentType?: string): Promise<void> {
+    await this.client.send(
+      new PutObjectCommand({
+        Bucket: this.bucket,
+        Key: this.key(key),
+        Body: data,
+        ContentType: contentType,
+        CacheControl: 'private, no-store',
+      }),
     );
   }
 
-  save(): Promise<void> {
-    throw new Error('S3StorageProvider.save not implemented');
+  async exists(key: string): Promise<boolean> {
+    try {
+      await this.client.send(
+        new HeadObjectCommand({ Bucket: this.bucket, Key: this.key(key) }),
+      );
+      return true;
+    } catch (error: any) {
+      if (
+        error?.$metadata?.httpStatusCode === 404 ||
+        error?.name === 'NotFound'
+      )
+        return false;
+      throw error;
+    }
   }
-  exists(): Promise<boolean> {
-    throw new Error('S3StorageProvider.exists not implemented');
-  }
+
   localPath(): string | null {
     return null;
   }
-  createReadStream(): Readable {
-    throw new Error('S3StorageProvider.createReadStream not implemented');
+
+  createReadStream(key: string): Readable {
+    const output = new PassThrough();
+    this.client
+      .send(new GetObjectCommand({ Bucket: this.bucket, Key: this.key(key) }))
+      .then((result: any) => {
+        if (result.Body?.pipe) result.Body.pipe(output);
+        else if (result.Body?.transformToByteArray)
+          result.Body.transformToByteArray().then((bytes: Uint8Array) => {
+            output.end(Buffer.from(bytes));
+          });
+        else output.destroy(new Error('R2 response has no readable body'));
+      })
+      .catch((error) => output.destroy(error));
+    return output;
   }
 }

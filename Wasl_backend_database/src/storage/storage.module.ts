@@ -17,6 +17,12 @@ import { S3StorageProvider } from './s3-storage.provider';
         const driver = (process.env.STORAGE_DRIVER || 'local').toLowerCase();
         const logger = new Logger('StorageModule');
 
+        if (process.env.NODE_ENV === 'production' && driver === 'local') {
+          throw new Error(
+            'Local disk storage is disabled in production; configure STORAGE_DRIVER=s3 for R2',
+          );
+        }
+
         if (driver === 's3' || driver === 'cloudinary') {
           // Throws until the adapter is implemented — fail fast rather than
           // silently write to a disk the next deploy wipes.

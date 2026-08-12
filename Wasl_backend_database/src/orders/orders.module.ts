@@ -8,6 +8,7 @@ import { InAppNotification } from './entities/notification.entity'; // 🎯 اس
 import { PricingModule } from '../pricing/pricing.module';
 import { DeliveryModule } from '../delivery/delivery.module';
 import { PaymentsModule } from '../payments/payments.module';
+import { ZonesModule } from '../zones/zones.module';
 
 @Module({
   imports: [
@@ -21,6 +22,7 @@ import { PaymentsModule } from '../payments/payments.module';
     PricingModule,
     DeliveryModule,
     PaymentsModule,
+    ZonesModule,
   ],
   controllers: [OrdersController],
   providers: [OrdersService],

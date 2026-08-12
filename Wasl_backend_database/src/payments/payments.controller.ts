@@ -16,6 +16,7 @@ import { Request } from 'express';
 import { PaymentsService } from './payments.service';
 import { CreateTopUpRequestDto } from './dto/topup.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { imageUploadPolicy } from '../common/upload-policy';
 
 interface JwtReq extends Request {
   user?: { sub: number; role: string };
@@ -41,6 +42,7 @@ export class PaymentsController {
   @Post('topup-requests')
   @UseInterceptors(
     FileInterceptor('proofImage', {
+      ...imageUploadPolicy,
       storage: diskStorage({
         destination: (_req, _file, cb) => {
           if (!existsSync(proofUploadPath)) {

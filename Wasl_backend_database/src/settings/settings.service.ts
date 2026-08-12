@@ -81,7 +81,8 @@ const DEFAULT_SETTINGS: SettingSeed[] = [
   {
     key: SettingKey.STORE_SEARCH_RADIUS_KM,
     value: '10',
-    description: 'Radius (km) within which partner stores are shown to a customer.',
+    description:
+      'Radius (km) within which partner stores are shown to a customer.',
   },
   {
     key: SettingKey.MIN_WALLET_TO_GO_ONLINE,
@@ -120,9 +121,7 @@ export class SettingsService implements OnModuleInit {
   async onModuleInit(): Promise<void> {
     await this.seedDefaults();
     await this.refreshCache();
-    this.logger.log(
-      `⚙️  Loaded ${this.cache.size} app settings into cache.`,
-    );
+    this.logger.log(`⚙️  Loaded ${this.cache.size} app settings into cache.`);
   }
 
   /** Insert any missing default keys (never overwrites edited values). */
@@ -132,9 +131,7 @@ export class SettingsService implements OnModuleInit {
         where: { key: seed.key },
       });
       if (!existing) {
-        await this.settingRepository.save(
-          this.settingRepository.create(seed),
-        );
+        await this.settingRepository.save(this.settingRepository.create(seed));
       }
     }
   }

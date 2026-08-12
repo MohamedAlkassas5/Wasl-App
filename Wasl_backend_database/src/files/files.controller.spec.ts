@@ -63,10 +63,16 @@ describe('FilesController (uploads access control)', () => {
       providers: [
         FilesService,
         { provide: STORAGE_PROVIDER, useClass: LocalDiskStorageProvider },
-        { provide: getRepositoryToken(DeliveryPartner), useValue: deliveryRepo },
+        {
+          provide: getRepositoryToken(DeliveryPartner),
+          useValue: deliveryRepo,
+        },
         { provide: getRepositoryToken(Merchant), useValue: emptyRepo },
         { provide: getRepositoryToken(Order), useValue: emptyRepo },
-        { provide: getRepositoryToken(WalletTopUpRequest), useValue: emptyRepo },
+        {
+          provide: getRepositoryToken(WalletTopUpRequest),
+          useValue: emptyRepo,
+        },
       ],
     }).compile();
 

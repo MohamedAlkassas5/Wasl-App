@@ -23,15 +23,21 @@ export class PricingController {
 
   @Post('quote')
   quote(@Body() dto: QuoteDto) {
+    if (dto.pickupZoneId && dto.dropoffZoneId) {
+      return this.pricingService.quoteForZones(
+        dto.pickupZoneId,
+        dto.dropoffZoneId,
+      );
+    }
     // Preferred path: compute distance from real coordinates.
     if (
       isValidCoordinate(dto.pickupLatitude, dto.pickupLongitude) &&
       isValidCoordinate(dto.destinationLatitude, dto.destinationLongitude)
     ) {
       return this.pricingService.quoteForTrip(
-        { latitude: dto.pickupLatitude!, longitude: dto.pickupLongitude! },
+        { latitude: dto.pickupLatitude, longitude: dto.pickupLongitude! },
         {
-          latitude: dto.destinationLatitude!,
+          latitude: dto.destinationLatitude,
           longitude: dto.destinationLongitude!,
         },
       );

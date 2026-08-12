@@ -43,7 +43,11 @@ export class AdminPaymentsController {
     @Req() req: JwtReq,
     @Body() dto: ReviewTopUpDto,
   ) {
-    return this.paymentsService.approveRequest(id, req.user!.sub, dto.adminNote);
+    return this.paymentsService.approveRequest(
+      id,
+      req.user!.sub,
+      dto.adminNote,
+    );
   }
 
   @Patch('topup-requests/:id/reject')

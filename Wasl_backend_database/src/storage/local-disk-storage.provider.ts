@@ -24,7 +24,9 @@ export class LocalDiskStorageProvider implements StorageProvider {
    * the charset; this is defence in depth.
    */
   private toAbsolute(key: string): string {
-    const relative = key.startsWith('uploads/') ? key.slice('uploads/'.length) : key;
+    const relative = key.startsWith('uploads/')
+      ? key.slice('uploads/'.length)
+      : key;
     const abs = resolve(join(this.root, relative));
     if (abs !== this.root && !abs.startsWith(this.root + sep)) {
       throw new BadRequestException('مسار الملف غير صالح');

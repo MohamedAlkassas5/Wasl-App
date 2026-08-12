@@ -50,7 +50,7 @@ function resolveSecret(): string {
   }
 
   // Dev / test only: a random secret so no committed value is ever trusted.
-  // eslint-disable-next-line no-console
+
   console.warn(
     '⚠️  JWT_SECRET is not set — using a random per-process secret. ' +
       'Sessions will not survive a restart. Set JWT_SECRET for stable dev tokens.',

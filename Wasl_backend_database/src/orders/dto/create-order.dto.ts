@@ -2,11 +2,13 @@ import {
   IsNumber,
   IsOptional,
   IsString,
+  IsEnum,
   IsArray,
   Min,
   Max,
 } from 'class-validator';
 import { Type } from 'class-transformer';
+import { PaymentMethod } from '../entities/order.entity';
 
 export class CreateOrderDto {
   // 🔐 Optional and, when present, ignored: OrdersController overwrites this
@@ -89,6 +91,18 @@ export class CreateOrderDto {
   @IsOptional()
   @Type(() => Number)
   @IsNumber()
+  @Min(1)
+  pickupZoneId?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(1)
+  dropoffZoneId?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
   itemsPrice?: number;
 
   @IsOptional()
@@ -98,4 +112,8 @@ export class CreateOrderDto {
   @IsOptional()
   @IsString()
   voiceNoteUrl?: string;
+
+  @IsOptional()
+  @IsEnum(PaymentMethod)
+  paymentMethod?: PaymentMethod;
 }

@@ -21,6 +21,7 @@ import { AuthUser, CurrentUser } from './current-user';
 import { UserRole } from '../users/entities/user.entity';
 import { RegisterDto } from './register.dto';
 import { LoginDto } from './login.dto';
+import { imageUploadPolicy } from '../common/upload-policy';
 
 @Controller('auth')
 export class AuthController {
@@ -40,6 +41,7 @@ export class AuthController {
         { name: 'vehicleImage', maxCount: 1 },
       ],
       {
+        ...imageUploadPolicy,
         storage: diskStorage({
           // ✅ الحفظ المباشر في الفولدر العام يمنع تعليق الـ Stream في الـ Localhost والمحاكي
           destination: (req, file, callback) => {

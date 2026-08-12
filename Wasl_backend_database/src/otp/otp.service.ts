@@ -40,16 +40,16 @@ export class OtpService {
   private generateCode(): string {
     // Cryptographically-strong numeric code, zero-padded.
     const max = 10 ** OtpService.OTP_LENGTH;
-    return randomInt(0, max)
-      .toString()
-      .padStart(OtpService.OTP_LENGTH, '0');
+    return randomInt(0, max).toString().padStart(OtpService.OTP_LENGTH, '0');
   }
 
   /**
    * Generate, hash, persist and deliver a fresh OTP. Enforces a per-phone
    * resend cooldown and an hourly send cap to prevent abuse.
    */
-  async sendOtp(rawPhone: string): Promise<{ success: boolean; message: string }> {
+  async sendOtp(
+    rawPhone: string,
+  ): Promise<{ success: boolean; message: string }> {
     const phone = this.cleanPhone(rawPhone);
     const now = new Date();
 
@@ -61,9 +61,7 @@ export class OtpService {
       now.getTime() - new Date(record.lastSentAt).getTime() <
         OtpService.RESEND_COOLDOWN_MS
     ) {
-      throw new BadRequestException(
-        'يرجى الانتظار قليلاً قبل طلب رمز جديد',
-      );
+      throw new BadRequestException('يرجى الانتظار قليلاً قبل طلب رمز جديد');
     }
 
     // Rolling send-window cap.

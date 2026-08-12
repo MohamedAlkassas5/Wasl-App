@@ -30,12 +30,18 @@ describe('Auth ↔ Otp module wiring', () => {
 
   beforeAll(async () => {
     const builder = Test.createTestingModule({
-      imports: [ConfigModule.forRoot({ isGlobal: true }), AuthModule, OtpModule],
+      imports: [
+        ConfigModule.forRoot({ isGlobal: true }),
+        AuthModule,
+        OtpModule,
+      ],
     });
 
     // Stand in for everything TypeORM would otherwise need a connection for.
     for (const entity of [User, DeliveryPartner, Merchant, OtpVerification]) {
-      builder.overrideProvider(getRepositoryToken(entity)).useValue(stubRepository);
+      builder
+        .overrideProvider(getRepositoryToken(entity))
+        .useValue(stubRepository);
     }
     builder.overrideProvider(getDataSourceToken()).useValue({});
 

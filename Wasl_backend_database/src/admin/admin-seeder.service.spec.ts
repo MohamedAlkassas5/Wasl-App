@@ -30,7 +30,8 @@ describe('AdminSeederService (no default credentials)', () => {
       ),
     find: ({ where }: { where: { role?: UserRole } }) =>
       Promise.resolve(users.filter((u) => u.role === where.role)),
-    create: (data: Partial<User>) => ({ id: users.length + 1, ...data }) as User,
+    create: (data: Partial<User>) =>
+      ({ id: users.length + 1, ...data }) as User,
     save: (user: User) => {
       if (!users.some((u) => u.id === user.id)) users.push(user);
       return Promise.resolve(user);
@@ -139,7 +140,7 @@ describe('AdminSeederService (no default credentials)', () => {
         ...existingAdmin(),
         phone: PHONE,
         passwordHash: await bcrypt.hash('WaslAdmin@2026', 10),
-      } as User);
+      });
     };
 
     it('rotates it to the configured password on boot', async () => {
