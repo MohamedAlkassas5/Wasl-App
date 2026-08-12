@@ -10,7 +10,7 @@ import { PricingService } from '../pricing/pricing.service';
 import { DeliveryService } from '../delivery/delivery.service';
 import { PaymentsService } from '../payments/payments.service';
 import { AuthUser } from '../auth/current-user';
-import { UserRole } from '../users/entities/user.entity';
+import { User, UserRole } from '../users/entities/user.entity';
 
 /**
  * Ownership rules on orders, with the repositories stubbed. The point of these
@@ -57,6 +57,12 @@ describe('OrdersService (order ownership)', () => {
             create: jest.fn().mockImplementation((v: unknown) => v),
             save: jest.fn().mockResolvedValue(undefined),
           },
+        },
+        {
+          // Order creation reads the customer's saved area to price a normal
+          // order; these ownership tests never get that far.
+          provide: getRepositoryToken(User),
+          useValue: { findOne: jest.fn().mockResolvedValue(null) },
         },
         { provide: PricingService, useValue: { commissionForFee: () => 4 } },
         { provide: DeliveryService, useValue: {} },

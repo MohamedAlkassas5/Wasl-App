@@ -7,20 +7,64 @@ import {
 } from '@nestjs/common';
 import { PricingService } from './pricing.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
-import { QuoteDto } from './dto/quote.dto';
+import { NormalQuoteDto, QuoteDto, WasllyQuoteDto } from './dto/quote.dto';
 import { isValidCoordinate } from '../common/geo.util';
+import { CurrentUser, AuthUser } from '../auth/current-user';
+import { UsersService } from '../users/users.service';
 
 /**
- * Pricing quote endpoint. The customer app calls this before creating an order
- * to show the estimated delivery fee up front. Logged-in only: the response
- * exposes our commission split and tier table, which is business config, not
- * public data. (The Flutter client already sends the token here.)
+ * Pricing quote endpoints. The customer app calls these before creating an
+ * order so the fee shown is the fee that will be charged. Logged-in only: the
+ * response exposes our commission split, which is business config, not public
+ * data.
  */
 @Controller('pricing')
 @UseGuards(JwtAuthGuard)
 export class PricingController {
-  constructor(private readonly pricingService: PricingService) {}
+  constructor(
+    private readonly pricingService: PricingService,
+    private readonly usersService: UsersService,
+  ) {}
 
+  /**
+   * Normal order fee, by destination area.
+   *
+   * With no `dropoffZoneId` the caller's saved area is used, which is why a
+   * customer who has not chosen one yet gets a pointed error rather than a
+   * default price.
+   */
+  @Post('normal-quote')
+  async normalQuote(
+    @CurrentUser() user: AuthUser,
+    @Body() dto: NormalQuoteDto,
+  ) {
+    const dropoffZoneId =
+      dto.dropoffZoneId ??
+      (await this.usersService.getCustomerZoneId(user.sub));
+
+    if (!dropoffZoneId) {
+      throw new BadRequestException(
+        'اختر منطقة التوصيل من حسابك أولاً لحساب سعر التوصيل',
+      );
+    }
+    return this.pricingService.quoteForDestinationZone(dropoffZoneId);
+  }
+
+  /** Waslly fee, by pickup area → drop-off area. */
+  @Post('waslly-quote')
+  wasllyQuote(@Body() dto: WasllyQuoteDto) {
+    return this.pricingService.quoteForZones(
+      dto.pickupZoneId,
+      dto.dropoffZoneId,
+    );
+  }
+
+  /**
+   * @deprecated Legacy distance/zone quote kept so existing clients keep
+   * working. New callers should use `normal-quote` or `waslly-quote`, which
+   * express which pricing rule they actually mean instead of inferring it from
+   * whichever fields happen to be filled in.
+   */
   @Post('quote')
   quote(@Body() dto: QuoteDto) {
     if (dto.pickupZoneId && dto.dropoffZoneId) {
@@ -29,7 +73,6 @@ export class PricingController {
         dto.dropoffZoneId,
       );
     }
-    // Preferred path: compute distance from real coordinates.
     if (
       isValidCoordinate(dto.pickupLatitude, dto.pickupLongitude) &&
       isValidCoordinate(dto.destinationLatitude, dto.destinationLongitude)
@@ -43,7 +86,6 @@ export class PricingController {
       );
     }
 
-    // Fallback: caller supplied a distance directly.
     if (typeof dto.distanceKm === 'number') {
       return this.pricingService.quoteForDistance(dto.distanceKm);
     }

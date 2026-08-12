@@ -17,8 +17,11 @@ import {
   VehicleType,
 } from '../delivery/entities/delivery-partner.entity';
 import { Merchant } from '../merchant/entities/merchant.entity';
+import { InAppNotification } from '../orders/entities/notification.entity';
+import { OtpVerification } from '../otp/entities/otp-verification.entity';
 import { RegisterDto } from './register.dto';
 import { LoginDto } from './login.dto';
+import { ZonesService } from '../zones/zones.service';
 
 @Injectable()
 export class AuthService {
@@ -34,6 +37,7 @@ export class AuthService {
     // registration whose phone was never verified. Genuinely mutual.
     @Inject(forwardRef(() => OtpService))
     private readonly otpService: OtpService,
+    private readonly zonesService: ZonesService,
   ) {}
 
   // 🎯 1️⃣ دالة تسجيل الحسابات الشاملة (تستقبل طلب الـ Multipart المباشر من الفلاتر)
@@ -54,6 +58,7 @@ export class AuthService {
       vehicleType,
       email,
       firebaseUid,
+      customerZoneId,
     } = registerDto;
 
     const cleanPhone = phone.replace(/[^0-9]/g, '');
@@ -75,6 +80,16 @@ export class AuthService {
       throw new BadRequestException('رقم الهاتف مستخدم بالفعل بالمنظومة');
     }
 
+    // 📍 A supplied area is only meaningful for a customer, and is checked
+    // against the live zone list before anything is written — an unsupported
+    // area fails registration outright rather than creating an account that
+    // can never be quoted a delivery.
+    let resolvedZoneId: number | undefined;
+    if (customerZoneId !== undefined && role === UserRole.CUSTOMER) {
+      const zone = await this.zonesService.getActiveZone(customerZoneId);
+      resolvedZoneId = zone.id;
+    }
+
     const passwordHash = await bcrypt.hash(password, 10);
     const status =
       role === UserRole.DELIVERY || role === UserRole.MERCHANT
@@ -89,6 +104,7 @@ export class AuthService {
       status,
       email: email ? email.trim() : undefined,
       firebaseUid,
+      customerZoneId: resolvedZoneId,
     });
     const savedUser = await this.userRepository.save(user);
 
@@ -129,6 +145,7 @@ export class AuthService {
         email: savedUser.email || '',
         firebaseUid: savedUser.firebaseUid || '',
         adminNotes: savedUser.admin_notes || '',
+        customerZoneId: savedUser.customerZoneId ?? null,
       },
     };
   }
@@ -171,6 +188,7 @@ export class AuthService {
         email: user.email || '',
         firebaseUid: user.firebaseUid || '',
         adminNotes: user.admin_notes || '',
+        customerZoneId: user.customerZoneId ?? null,
       },
     };
   }
@@ -213,21 +231,72 @@ export class AuthService {
     return this.deleteUserRecord(user);
   }
 
+  /**
+   * Closes an account.
+   *
+   * This used to be `userRepository.delete()`, which **could not succeed** for
+   * any customer who had ever placed an order: `orders.customerId` is
+   * `ON DELETE NO ACTION`, so Postgres raised a foreign-key violation and the
+   * app showed "فشلت عملية حذف الحساب". Verified against a real database.
+   *
+   * Cascading the delete down through orders would have worked mechanically and
+   * been wrong: an order carries the assigned driver's delivery record and the
+   * commission charged against their wallet. Erasing it destroys a *different*
+   * person's financial history to satisfy this one's deletion request.
+   *
+   * So the row survives and everything personal on it is scrubbed:
+   *
+   *  - name / email / firebase uid cleared, password replaced with a value no
+   *    input can hash to, so the account can never be signed into again;
+   *  - phone rewritten to a unique placeholder, which **releases the real
+   *    number** for a fresh signup;
+   *  - notifications (purely personal, no financial meaning) deleted, along
+   *    with any outstanding OTP for the number;
+   *  - driver/merchant profiles deleted as before — those cascade cleanly and
+   *    hold identity documents that must not be retained;
+   *  - orders, offers and wallet ledger rows deliberately kept.
+   *
+   * Everything runs in one transaction, so a partial scrub can't leave an
+   * account half-closed and still reachable.
+   */
   private async deleteUserRecord(
     user: User,
   ): Promise<{ success: boolean; message: string }> {
-    if (user.role === UserRole.DELIVERY) {
-      await this.deliveryRepository.delete({ userId: user.id });
-    } else if (user.role === UserRole.MERCHANT) {
-      await this.merchantRepository.delete({ ownerId: user.id });
-    }
+    await this.userRepository.manager.transaction(async (manager) => {
+      if (user.role === UserRole.DELIVERY) {
+        await manager.delete(DeliveryPartner, { userId: user.id });
+      } else if (user.role === UserRole.MERCHANT) {
+        await manager.delete(Merchant, { ownerId: user.id });
+      }
 
-    await this.userRepository.delete({ id: user.id });
+      await manager.delete(InAppNotification, { userId: user.id });
+      await manager.delete(OtpVerification, { phone: user.phone });
+
+      // Unique, obviously-not-a-number, and short enough for varchar(20).
+      const releasedPhone =
+        `deleted_${user.id}_${Date.now().toString(36)}`.slice(0, 20);
+
+      await manager.update(
+        User,
+        { id: user.id },
+        {
+          name: 'حساب محذوف',
+          phone: releasedPhone,
+          // bcrypt never produces this, so no password can ever match it.
+          passwordHash: 'account-deleted',
+          email: null,
+          firebaseUid: null,
+          customerZoneId: null,
+          status: AccountStatus.SUSPENDED,
+          deletedAt: new Date(),
+        },
+      );
+    });
 
     return {
       success: true,
       message:
-        'تم حذف الحساب وكافة البيانات اللوجستية التابعة له من السيرفر بنجاح.',
+        'تم حذف حسابك وبياناتك الشخصية نهائياً، ورقم هاتفك بقى متاح للتسجيل من جديد.',
     };
   }
 
@@ -262,6 +331,7 @@ export class AuthService {
         email: user.email || '',
         firebaseUid: user.firebaseUid || '',
         adminNotes: user.admin_notes || '',
+        customerZoneId: user.customerZoneId ?? null,
       },
     };
   }

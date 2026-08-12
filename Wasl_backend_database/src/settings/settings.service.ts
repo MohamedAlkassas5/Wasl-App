@@ -9,6 +9,7 @@ import { AppSetting } from './entities/app-setting.entity';
  */
 export const SettingKey = {
   COMMISSION_PERCENT: 'commission_percent',
+  MIN_COMMISSION: 'min_commission',
   BASE_FEE_CITY: 'base_fee_city',
   BASE_FEE_NEARBY: 'base_fee_nearby',
   TIER1_MAX_KM: 'tier1_max_km',
@@ -41,6 +42,12 @@ const DEFAULT_SETTINGS: SettingSeed[] = [
     key: SettingKey.COMMISSION_PERCENT,
     value: '20',
     description: 'Platform commission taken from the delivery fee (%).',
+  },
+  {
+    key: SettingKey.MIN_COMMISSION,
+    value: '5',
+    description:
+      'Floor (EGP) under which the platform commission never falls, however small the delivery fee.',
   },
   {
     key: SettingKey.BASE_FEE_CITY,

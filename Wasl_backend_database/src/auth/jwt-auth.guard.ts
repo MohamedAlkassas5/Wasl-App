@@ -7,6 +7,7 @@ import {
 import { JwtService } from '@nestjs/jwt';
 import { Request } from 'express';
 import { JWT_SECRET } from './jwt.constants';
+import { AccountAccessService } from './account-access.service';
 
 // 👈 تحديد شكل البيانات القادمة من الـ JWT بدقة لإرضاء الـ ESLint
 interface JwtPayload {
@@ -21,7 +22,10 @@ interface AuthenticatedRequest extends Request {
 
 @Injectable()
 export class JwtAuthGuard implements CanActivate {
-  constructor(private readonly jwtService: JwtService) {}
+  constructor(
+    private readonly jwtService: JwtService,
+    private readonly accountAccess: AccountAccessService,
+  ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest<AuthenticatedRequest>();
@@ -33,18 +37,30 @@ export class JwtAuthGuard implements CanActivate {
       );
     }
 
+    let payload: JwtPayload;
     try {
       // 👈 إخبار الـ TypeScript بالنوع الصريح للـ Payload القادم
-      const payload = await this.jwtService.verifyAsync<JwtPayload>(token, {
+      payload = await this.jwtService.verifyAsync<JwtPayload>(token, {
         secret: JWT_SECRET,
       });
-
-      // 👈 الآن الإسناد آمن 100% وبدون أي حقول مجهولة
-      request.user = payload;
     } catch {
       throw new UnauthorizedException('جلسة الدخول منتهية أو التوكين غير صالح');
     }
 
+    // 🔐 A valid signature only proves the token was ours when it was issued.
+    // Closing an account keeps the row (its orders reference a driver who was
+    // paid), so the old token stays verifiable — without this check every
+    // protected route would keep answering a deleted account until the token
+    // expired. Checked here, once, rather than in each controller.
+    //
+    // Note this is outside the catch above on purpose: a database failure must
+    // surface as a server error, not be swallowed into "your session expired".
+    if (await this.accountAccess.isClosed(payload.sub)) {
+      throw new UnauthorizedException('تم حذف هذا الحساب');
+    }
+
+    // 👈 الآن الإسناد آمن 100% وبدون أي حقول مجهولة
+    request.user = payload;
     return true;
   }
 

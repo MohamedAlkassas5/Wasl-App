@@ -4,8 +4,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:wasl_app/core/theme/app_colors.dart';
 import 'package:wasl_app/core/widgets/wasl_ui.dart';
-import 'package:wasl_app/services/location_api_service.dart';
 import 'package:wasl_app/services/orders_service.dart';
+import 'package:wasl_app/services/zones_service.dart';
 
 import 'data/cart_controller.dart';
 import 'WaslOrderPlacedScreen.dart';
@@ -29,7 +29,7 @@ class WaslCheckoutScreen extends StatefulWidget {
 
 class _WaslCheckoutScreenState extends State<WaslCheckoutScreen> {
   final _cart = CartController.instance;
-  final _pricing = LocationApiService();
+  final _zones = ZonesService();
   final _orders = FlutterOrdersService();
 
   final _addressController = TextEditingController();
@@ -110,9 +110,10 @@ class _WaslCheckoutScreenState extends State<WaslCheckoutScreen> {
       _quoteError = null;
     });
 
-    // Without a fix we can't measure the trip; ask the engine for its base
-    // (city-tier) price rather than inventing a distance.
-    final res = await _pricing.getQuoteByDistance(0);
+    // A normal order is priced by the customer's area, not by distance. No
+    // area is sent, so the server uses the one saved on their profile — and
+    // says so plainly if they haven't chosen one yet.
+    final res = await _zones.getNormalQuote();
 
     if (!mounted) return;
     if (res['success'] == true) {

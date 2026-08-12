@@ -458,7 +458,9 @@ import 'package:country_picker/country_picker.dart';
 import 'package:wasl_app/screens/WaslLoginScreen.dart';
 import 'package:wasl_app/screens/WaslOtpScreen.dart';
 import 'package:wasl_app/core/theme/app_colors.dart';
+import 'package:wasl_app/core/widgets/wasl_area_picker.dart';
 import 'package:wasl_app/services/whatsapp_otp_service.dart';
+import 'package:wasl_app/services/zones_service.dart';
 
 class WaslRegisterScreen extends StatefulWidget {
   const WaslRegisterScreen({Key? key}) : super(key: key);
@@ -480,6 +482,10 @@ class _WaslRegisterScreenState extends State<WaslRegisterScreen> {
   int _passwordStrength = 0;
   bool _obscurePassword = true;
   bool _obscureConfirmPassword = true;
+
+  /// Customers only: the area they live in, which is what prices their
+  /// deliveries. Drivers and merchants have no customer area.
+  WaslZone? _selectedArea;
 
   @override
   void initState() {
@@ -531,6 +537,11 @@ class _WaslRegisterScreenState extends State<WaslRegisterScreen> {
       _showSnackBar('كلمة المرور يجب أن تكون 6 أحرف على الأقل', AppColors.danger);
       return;
     }
+    // نفس المنطق: نتأكد من المنطقة قبل ما نبعت رمز تحقق ونحرقه.
+    if (_currentRoleIndex == 0 && _selectedArea == null) {
+      _showSnackBar('اختر منطقة التوصيل للمتابعة', AppColors.danger);
+      return;
+    }
 
     showDialog(
       context: context,
@@ -562,6 +573,7 @@ class _WaslRegisterScreenState extends State<WaslRegisterScreen> {
           phone: fullPhone,
           password: _passwordController.text,
           role: role,
+          customerZoneId: _selectedArea?.id,
         ),
       ),
     );
@@ -669,6 +681,27 @@ class _WaslRegisterScreenState extends State<WaslRegisterScreen> {
                       const SizedBox(height: 18),
                       _buildLabel('تأكيد كلمة المرور'),
                       _buildInputField('••••••••', Icons.lock_outline_rounded, true, _confirmPasswordController, obscure: _obscureConfirmPassword, onToggle: () => setState(() => _obscureConfirmPassword = !_obscureConfirmPassword)),
+
+                      // 📍 Customers pick the area they live in — it is what
+                      // decides their delivery fee, so it is collected up front
+                      // rather than being asked for at checkout.
+                      if (_currentRoleIndex == 0) ...[
+                        const SizedBox(height: 18),
+                        WaslAreaPicker(
+                          label: 'منطقة التوصيل',
+                          hint: 'اختر منطقتك',
+                          selectedZoneId: _selectedArea?.id,
+                          onChanged: (zone) => setState(() => _selectedArea = zone),
+                        ),
+                        const Padding(
+                          padding: EdgeInsets.only(top: 6, right: 4),
+                          child: Text(
+                            'سعر التوصيل بيتحدد حسب منطقتك، وتقدر تغيّرها بعدين من الإعدادات',
+                            style: TextStyle(fontSize: 11, color: AppColors.textSecondary, fontFamily: 'Cairo'),
+                          ),
+                        ),
+                      ],
+
                       const SizedBox(height: 32),
 
                       InkWell(

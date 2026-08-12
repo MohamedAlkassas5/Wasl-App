@@ -25,11 +25,38 @@ export enum PaymentMethod {
   FAWRY = 'fawry',
 }
 
+/**
+ * Which pricing rule produced the fee stored on an order.
+ *
+ * Persisted so a settled order can always be explained, and so changing the
+ * rate table later never silently re-prices history.
+ */
+export enum PricingSource {
+  /** Normal order: flat fee for the destination area. */
+  NORMAL_ZONE = 'normal_zone',
+  /** Waslly: fixed fee for the pickup-area → drop-off-area route. */
+  WASLLY_ROUTE = 'waslly_route',
+  /**
+   * Legacy distance tiers. Only reachable for an order with no zones on it;
+   * kept so pre-existing orders and any client that has not been updated yet
+   * still resolve to a real number instead of failing.
+   */
+  LEGACY_DISTANCE = 'legacy_distance',
+}
+
 export enum PaymentStatus {
   PENDING = 'pending',
   PAID = 'paid',
   FAILED = 'failed',
   COD_DUE = 'cod_due',
+}
+
+/** Whether the platform has taken its commission for this order yet. */
+export enum SettlementStatus {
+  /** No money has moved for this order. */
+  PENDING = 'pending',
+  /** Commission charged, driver share recorded. Happens exactly once. */
+  SETTLED = 'settled',
 }
 
 @Entity('orders')
@@ -146,6 +173,19 @@ export class Order {
   })
   estimatedDeliveryFee!: number;
 
+  /**
+   * The rule that produced {@link estimatedDeliveryFee}, frozen at creation.
+   * Part of the order's price snapshot: editing the zone rate table afterwards
+   * must never change what an existing order was quoted.
+   */
+  @Column({
+    name: 'pricing_source',
+    type: 'varchar',
+    length: 32,
+    nullable: true,
+  })
+  pricingSource?: PricingSource;
+
   @Column({
     type: 'enum',
     enum: OrderStatus,
@@ -185,6 +225,70 @@ export class Order {
 
   @ManyToOne(() => User, { nullable: true, eager: false })
   acceptedDriver?: User;
+
+  // ─── Financial snapshot ──────────────────────────────────────────────────
+  //
+  // Frozen at settlement. Rates and settings are admin-editable at runtime, so
+  // an order that recomputed its own numbers on read would silently change
+  // what a driver earned months after the fact. These columns are the record.
+
+  /** Platform commission actually charged: max(fee × 20%, floor). */
+  @Column({
+    name: 'commission_amount',
+    type: 'decimal',
+    precision: 10,
+    scale: 2,
+    nullable: true,
+  })
+  commissionAmount?: number | null;
+
+  /** What the delivery fee left the driver after commission. */
+  @Column({
+    name: 'driver_share',
+    type: 'decimal',
+    precision: 10,
+    scale: 2,
+    nullable: true,
+  })
+  driverShare?: number | null;
+
+  @Column({
+    name: 'settlement_status',
+    type: 'varchar',
+    length: 20,
+    default: SettlementStatus.PENDING,
+  })
+  settlementStatus!: SettlementStatus;
+
+  @Column({ name: 'settled_at', type: 'timestamp', nullable: true })
+  settledAt?: Date | null;
+
+  /**
+   * The idempotency key used for this order's commission ledger entry. Stored
+   * on the order too so a settlement can be traced from either side.
+   */
+  @Column({
+    name: 'settlement_reference',
+    type: 'varchar',
+    length: 120,
+    nullable: true,
+  })
+  settlementReference?: string | null;
+
+  // ─── Lifecycle timestamps ────────────────────────────────────────────────
+  // When each stage happened, rather than only the current state.
+
+  @Column({ name: 'accepted_at', type: 'timestamp', nullable: true })
+  acceptedAt?: Date | null;
+
+  @Column({ name: 'delivering_at', type: 'timestamp', nullable: true })
+  deliveringAt?: Date | null;
+
+  @Column({ name: 'completed_at', type: 'timestamp', nullable: true })
+  completedAt?: Date | null;
+
+  @Column({ name: 'cancelled_at', type: 'timestamp', nullable: true })
+  cancelledAt?: Date | null;
 
   @CreateDateColumn()
   createdAt!: Date;

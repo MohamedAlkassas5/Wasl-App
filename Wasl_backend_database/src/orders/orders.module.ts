@@ -9,15 +9,19 @@ import { PricingModule } from '../pricing/pricing.module';
 import { DeliveryModule } from '../delivery/delivery.module';
 import { PaymentsModule } from '../payments/payments.module';
 import { ZonesModule } from '../zones/zones.module';
+import { User } from '../users/entities/user.entity';
 
 @Module({
   imports: [
     // 🎯 تسجيل الـ InAppNotification وجميع الـ Entities المطلوبة داخل الـ TypeOrmModule لإنشاء الجداول لايف
+    // `User` is here so a normal order can price itself from the customer's
+    // saved area without the app having to send it.
     TypeOrmModule.forFeature([
       Order,
       OrderOffer,
       DeliveryPartner,
       InAppNotification,
+      User,
     ]),
     PricingModule,
     DeliveryModule,

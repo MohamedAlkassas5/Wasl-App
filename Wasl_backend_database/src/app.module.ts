@@ -24,6 +24,7 @@ import { FilesModule } from './files/files.module';
 import { StorageModule } from './storage/storage.module';
 import { ZonesModule } from './zones/zones.module';
 import { CatalogModule } from './catalog/catalog.module';
+import { AccountAccessModule } from './auth/account-access.module';
 
 @Module({
   imports: [
@@ -56,6 +57,8 @@ import { CatalogModule } from './catalog/catalog.module';
     }),
 
     StorageModule,
+    // Global: JwtAuthGuard needs it wherever a route is guarded.
+    AccountAccessModule,
     ZonesModule,
     CatalogModule,
     AuthModule,

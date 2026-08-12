@@ -7,6 +7,7 @@ import { OrdersService } from './orders.service';
 import { AuthUser } from '../auth/current-user';
 import { UserRole } from '../users/entities/user.entity';
 import { CreateOrderDto } from './dto/create-order.dto';
+import { AccountAccessService } from '../auth/account-access.service';
 
 /**
  * These cover the broken-access-control fix: the caller's identity comes from
@@ -43,7 +44,12 @@ describe('OrdersController (authorization)', () => {
       // it never runs here, we call the handlers directly.
       imports: [JwtModule.register({ secret: 'test-secret' })],
       controllers: [OrdersController],
-      providers: [{ provide: OrdersService, useValue: service }],
+      providers: [
+        { provide: OrdersService, useValue: service },
+        // The guard now also rejects closed accounts, so it needs the account
+        // lookup even though it never runs in these handler-level tests.
+        { provide: AccountAccessService, useValue: { isClosed: () => false } },
+      ],
     }).compile();
 
     controller = module.get(OrdersController);

@@ -359,8 +359,33 @@ export class OrdersController {
     return this.ordersService.cancelOrderByCustomer(orderId, user);
   }
 
-  // 🔐 Only the order's assigned driver (or an admin) may move its status —
-  // previously any caller could mark any order completed.
+  /**
+   * Confirms delivery and settles the order.
+   *
+   * Separate from the generic status route because it is the only action that
+   * moves money. The server checks the order is actually out for delivery, that
+   * the caller is its assigned driver, and that it has not already been
+   * settled; the customer is not asked to confirm anything.
+   *
+   * Safe to repeat: a second call returns the same result instead of charging
+   * commission twice.
+   */
+  @Post(':id/complete')
+  completeOrder(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseIntPipe) orderId: number,
+  ) {
+    return this.ordersService.completeOrder(orderId, user);
+  }
+
+  /**
+   * Moves an order one step along the lifecycle.
+   *
+   * 🔐 Only the assigned driver (or an admin) may advance it, and only along an
+   * edge the state machine allows — an arbitrary enum value from the query
+   * string can no longer force a state. Completion is deliberately not
+   * reachable here; use `POST :id/complete`.
+   */
   @Patch(':id/status')
   updateStatus(
     @CurrentUser() user: AuthUser,

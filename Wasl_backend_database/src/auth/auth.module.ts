@@ -9,6 +9,7 @@ import { AuthController } from './auth.controller';
 import { User } from '../users/entities/user.entity';
 import { DeliveryPartner } from '../delivery/entities/delivery-partner.entity';
 import { Merchant } from '../merchant/entities/merchant.entity';
+import { ZonesModule } from '../zones/zones.module';
 
 @Module({
   imports: [
@@ -25,6 +26,9 @@ import { Merchant } from '../merchant/entities/merchant.entity';
     // Registration refuses to create an account for an unverified phone, so
     // AuthService needs OtpService (see the forwardRef note in OtpModule).
     forwardRef(() => OtpModule),
+    // Registration validates the customer's chosen area against the live
+    // zone list rather than trusting the id the app sent.
+    ZonesModule,
   ],
   controllers: [AuthController],
   providers: [AuthService],

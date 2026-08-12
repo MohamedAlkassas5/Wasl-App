@@ -28,6 +28,7 @@ class FlutterAuthService {
     File? vehicleImage,
     String? vehicleType,
     String? firebaseUid,
+    int? customerZoneId,
   }) async {
     final url = Uri.parse('$baseUrl/auth/register');
     print("📡 [WASL DEBUG] ترحيل البيانات وحفظ الحساب اللوجستي في الـ NestJS عبر: $url");
@@ -45,6 +46,9 @@ class FlutterAuthService {
       if (storeName != null && storeName.isNotEmpty) request.fields['storeName'] = storeName.trim();
       if (storeType != null && storeType.isNotEmpty) request.fields['storeType'] = storeType.trim();
       if (vehicleType != null && vehicleType.isNotEmpty) request.fields['vehicleType'] = vehicleType.trim();
+      // 📍 The customer's home area. The server re-checks it against the live
+      // zone list, so this is a convenience, not a source of truth.
+      if (customerZoneId != null) request.fields['customerZoneId'] = customerZoneId.toString();
 
       request.headers.addAll({
         'Accept': 'application/json',

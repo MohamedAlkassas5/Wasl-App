@@ -577,6 +577,11 @@ class WaslLocationSelectionScreen extends StatefulWidget {
   final double latitude;
   final double longitude;
 
+  /// The approved areas chosen on the previous screen. They are what price the
+  /// order, so they are carried through untouched to order creation.
+  final int? pickupZoneId;
+  final int? dropoffZoneId;
+
   const WaslLocationSelectionScreen({
     Key? key,
     required this.category,
@@ -586,6 +591,8 @@ class WaslLocationSelectionScreen extends StatefulWidget {
     required this.address,
     required this.latitude,
     required this.longitude,
+    this.pickupZoneId,
+    this.dropoffZoneId,
   }) : super(key: key);
 
   @override
@@ -639,6 +646,8 @@ class _WaslLocationSelectionScreenState extends State<WaslLocationSelectionScree
           customerAddress: widget.address,
           latitude: widget.latitude,
           longitude: widget.longitude,
+          pickupZoneId: widget.pickupZoneId,
+          dropoffZoneId: widget.dropoffZoneId,
         ),
       ),
     );

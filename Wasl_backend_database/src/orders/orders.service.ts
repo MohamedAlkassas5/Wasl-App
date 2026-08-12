@@ -2,6 +2,7 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
+  ConflictException,
   ForbiddenException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -13,7 +14,18 @@ import {
   OrderStatus,
   PaymentMethod,
   PaymentStatus,
+  PricingSource,
+  SettlementStatus,
 } from './entities/order.entity';
+import { User } from '../users/entities/user.entity';
+import {
+  assertTransitionAllowed,
+  COMPLETABLE_FROM,
+} from './order-state-machine';
+import {
+  assertDriverEligible,
+  checkDriverEligibility,
+} from '../delivery/driver-eligibility';
 import { DeliveryPartner } from '../delivery/entities/delivery-partner.entity';
 import { InAppNotification } from './entities/notification.entity';
 import { CreateOrderDto } from './dto/create-order.dto';
@@ -39,6 +51,9 @@ export class OrdersService {
 
     @InjectRepository(InAppNotification)
     private readonly notificationRepository: Repository<InAppNotification>,
+
+    @InjectRepository(User)
+    private readonly userRepository: Repository<User>,
 
     private readonly pricingService: PricingService,
     private readonly deliveryService: DeliveryService,
@@ -123,34 +138,11 @@ export class OrdersService {
       );
     }
 
-    // 🧮 Compute trip distance + a price estimate when a pickup point exists.
-    let distanceKm: number | undefined;
-    let estimatedDeliveryFee = 0;
-    if (orderData.pickupZoneId && orderData.dropoffZoneId) {
-      const quote = await this.pricingService.quoteForZones(
-        orderData.pickupZoneId,
-        orderData.dropoffZoneId,
-      );
-      estimatedDeliveryFee = quote.deliveryFee;
-    } else if (
-      isValidCoordinate(orderData.pickupLatitude, orderData.pickupLongitude)
-    ) {
-      distanceKm = roundKm(
-        haversineKm(
-          {
-            latitude: orderData.pickupLatitude,
-            longitude: orderData.pickupLongitude!,
-          },
-          { latitude: orderData.latitude, longitude: orderData.longitude },
-        ),
-      );
-      estimatedDeliveryFee =
-        this.pricingService.quoteForDistance(distanceKm).deliveryFee;
-    } else {
-      // No pickup point ⇒ default to the city tier estimate.
-      estimatedDeliveryFee =
-        this.pricingService.quoteForDistance(0).deliveryFee;
-    }
+    // 💰 The fee is decided here and nowhere else. Nothing the client sends can
+    // set or influence it — the app passes areas, the server passes back money.
+    const pricing = await this.resolvePricing(customerId, orderData);
+    const distanceKm = pricing.distanceKm;
+    const estimatedDeliveryFee = pricing.deliveryFee;
 
     const order = this.orderRepository.create({
       customerId: customerId || orderData.customerId,
@@ -167,10 +159,11 @@ export class OrdersService {
       pickupAddressText: orderData.pickupAddressText,
       pickupLatitude: orderData.pickupLatitude,
       pickupLongitude: orderData.pickupLongitude,
-      pickupZoneId: orderData.pickupZoneId,
-      dropoffZoneId: orderData.dropoffZoneId,
+      pickupZoneId: pricing.pickupZoneId,
+      dropoffZoneId: pricing.dropoffZoneId,
       distanceKm,
       estimatedDeliveryFee,
+      pricingSource: pricing.source,
 
       itemsPrice: Number(orderData.itemsPrice) || 0,
       paymentMethod: Object.values(PaymentMethod).includes(
@@ -199,6 +192,95 @@ export class OrdersService {
   }
 
   /**
+   * Decides what an order costs, and records which rule decided it.
+   *
+   * Precedence, highest first:
+   *
+   *  1. **Waslly** — both areas supplied ⇒ the fixed route fee. An area pair
+   *     with no approved rate is refused outright; falling back to distance
+   *     here would quietly sell an unsupported route.
+   *  2. **Normal** — a destination area, either supplied explicitly or taken
+   *     from the customer's own profile ⇒ that area's flat fee.
+   *  3. **Legacy distance** — nothing but coordinates, which means an app build
+   *     that predates areas. Kept working rather than broken.
+   *
+   * `distanceKm` is measured whenever both ends are known, but only *prices*
+   * the order in case 3 — for zone-priced orders it is recorded as trip
+   * metadata for the driver and has no effect on the money.
+   */
+  private async resolvePricing(
+    customerId: number,
+    orderData: CreateOrderDto,
+  ): Promise<{
+    deliveryFee: number;
+    source: PricingSource;
+    pickupZoneId?: number;
+    dropoffZoneId?: number;
+    distanceKm?: number;
+  }> {
+    const distanceKm = isValidCoordinate(
+      orderData.pickupLatitude,
+      orderData.pickupLongitude,
+    )
+      ? roundKm(
+          haversineKm(
+            {
+              // `isValidCoordinate` is a type predicate on the latitude only,
+              // which is why the longitude still needs the assertion.
+              latitude: orderData.pickupLatitude,
+              longitude: orderData.pickupLongitude!,
+            },
+            { latitude: orderData.latitude, longitude: orderData.longitude },
+          ),
+        )
+      : undefined;
+
+    // 1. Waslly route.
+    if (orderData.pickupZoneId && orderData.dropoffZoneId) {
+      const quote = await this.pricingService.quoteForZones(
+        orderData.pickupZoneId,
+        orderData.dropoffZoneId,
+      );
+      return {
+        deliveryFee: quote.deliveryFee,
+        source: PricingSource.WASLLY_ROUTE,
+        pickupZoneId: orderData.pickupZoneId,
+        dropoffZoneId: orderData.dropoffZoneId,
+        distanceKm,
+      };
+    }
+
+    // 2. Normal order — destination area only.
+    const dropoffZoneId =
+      orderData.dropoffZoneId ??
+      (
+        await this.userRepository.findOne({
+          where: { id: customerId },
+          select: { id: true, customerZoneId: true },
+        })
+      )?.customerZoneId;
+
+    if (dropoffZoneId) {
+      const quote =
+        await this.pricingService.quoteForDestinationZone(dropoffZoneId);
+      return {
+        deliveryFee: quote.deliveryFee,
+        source: PricingSource.NORMAL_ZONE,
+        dropoffZoneId,
+        distanceKm,
+      };
+    }
+
+    // 3. Legacy fallback.
+    return {
+      deliveryFee: this.pricingService.quoteForDistance(distanceKm ?? 0)
+        .deliveryFee,
+      source: PricingSource.LEGACY_DISTANCE,
+      distanceKm,
+    };
+  }
+
+  /**
    * Atomically assigns a fixed-price order to the first eligible driver who
    * accepts it. The row lock prevents two nearby drivers from winning the same
    * order when their requests arrive at nearly the same time.
@@ -207,29 +289,42 @@ export class OrdersService {
     const result = await this.orderRepository.manager.transaction(
       async (manager) => {
         const orders = manager.getRepository(Order);
-        const drivers = manager.getRepository(DeliveryPartner);
         const order = await orders.findOne({
           where: { id: orderId },
           lock: { mode: 'pessimistic_write' },
         });
         if (!order) throw new NotFoundException('الطلب غير موجود');
         if (order.status !== OrderStatus.PENDING_OFFERS) {
-          throw new BadRequestException('الطلب تم إسناده أو لم يعد متاحًا');
+          // The row lock means the loser of a race lands here, not in a
+          // duplicate assignment.
+          throw new ConflictException('الطلب تم إسناده أو لم يعد متاحًا');
         }
 
-        const driver = await drivers.findOne({ where: { userId: driverId } });
-        if (!driver || !driver.isOnline) {
+        // 🔐 Approval first: an unreviewed driver must never hold an order,
+        // because completing one charges commission against their wallet.
+        const [driverUser, driver] = await Promise.all([
+          manager.findOne(User, { where: { id: driverId } }),
+          manager.findOne(DeliveryPartner, { where: { userId: driverId } }),
+        ]);
+        assertDriverEligible(driverUser, driver);
+
+        if (!driver!.isOnline) {
           throw new BadRequestException('يجب أن تكون متصلًا لاستقبال الطلبات');
         }
-        if (Number(driver.balance) < -10) {
+        if (
+          Number(driver!.balance) < this.pricingService.minWalletToGoOnline()
+        ) {
           throw new BadRequestException(
-            'رصيد المحفظة لا يسمح باستقبال الطلبات',
+            'رصيد المحفظة لا يسمح باستقبال الطلبات، يرجى الشحن أولاً',
           );
         }
 
         order.acceptedDriverId = driverId;
+        // The fee was decided by the server at creation; acceptance freezes it
+        // rather than recomputing, so a rate change mid-flight can't move it.
         order.finalDeliveryFee = Number(order.estimatedDeliveryFee);
         order.status = OrderStatus.ACCEPTED;
+        order.acceptedAt = new Date();
         const saved = await orders.save(order);
         return { order: saved, customerId: saved.customerId };
       },
@@ -286,17 +381,23 @@ export class OrdersService {
     deliveryFee: number,
     estimatedTime: number,
   ) {
-    const driver = await this.deliveryRepository.findOne({
-      where: { userId: driverId },
-    });
+    const [driverUser, driver] = await Promise.all([
+      this.userRepository.findOne({ where: { id: driverId } }),
+      this.deliveryRepository.findOne({ where: { userId: driverId } }),
+    ]);
 
     if (!driver) {
       throw new NotFoundException('الكابتن غير موجود');
     }
 
-    if (Number(driver.balance) <= -10.0) {
+    // 🔐 Same eligibility gate as accepting. This is the legacy offer path,
+    // still reachable from older app builds, so it must not be a way around
+    // the approval check.
+    assertDriverEligible(driverUser, driver);
+
+    if (Number(driver.balance) < this.pricingService.minWalletToGoOnline()) {
       throw new BadRequestException(
-        'عفواً، تم إيقاف حسابك مؤقتاً لتجاوز حد الدين المسموح به (-10 ج.م). يرجى شحن محفظتك أولاً لاستئناف استقبال الطلبات.',
+        'رصيد المحفظة غير كافٍ لاستقبال الطلبات، يرجى الشحن أولاً.',
       );
     }
 
@@ -407,7 +508,19 @@ export class OrdersService {
     return this.pricingService.commissionForFee(deliveryFee);
   }
 
-  // 🎯 تحديث الحالات + إرسال إشعارات تفاعلية متزامنة للعميل مع كل حركة للكابتن
+  /**
+   * Advances an order one step along the lifecycle.
+   *
+   * This used to take a status off the query string and assign it. Any value in
+   * the enum was accepted from any state, by anyone the ownership check let
+   * through — so an order could jump from `accepted` straight to `completed`,
+   * skipping the pickup, and a finished order could be "completed" again and
+   * again, charging commission each time.
+   *
+   * Now the move has to exist in {@link assertTransitionAllowed}'s graph, and
+   * completion is not reachable from here at all: it moves money, so it has its
+   * own endpoint ({@link completeOrder}).
+   */
   async updateStatus(
     orderId: number,
     status: OrderStatus,
@@ -417,8 +530,8 @@ export class OrdersService {
     },
     user?: AuthUser,
   ) {
-    // 🔐 Status drives money (completion debits the driver's wallet), so only
-    // the order's assigned driver — or an admin — may advance it.
+    // 🔐 Status drives the order, so only the assigned driver — or an admin —
+    // may advance it. `getOrderFor` proves the caller *is* that driver.
     const order = user
       ? await this.getOrderFor(orderId, user, 'driver')
       : await this.orderRepository.findOne({ where: { id: orderId } });
@@ -427,12 +540,28 @@ export class OrdersService {
       throw new NotFoundException('الطلب غير موجود');
     }
 
-    if (!Object.values(OrderStatus).includes(status)) {
-      throw new BadRequestException('حالة الطلب غير صالحة');
+    if (status === OrderStatus.COMPLETED) {
+      throw new BadRequestException(
+        'إنهاء الطلب له مسار مخصص، استخدم تأكيد التسليم',
+      );
     }
 
-    order.status = status;
+    assertTransitionAllowed(
+      order.status,
+      status,
+      'driver',
+      user?.role ?? UserRole.ADMIN,
+    );
 
+    order.status = status;
+    if (status === OrderStatus.DELIVERING) {
+      order.deliveringAt = new Date();
+    }
+
+    // 🔐 The purchase amount and its receipt are the driver's report of what
+    // they actually paid at the shop. They are only writable while the order is
+    // still moving; a closed order's numbers never change (see the final-state
+    // rejection in assertTransitionAllowed).
     if (extraData?.itemsPrice !== undefined) {
       order.itemsPrice = extraData.itemsPrice;
     }
@@ -466,56 +595,147 @@ export class OrdersService {
         '🚴 الكابتن في الطريق!',
         `تحرك الكابتن الآن وهو في طريقه إليك لتسليم الطلب FL-${orderId}.`,
       );
-    } else if (status === OrderStatus.COMPLETED) {
-      await this.createNotification(
-        order.customerId,
-        '🏁 تم توصيل طلبك بنجاح',
-        `يسعدنا دائماً خدمتك! تم إنهاء وتوصيل الطلب FL-${orderId} بنجاح.`,
-      );
-    }
-
-    // 💰 تطبيق الحسبة والخصم من المحفظة ديناميكياً عند اكتمال الطلب
-    if (status === OrderStatus.COMPLETED) {
-      if (!order.acceptedDriverId) {
-        throw new BadRequestException('لا يمكن إكمال طلب لم يتم قبول كابتن له');
-      }
-
-      const commission = this.calculateWaslCommission(
-        Number(order.finalDeliveryFee),
-      );
-
-      const driver = await this.deliveryRepository.findOne({
-        where: { userId: order.acceptedDriverId },
-      });
-
-      if (driver) {
-        // Debit commission through the ledger so it's fully auditable.
-        const newBalance = await this.paymentsService.credit(
-          order.acceptedDriverId,
-          -commission,
-          WalletTxType.COMMISSION,
-          `عمولة توصيل الطلب FL-${orderId}`,
-        );
-
-        const minWallet = this.pricingService.minWalletToGoOnline();
-        if (newBalance < minWallet) {
-          driver.isOnline = false;
-          await this.deliveryRepository.save(driver);
-        }
-
-        await this.createNotification(
-          order.acceptedDriverId,
-          '💰 تم خصم عمولة الطلب',
-          `تم خصم ${commission} ج.م من محفظتك لإكمال الطلب FL-${orderId}. رصيدك الحالي: ${newBalance.toFixed(2)} ج.م.`,
-        );
-
-        console.log(
-          `💰 [WASL SUCCESS] تم خصم عمولة بقيمة ${commission} ج.م من محفظة الكابتن رقم ${order.acceptedDriverId}. الرصيد الحالي: ${newBalance}`,
-        );
-      }
     }
 
     return await this.orderRepository.save(order);
+  }
+
+  /**
+   * Marks an order delivered and settles it — the only path that does.
+   *
+   * The customer is not asked to confirm: they already have their delivery, and
+   * making the driver's payout wait on a tap the customer may never make would
+   * strand money indefinitely.
+   *
+   * Everything happens inside one transaction, behind a row lock on the order:
+   *
+   *  - the order must be `delivering`, so a driver cannot skip the trip;
+   *  - the caller must be the assigned driver;
+   *  - the order must not already be settled;
+   *  - the commission is computed from the fee **frozen on the order**, never
+   *    from today's settings;
+   *  - the debit carries `order-<id>-commission` as its reference, which is
+   *    UNIQUE in the database.
+   *
+   * That last point is what makes a double tap harmless: two requests that both
+   * pass every check still collide on the unique index, and the loser's
+   * transaction — including its balance update — rolls back in full. The retry
+   * then sees `settled` and returns the same result instead of charging again.
+   */
+  async completeOrder(orderId: number, user: AuthUser) {
+    const outcome = await this.orderRepository.manager.transaction(
+      async (manager) => {
+        const order = await manager.findOne(Order, {
+          where: { id: orderId },
+          lock: { mode: 'pessimistic_write' },
+        });
+        if (!order) throw new NotFoundException('الطلب غير موجود');
+
+        const isAssignedDriver =
+          order.acceptedDriverId != null &&
+          Number(order.acceptedDriverId) === Number(user.sub);
+        if (!isAssignedDriver && user.role !== UserRole.ADMIN) {
+          throw new ForbiddenException('هذا الطلب غير مسند لك');
+        }
+
+        // Retrying a completion that already went through is a success, not an
+        // error — the client may simply have lost the first response.
+        if (order.settlementStatus === SettlementStatus.SETTLED) {
+          return { order, alreadySettled: true, commission: 0, balance: null };
+        }
+
+        if (order.status !== COMPLETABLE_FROM) {
+          throw new BadRequestException(
+            order.status === OrderStatus.COMPLETED
+              ? 'الطلب مكتمل بالفعل'
+              : 'لا يمكن تأكيد التسليم قبل أن يبدأ الكابتن التوصيل',
+          );
+        }
+        if (!order.acceptedDriverId) {
+          throw new BadRequestException(
+            'لا يمكن إكمال طلب لم يتم إسناده لكابتن',
+          );
+        }
+
+        // 💰 From the snapshot on the order, not from live settings.
+        const deliveryFee = Number(order.finalDeliveryFee) || 0;
+        const commission = this.pricingService.commissionForFee(deliveryFee);
+        const driverShare = Math.round((deliveryFee - commission) * 100) / 100;
+        const reference = `order-${order.id}-commission`;
+
+        const balance =
+          commission > 0
+            ? await PaymentsService.creditWithin(manager, {
+                driverId: order.acceptedDriverId,
+                amount: -commission,
+                type: WalletTxType.COMMISSION,
+                note: `عمولة توصيل الطلب FL-${order.id}`,
+                reference,
+                orderId: order.id,
+              })
+            : null;
+
+        const now = new Date();
+        await manager.update(
+          Order,
+          { id: order.id },
+          {
+            status: OrderStatus.COMPLETED,
+            completedAt: now,
+            commissionAmount: commission,
+            driverShare,
+            settlementStatus: SettlementStatus.SETTLED,
+            settledAt: now,
+            settlementReference: reference,
+          },
+        );
+
+        // Falling under the minimum takes the driver offline, so they stop
+        // receiving work until they top up.
+        if (
+          balance != null &&
+          balance < this.pricingService.minWalletToGoOnline()
+        ) {
+          await manager.update(
+            DeliveryPartner,
+            { userId: order.acceptedDriverId },
+            { isOnline: false },
+          );
+        }
+
+        return {
+          order: { ...order, status: OrderStatus.COMPLETED },
+          alreadySettled: false,
+          commission,
+          balance,
+        };
+      },
+    );
+
+    // Notifications sit outside the transaction: a failure to notify must not
+    // roll back a completed delivery and its settlement.
+    if (!outcome.alreadySettled) {
+      await this.createNotification(
+        outcome.order.customerId,
+        '🏁 تم توصيل طلبك بنجاح',
+        `يسعدنا دائماً خدمتك! تم إنهاء وتوصيل الطلب FL-${orderId} بنجاح.`,
+      );
+      if (outcome.order.acceptedDriverId && outcome.balance != null) {
+        await this.createNotification(
+          outcome.order.acceptedDriverId,
+          '💰 تم خصم عمولة الطلب',
+          `تم خصم ${outcome.commission} ج.م من محفظتك لإكمال الطلب FL-${orderId}. رصيدك الحالي: ${outcome.balance.toFixed(2)} ج.م.`,
+        );
+      }
+    }
+
+    return {
+      success: true,
+      alreadySettled: outcome.alreadySettled,
+      orderId,
+      status: OrderStatus.COMPLETED,
+      commission: outcome.commission,
+    };
   }
 
   async getDriverProfile(driverId: number) {
@@ -595,6 +815,27 @@ export class OrdersService {
   // the driver has a live GPS fix, each pending order is annotated with its
   // distance from the driver and the list is sorted nearest-first.
   async getAvailableOrders(driverId?: number) {
+    // 🔐 An unapproved driver sees their own assigned work but no marketplace:
+    // "receive new orders" is part of what approval gates, and showing offers
+    // they cannot accept would only produce confusing failures.
+    if (driverId) {
+      const [driverUser, partner] = await Promise.all([
+        this.userRepository.findOne({ where: { id: driverId } }),
+        this.deliveryRepository.findOne({ where: { userId: driverId } }),
+      ]);
+      if (!checkDriverEligibility(driverUser, partner).eligible) {
+        return this.orderRepository.find({
+          where: [
+            { acceptedDriverId: driverId, status: OrderStatus.ACCEPTED },
+            { acceptedDriverId: driverId, status: OrderStatus.AT_STORE },
+            { acceptedDriverId: driverId, status: OrderStatus.ITEMS_BOUGHT },
+            { acceptedDriverId: driverId, status: OrderStatus.DELIVERING },
+          ],
+          order: { createdAt: 'DESC' },
+        });
+      }
+    }
+
     const orders = await this.orderRepository.find({
       where: driverId
         ? [
@@ -677,12 +918,20 @@ export class OrdersService {
   }
 
   async setDriverOnlineStatus(driverId: number, isOnline: boolean) {
-    const driver = await this.deliveryRepository.findOne({
-      where: { userId: driverId },
-    });
+    const [driverUser, driver] = await Promise.all([
+      this.userRepository.findOne({ where: { id: driverId } }),
+      this.deliveryRepository.findOne({ where: { userId: driverId } }),
+    ]);
 
     if (!driver) {
       throw new NotFoundException('حساب الكابتن غير موجود');
+    }
+
+    // 🔐 Only an approved driver may go online. Going *offline* is always
+    // allowed — a driver whose approval was withdrawn must still be able to
+    // stop receiving work.
+    if (isOnline) {
+      assertDriverEligible(driverUser, driver);
     }
 
     const minWallet = this.pricingService.minWalletToGoOnline();
@@ -739,6 +988,7 @@ export class OrdersService {
     }
 
     order.status = OrderStatus.CANCELLED;
+    order.cancelledAt = new Date();
     await this.orderRepository.save(order);
 
     // Drop any offers so a driver can't accept a cancelled order.

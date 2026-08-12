@@ -36,12 +36,17 @@ class _WaslDriverJobExecutionScreenState extends State<WaslDriverJobExecutionScr
     super.dispose();
   }
 
-  // مصفوفة الحالات والنصوص اللوجستية للأزرار والمطابقة مع الـ Backend
-  final List<Map<String, String>> _stepsData = [
+  /// خطوات الرحلة، مطابقة لمخطط الحالات في السيرفر:
+  /// `accepted → at_store → items_bought → delivering` ثم تأكيد التسليم.
+  ///
+  /// الخطوة الأخيرة مالهاش `backendStatus`: إنهاء الطلب بقى ليه مسار مخصص
+  /// (`POST /orders/:id/complete`) لأنه بيحرّك فلوس، والسيرفر بيرفض إنهاء
+  /// الطلب من مسار تحديث الحالة العادي.
+  final List<Map<String, String?>> _stepsData = [
     {'btnText': 'أنا في الطريق للمحل الآن 🚴', 'statusText': 'تم قبول الطلب', 'backendStatus': 'at_store'},
     {'btnText': 'وصلت للمحل وجاري الشراء 🛒', 'statusText': 'في الطريق للمحل', 'backendStatus': 'items_bought'},
     {'btnText': 'تأكيد الفاتورة وبدء التوصيل 📦', 'statusText': 'جاري الشراء', 'backendStatus': 'delivering'},
-    {'btnText': 'تم تسليم الطلب وتحصيل الكاش 🎉', 'statusText': 'في الطريق للعميل', 'backendStatus': 'completed'},
+    {'btnText': 'تم تسليم الطلب وتحصيل الكاش 🎉', 'statusText': 'في الطريق للعميل', 'backendStatus': null},
   ];
 
   Future<void> _moveToNextStep() async {
@@ -50,7 +55,7 @@ class _WaslDriverJobExecutionScreenState extends State<WaslDriverJobExecutionScr
     final dynamic rawId = widget.orderData['id'];
     final int parsedOrderId = rawId is num ? rawId.toInt() : int.tryParse(rawId?.toString() ?? '1') ?? 1;
 
-    String nextStatus = _stepsData[_currentStep]['backendStatus']!;
+    final String? nextStatus = _stepsData[_currentStep]['backendStatus'];
     double? priceToSend;
 
     if (_currentStep == 2) {
@@ -62,25 +67,39 @@ class _WaslDriverJobExecutionScreenState extends State<WaslDriverJobExecutionScr
 
     setState(() => _isLoading = true);
 
-    final result = await _ordersService.updateOrderStatus(
-      orderId: parsedOrderId,
-      status: nextStatus,
-      itemsPrice: priceToSend,
-    );
+    final result = nextStatus == null
+        ? await _ordersService.completeOrder(parsedOrderId)
+        : await _ordersService.updateOrderStatus(
+            orderId: parsedOrderId,
+            status: nextStatus,
+            itemsPrice: priceToSend,
+          );
 
     if (!mounted) return;
     setState(() => _isLoading = false);
 
     if (result['success'] == true) {
-      if (_currentStep == 3) {
-        _showSnackBar('تم إكمال الطلب بنجاح وخصم عمولة التوصيل 🏁', const Color(0xFF16A34A));
-        Navigator.pop(context);
+      if (nextStatus == null) {
+        // إعادة الإرسال بترجع نفس النتيجة من غير خصم تاني، فالرسالة بتفرّق
+        // بين إنهاء جديد وتأكيد لإنهاء حصل قبل كده.
+        _showSnackBar(
+          result['alreadySettled'] == true
+              ? 'الطلب كان متأكد تسليمه بالفعل ✅'
+              : 'تم إكمال الطلب بنجاح وخصم عمولة التوصيل 🏁',
+          const Color(0xFF16A34A),
+        );
+        Navigator.pop(context, true);
         return;
       }
 
       setState(() => _currentStep++);
     } else {
-      _showSnackBar(result['message'] ?? 'حدث خطأ أثناء تحديث حالة الطلب', AppColors.danger);
+      // السيرفر بيرفض أي انتقال مش مسموح بيه ويقول السبب — بنعرضه زي ما هو
+      // بدل رسالة عامة، عشان الكابتن يعرف يعمل إيه.
+      _showSnackBar(
+        (result['message'] ?? 'حدث خطأ أثناء تحديث حالة الطلب').toString(),
+        AppColors.danger,
+      );
     }
   }
 

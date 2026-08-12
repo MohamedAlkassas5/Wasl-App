@@ -262,6 +262,10 @@ class WaslOtpScreen extends StatefulWidget {
   final String? role;
   final bool isFromForgotPassword;
 
+  /// The area the customer picked on the previous screen. Carried through
+  /// because the account is only created here, once the code checks out.
+  final int? customerZoneId;
+
   const WaslOtpScreen({
     Key? key,
     this.currentRoleIndex = 0,
@@ -270,6 +274,7 @@ class WaslOtpScreen extends StatefulWidget {
     this.password,
     this.role,
     this.isFromForgotPassword = false,
+    this.customerZoneId,
   }) : super(key: key);
 
   @override
@@ -409,6 +414,7 @@ class _WaslOtpScreenState extends State<WaslOtpScreen> {
       phone: widget.phone ?? '',
       password: widget.password ?? '',
       role: widget.role ?? 'customer',
+      customerZoneId: widget.customerZoneId,
     );
 
     if (!mounted) return;
@@ -439,6 +445,14 @@ class _WaslOtpScreenState extends State<WaslOtpScreen> {
     await prefs.setString('user_phone', userData['phone'] ?? widget.phone ?? '');
     await prefs.setString('user_role', userData['role'] ?? 'customer');
     await prefs.setString('access_token', token);
+    // The server echoes back the area it actually stored, which may be null if
+    // it rejected what we sent — trust its answer, not our own input.
+    final int? savedZoneId = (userData['customerZoneId'] as num?)?.toInt();
+    if (savedZoneId != null) {
+      await prefs.setInt('customer_zone_id', savedZoneId);
+    } else {
+      await prefs.remove('customer_zone_id');
+    }
 
     if (!mounted) return;
     _showSnackBar('تم إنشاء حساب العميل بنجاح! 🎉', const Color(0xFF22C55E));

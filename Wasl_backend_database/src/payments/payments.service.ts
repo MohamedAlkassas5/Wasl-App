@@ -4,7 +4,7 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { EntityManager, Repository } from 'typeorm';
 import {
   WalletTopUpRequest,
   TopUpStatus,
@@ -144,24 +144,65 @@ export class PaymentsService {
     type: WalletTxType,
     note: string,
   ): Promise<number> {
-    const driver = await this.deliveryRepo.findOne({
-      where: { userId: driverId },
+    return this.deliveryRepo.manager.transaction((manager) =>
+      PaymentsService.creditWithin(manager, { driverId, amount, type, note }),
+    );
+  }
+
+  /**
+   * The same movement, inside a caller-supplied transaction.
+   *
+   * Order settlement needs the commission debit and the order's own state
+   * change to be one atomic act — either the driver is charged and the order
+   * is marked settled, or neither happened. Passing the manager in is what
+   * allows that; calling {@link credit} from inside settlement would open a
+   * second, independent transaction that could commit on its own.
+   *
+   * The row is locked before it is read. The previous implementation read the
+   * balance, added to it in JavaScript and wrote it back with no lock at all,
+   * so two concurrent debits both starting from 100 would each write their own
+   * result and one would simply vanish.
+   *
+   * `reference` is the idempotency key. It is UNIQUE in the database, so a
+   * repeated settlement raises a conflict here rather than quietly charging
+   * twice — see the note on `WalletTransaction.reference`.
+   */
+  static async creditWithin(
+    manager: EntityManager,
+    entry: {
+      driverId: number;
+      amount: number;
+      type: WalletTxType;
+      note: string;
+      reference?: string;
+      orderId?: number;
+    },
+  ): Promise<number> {
+    const driver = await manager.findOne(DeliveryPartner, {
+      where: { userId: entry.driverId },
+      lock: { mode: 'pessimistic_write' },
     });
     if (!driver) throw new NotFoundException('حساب الكابتن غير موجود');
 
-    const newBalance = Number(driver.balance) + amount;
-    driver.balance = newBalance;
-    await this.deliveryRepo.save(driver);
+    const newBalance =
+      Math.round((Number(driver.balance) + entry.amount) * 100) / 100;
 
-    await this.txRepo.save(
-      this.txRepo.create({
-        driverId,
-        amount,
-        type,
-        balanceAfter: newBalance,
-        note,
-      }),
+    await manager.update(
+      DeliveryPartner,
+      { userId: entry.driverId },
+      { balance: newBalance },
     );
+
+    await manager.insert(WalletTransaction, {
+      driverId: entry.driverId,
+      amount: entry.amount,
+      type: entry.type,
+      balanceAfter: newBalance,
+      note: entry.note,
+      reference: entry.reference ?? null,
+      orderId: entry.orderId ?? null,
+    });
+
     return newBalance;
   }
 }

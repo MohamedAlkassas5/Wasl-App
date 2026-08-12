@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:wasl_app/core/theme/app_colors.dart';
+import 'package:wasl_app/core/widgets/wasl_area_picker.dart';
 import 'package:wasl_app/customer_screen/order_anywhere/WaslLocationSelectionScreen.dart';
+import 'package:wasl_app/services/zones_service.dart';
 
 class WaslOrderDetailsFormScreen extends StatefulWidget {
   final String category;
@@ -17,10 +19,19 @@ class _WaslOrderDetailsFormScreenState extends State<WaslOrderDetailsFormScreen>
   final _itemsDescriptionController = TextEditingController();
   final _deliveryAddressController = TextEditingController();
   final _itemsPriceController = TextEditingController();
+  final _zonesService = ZonesService();
 
   double? _latitude;
   double? _longitude;
   bool _isAutoDetecting = false; // 👈 متغير حالة اللودينج الخاص بالزرار
+
+  /// 🚚 وصللي: من فين لفين. السعر ثابت لكل مسار وبيجي من السيرفر.
+  WaslZone? _fromArea;
+  WaslZone? _toArea;
+
+  double? _routeFee;
+  String? _quoteError;
+  bool _isQuoting = false;
 
   @override
   void dispose() {
@@ -29,6 +40,45 @@ class _WaslOrderDetailsFormScreenState extends State<WaslOrderDetailsFormScreen>
     _deliveryAddressController.dispose();
     _itemsPriceController.dispose();
     super.dispose();
+  }
+
+  /// Asks the server what this route costs.
+  ///
+  /// The app never derives the number itself — an unsupported route has to come
+  /// back as a refusal, not as an invented fallback price.
+  Future<void> _refreshQuote() async {
+    final from = _fromArea;
+    final to = _toArea;
+    if (from == null || to == null) {
+      setState(() {
+        _routeFee = null;
+        _quoteError = null;
+      });
+      return;
+    }
+
+    setState(() {
+      _isQuoting = true;
+      _quoteError = null;
+      _routeFee = null;
+    });
+
+    final result = await _zonesService.getWasllyQuote(
+      pickupZoneId: from.id,
+      dropoffZoneId: to.id,
+    );
+    if (!mounted) return;
+
+    setState(() {
+      _isQuoting = false;
+      if (result['success'] == true) {
+        final fee = (result['data']?['deliveryFee'] as num?)?.toDouble();
+        _routeFee = fee;
+        _quoteError = fee == null ? 'تعذّر قراءة سعر المسار' : null;
+      } else {
+        _quoteError = (result['message'] ?? 'تعذّر حساب سعر المسار').toString();
+      }
+    });
   }
 
   // 🛰️ دالة سحب الموقع التلقائي عند الضغط على الزرار
@@ -74,6 +124,31 @@ class _WaslOrderDetailsFormScreenState extends State<WaslOrderDetailsFormScreen>
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
+                      // 🚚 من فين لفين — المسار هو اللي بيحدد السعر
+                      WaslAreaPicker(
+                        label: '🚚 منطقة الاستلام (من)',
+                        hint: 'اختر منطقة الاستلام',
+                        icon: Icons.storefront_outlined,
+                        selectedZoneId: _fromArea?.id,
+                        onChanged: (zone) {
+                          setState(() => _fromArea = zone);
+                          _refreshQuote();
+                        },
+                      ),
+                      const SizedBox(height: 16),
+                      WaslAreaPicker(
+                        label: '🏁 منطقة التوصيل (إلى)',
+                        hint: 'اختر منطقة التوصيل',
+                        icon: Icons.flag_outlined,
+                        selectedZoneId: _toArea?.id,
+                        onChanged: (zone) {
+                          setState(() => _toArea = zone);
+                          _refreshQuote();
+                        },
+                      ),
+                      _buildRouteFee(),
+                      const SizedBox(height: 20),
+
                       // حقل العنوان مع زرار التحديد التلقائي
                       const Text('📍 عنوان التوصيل', style: TextStyle(fontWeight: FontWeight.bold, fontFamily: 'Cairo')),
                       const SizedBox(height: 10),
@@ -117,8 +192,26 @@ class _WaslOrderDetailsFormScreenState extends State<WaslOrderDetailsFormScreen>
                 padding: const EdgeInsets.all(24.0),
                 child: GestureDetector(
                   onTap: () {
+                    if (_fromArea == null || _toArea == null) {
+                      _showTopSnackBar(context, 'اختر منطقة الاستلام ومنطقة التوصيل 🚚');
+                      return;
+                    }
+                    if (_routeFee == null) {
+                      _showTopSnackBar(
+                        context,
+                        _quoteError ?? 'استنى شوية لحد ما يظهر سعر المسار',
+                      );
+                      return;
+                    }
                     if (_deliveryAddressController.text.trim().isEmpty) {
                       _showTopSnackBar(context, 'برجاء تحديد عنوان التوصيل 📍');
+                      return;
+                    }
+                    // 📍 الموقع لازم يكون حقيقي. النسخة القديمة كانت بتبعت
+                    // إحداثيات ثابتة متكتوبة في الكود لو العميل ما حددش موقعه،
+                    // يعني الكابتن كان بيتوجّه لمكان مالوش علاقة بالعميل.
+                    if (_latitude == null || _longitude == null) {
+                      _showTopSnackBar(context, 'دوس على أيقونة الموقع لتحديد مكانك بدقة 📍');
                       return;
                     }
                     Navigator.push(
@@ -130,8 +223,10 @@ class _WaslOrderDetailsFormScreenState extends State<WaslOrderDetailsFormScreen>
                           items: _itemsDescriptionController.text.trim(),
                           address: _deliveryAddressController.text.trim(),
                           itemsPrice: double.tryParse(_itemsPriceController.text.trim()) ?? 0,
-                          latitude: _latitude ?? 30.463284,
-                          longitude: _longitude ?? 30.702954,
+                          latitude: _latitude!,
+                          longitude: _longitude!,
+                          pickupZoneId: _fromArea!.id,
+                          dropoffZoneId: _toArea!.id,
                         ),
                       ),
                     );
@@ -146,6 +241,62 @@ class _WaslOrderDetailsFormScreenState extends State<WaslOrderDetailsFormScreen>
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  /// Shows the server's answer for the chosen route — the price, or plainly
+  /// why there isn't one. Never a placeholder number.
+  Widget _buildRouteFee() {
+    if (_fromArea == null || _toArea == null) return const SizedBox.shrink();
+
+    final Color background;
+    final Color foreground;
+    final IconData icon;
+    final String text;
+
+    if (_isQuoting) {
+      background = AppColors.background;
+      foreground = AppColors.textSecondary;
+      icon = Icons.hourglass_empty_rounded;
+      text = 'جاري حساب سعر المسار...';
+    } else if (_quoteError != null) {
+      background = AppColors.danger.withOpacity(0.08);
+      foreground = AppColors.danger;
+      icon = Icons.error_outline_rounded;
+      text = _quoteError!;
+    } else {
+      background = AppColors.success.withOpacity(0.08);
+      foreground = AppColors.success;
+      icon = Icons.local_shipping_outlined;
+      text =
+          'سعر التوصيل من ${_fromArea!.name} إلى ${_toArea!.name}: ${_routeFee!.toStringAsFixed(0)} ج.م';
+    }
+
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(top: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: background,
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, size: 18, color: foreground),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              text,
+              style: TextStyle(
+                fontSize: 12.5,
+                fontWeight: FontWeight.bold,
+                color: foreground,
+                fontFamily: 'Cairo',
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

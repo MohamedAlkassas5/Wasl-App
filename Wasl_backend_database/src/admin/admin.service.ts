@@ -7,8 +7,11 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 
 import { User, UserRole, AccountStatus } from '../users/entities/user.entity';
-import { DeliveryPartner } from '../delivery/entities/delivery-partner.entity';
-import { Merchant } from '../merchant/entities/merchant.entity';
+import {
+  DeliveryPartner,
+  DeliveryVerificationStatus,
+} from '../delivery/entities/delivery-partner.entity';
+import { Merchant, MerchantStatus } from '../merchant/entities/merchant.entity';
 import { UpdateApprovalDto } from './dto/update-approval.dto';
 
 @Injectable()
@@ -114,42 +117,87 @@ export class AdminService {
       throw new BadRequestException('يمكن فقط مراجعة طلبات المناديب والمتاجر');
     }
 
-    // تحديث حالة الحساب
-    user.status = updateApprovalDto.status;
-
-    await this.userRepository.save(user);
-
-    // ملاحظات الإدارة
     const adminNotes = updateApprovalDto.adminNotes?.trim() || undefined;
 
-    if (user.role === UserRole.DELIVERY) {
-      await this.deliveryRepository.update(
-        {
-          userId: user.id,
-        },
-        {
-          adminNotes,
-        },
+    // 🔐 A review writes every status that governs this account, in one
+    // transaction.
+    //
+    // It used to write `users.status` alone. `DeliveryPartner.verificationStatus`
+    // and `Merchant.status` were left at their `pending` defaults forever, and
+    // since `StoresService` only lists APPROVED merchants, approving a store in
+    // the admin panel never actually made it appear to customers. Now that
+    // driver eligibility reads `verificationStatus` too, leaving it stale would
+    // silently deny work to every driver an admin approved.
+    await this.userRepository.manager.transaction(async (manager) => {
+      await manager.update(
+        User,
+        { id: user.id },
+        { status: updateApprovalDto.status },
       );
-    }
 
-    if (user.role === UserRole.MERCHANT) {
-      await this.merchantRepository.update(
-        {
-          ownerId: user.id,
-        },
-        {
-          adminNotes,
-        },
-      );
-    }
+      if (user.role === UserRole.DELIVERY) {
+        await manager.update(
+          DeliveryPartner,
+          { userId: user.id },
+          {
+            adminNotes,
+            verificationStatus: AdminService.toVerificationStatus(
+              updateApprovalDto.status,
+            ),
+          },
+        );
+      }
+
+      if (user.role === UserRole.MERCHANT) {
+        await manager.update(
+          Merchant,
+          { ownerId: user.id },
+          {
+            adminNotes,
+            status: AdminService.toMerchantStatus(updateApprovalDto.status),
+          },
+        );
+      }
+    });
 
     return {
       success: true,
       userId: user.id,
       role: user.role,
-      status: user.status,
+      status: updateApprovalDto.status,
       message: `تم تحديث حالة الحساب بنجاح إلى [${updateApprovalDto.status}]`,
     };
+  }
+
+  /**
+   * The account status an admin sets, expressed as the driver's own
+   * verification state. `suspended` maps to `pending` rather than `rejected`:
+   * a suspension is a hold that can be lifted, not a refusal, and the account
+   * status alone already blocks the driver while it lasts.
+   */
+  private static toVerificationStatus(
+    status: AccountStatus,
+  ): DeliveryVerificationStatus {
+    switch (status) {
+      case AccountStatus.ACTIVE:
+        return DeliveryVerificationStatus.APPROVED;
+      case AccountStatus.REJECTED:
+        return DeliveryVerificationStatus.REJECTED;
+      default:
+        return DeliveryVerificationStatus.PENDING;
+    }
+  }
+
+  private static toMerchantStatus(status: AccountStatus): MerchantStatus {
+    switch (status) {
+      case AccountStatus.ACTIVE:
+        return MerchantStatus.APPROVED;
+      case AccountStatus.REJECTED:
+        return MerchantStatus.REJECTED;
+      case AccountStatus.SUSPENDED:
+        return MerchantStatus.SUSPENDED;
+      default:
+        return MerchantStatus.PENDING;
+    }
   }
 }

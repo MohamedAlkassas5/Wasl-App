@@ -431,6 +431,8 @@ class FlutterOrdersService {
     double? pickupLatitude,
     double? pickupLongitude,
     String? pickupAddressText,
+    int? pickupZoneId,
+    int? dropoffZoneId,
   }) async {
     final url = Uri.parse('$baseUrl/orders/create');
     try {
@@ -451,6 +453,10 @@ class FlutterOrdersService {
           if (pickupLatitude != null) 'pickupLatitude': pickupLatitude,
           if (pickupLongitude != null) 'pickupLongitude': pickupLongitude,
           if (pickupAddressText != null) 'pickupAddressText': pickupAddressText,
+          // 📍 المناطق هي كل اللي بيتبعت عن السعر. السيرفر هو اللي بيحسب
+          // الرقم — التطبيق عمره ما بيبعت قيمة توصيل.
+          if (pickupZoneId != null) 'pickupZoneId': pickupZoneId,
+          if (dropoffZoneId != null) 'dropoffZoneId': dropoffZoneId,
         }),
       ).timeout(const Duration(seconds: 15));
 
@@ -679,6 +685,59 @@ class FlutterOrdersService {
     } catch (e) {
       return {'success': false, 'message': 'خطأ: $e'};
     }
+  }
+
+  /// تأكيد تسليم الطلب وتسوية العمولة.
+  ///
+  /// مسار مخصص مش جزء من تحديث الحالة العادي، لأنه المسار الوحيد اللي بيحرّك
+  /// فلوس. السيرفر هو اللي بيتأكد إن الطلب فعلاً في التوصيل وإن الكابتن ده
+  /// المسند له، ومش محتاج تأكيد من العميل.
+  ///
+  /// آمن لو اتنادى أكتر من مرة: السيرفر بيرجّع `alreadySettled` بدل ما يخصم
+  /// العمولة تاني.
+  Future<Map<String, dynamic>> completeOrder(int orderId) async {
+    final url = Uri.parse('$baseUrl/orders/$orderId/complete');
+    try {
+      final response = await http
+          .post(url, headers: await _headers())
+          .timeout(const Duration(seconds: 20));
+
+      final decoded = response.body.isEmpty
+          ? <String, dynamic>{}
+          : jsonDecode(response.body);
+
+      if (response.statusCode >= 200 && response.statusCode < 300) {
+        return {
+          'success': true,
+          'data': decoded,
+          'alreadySettled': decoded is Map && decoded['alreadySettled'] == true,
+        };
+      }
+      return {
+        'success': false,
+        'statusCode': response.statusCode,
+        'message': _messageOf(decoded) ?? 'تعذّر تأكيد التسليم',
+      };
+    } on TimeoutException {
+      // The request may still have gone through — the driver should refresh
+      // rather than be told it definitely failed.
+      return {
+        'success': false,
+        'timedOut': true,
+        'message': 'انتهى وقت الاتصال. راجع حالة الطلب قبل المحاولة مرة أخرى.',
+      };
+    } catch (e) {
+      return {'success': false, 'message': 'خطأ في الاتصال: $e'};
+    }
+  }
+
+  /// السيرفر بيرجّع `message` نص أو قائمة أخطاء تحقق.
+  String? _messageOf(dynamic body) {
+    if (body is! Map) return null;
+    final message = body['message'];
+    if (message is String) return message;
+    if (message is List && message.isNotEmpty) return message.first.toString();
+    return null;
   }
 
   // 🎯 8️⃣ جلب الطلبات المتاحة في الساحة للكباتن

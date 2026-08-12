@@ -16,6 +16,7 @@ import { DeliveryPartner } from '../delivery/entities/delivery-partner.entity';
 import { Merchant } from '../merchant/entities/merchant.entity';
 import { Order } from '../orders/entities/order.entity';
 import { WalletTopUpRequest } from '../payments/entities/wallet-topup-request.entity';
+import { AccountAccessService } from '../auth/account-access.service';
 
 /**
  * `uploads/` holds national IDs, selfies and payment proofs. These tests pin the
@@ -72,6 +73,12 @@ describe('FilesController (uploads access control)', () => {
         {
           provide: getRepositoryToken(WalletTopUpRequest),
           useValue: emptyRepo,
+        },
+        // These tests exercise the guard for real, so the account lookup has to
+        // answer: every account here is live.
+        {
+          provide: AccountAccessService,
+          useValue: { isClosed: () => Promise.resolve(false) },
         },
       ],
     }).compile();

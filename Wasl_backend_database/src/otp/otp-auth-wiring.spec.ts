@@ -10,6 +10,9 @@ import { OtpVerification } from './entities/otp-verification.entity';
 import { User } from '../users/entities/user.entity';
 import { DeliveryPartner } from '../delivery/entities/delivery-partner.entity';
 import { Merchant } from '../merchant/entities/merchant.entity';
+import { DeliveryZone } from '../zones/entities/delivery-zone.entity';
+import { DeliveryZoneRate } from '../zones/entities/delivery-zone-rate.entity';
+import { AccountAccessModule } from '../auth/account-access.module';
 
 /**
  * AuthModule and OtpModule import each other through `forwardRef`. That kind of
@@ -32,13 +35,26 @@ describe('Auth ↔ Otp module wiring', () => {
     const builder = Test.createTestingModule({
       imports: [
         ConfigModule.forRoot({ isGlobal: true }),
+        // Global in the running app; imported explicitly here because a test
+        // module gets only what it asks for. JwtAuthGuard needs it to reject
+        // closed accounts.
+        AccountAccessModule,
         AuthModule,
         OtpModule,
       ],
     });
 
     // Stand in for everything TypeORM would otherwise need a connection for.
-    for (const entity of [User, DeliveryPartner, Merchant, OtpVerification]) {
+    // AuthModule pulls in ZonesModule so registration can validate the
+    // customer's chosen area, which is why the zone repositories are here.
+    for (const entity of [
+      User,
+      DeliveryPartner,
+      Merchant,
+      OtpVerification,
+      DeliveryZone,
+      DeliveryZoneRate,
+    ]) {
       builder
         .overrideProvider(getRepositoryToken(entity))
         .useValue(stubRepository);

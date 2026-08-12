@@ -14,12 +14,22 @@ export interface PriceQuote {
 }
 
 /**
- * DeliveryPricingService — single source of truth for how much a delivery
- * costs and how the fee is split between the driver and the platform.
+ * PricingService — the single source of truth for what a delivery costs.
  *
- * Pricing is a function of trip DISTANCE only (pickup → destination), so it
- * needs no hardcoded city coordinates and scales to any future city. Every
- * number comes from SettingsService and is editable by an admin at runtime.
+ * Two rules, in priority order:
+ *
+ *  1. **Normal orders** (restaurants / pharmacy / stores) — a flat fee set by
+ *     the **destination area alone**. See {@link quoteForDestinationZone}.
+ *  2. **Waslly** (area → area courier runs) — a fixed fee per route, read from
+ *     the pickup×drop-off rate matrix. See {@link quoteForZones}.
+ *
+ * Distance tiers ({@link quoteForDistance}) are the legacy rule and are now a
+ * fallback only: they apply to an order that carries no areas at all. Every
+ * number is data — zone rows and admin-editable settings — so tariffs change
+ * without a redeploy.
+ *
+ * A price is never accepted from a client. Callers pass areas; this service
+ * decides the money.
  */
 @Injectable()
 export class PricingService {
@@ -28,27 +38,45 @@ export class PricingService {
     private readonly zones: ZonesService,
   ) {}
 
+  /**
+   * Normal order: fee for delivering into `dropoffZoneId`.
+   * Throws when the area is unknown, inactive, or has no approved fee.
+   */
+  async quoteForDestinationZone(dropoffZoneId: number) {
+    const zoneQuote = await this.zones.quoteByDestination(dropoffZoneId);
+    return { ...zoneQuote, ...this.split(zoneQuote.deliveryFee) };
+  }
+
+  /** Waslly: fixed fee for the pickup-area → drop-off-area route. */
   async quoteForZones(pickupZoneId: number, dropoffZoneId: number) {
     const zoneQuote = await this.zones.quoteByZones(
       pickupZoneId,
       dropoffZoneId,
     );
-    const commissionPercent = this.settings.getNumber(
-      SettingKey.COMMISSION_PERCENT,
-      20,
-    );
-    const commission = this.round2(
-      (zoneQuote.deliveryFee * commissionPercent) / 100,
-    );
+    return { ...zoneQuote, ...this.split(zoneQuote.deliveryFee) };
+  }
+
+  /** How a delivery fee divides between the platform and the driver. */
+  private split(deliveryFee: number) {
+    const commission = this.commissionForFee(deliveryFee);
     return {
-      ...zoneQuote,
-      commissionPercent,
+      commissionPercent: this.settings.getNumber(
+        SettingKey.COMMISSION_PERCENT,
+        20,
+      ),
       commission,
-      driverEarnings: this.round2(zoneQuote.deliveryFee - commission),
+      driverEarnings: this.round2(deliveryFee - commission),
     };
   }
 
-  /** Quote from an already-computed distance. */
+  /**
+   * Legacy distance-tier quote.
+   *
+   * @deprecated Superseded by area pricing. Reachable only for an order with
+   * no pickup/drop-off area on it — an older client, or a record created
+   * before areas existed. Kept so those still resolve to a real number rather
+   * than failing; do not build new flows on it.
+   */
   quoteForDistance(distanceKm: number): PriceQuote {
     const dist = roundKm(Math.max(0, distanceKm));
 
@@ -96,15 +124,33 @@ export class PricingService {
   }
 
   /**
-   * Platform commission for a given final delivery fee. Used when an order
-   * completes and the driver bid an arbitrary fee (marketplace/offer model).
+   * Platform commission for a delivery fee:
+   *
+   *     commission = max(deliveryFee × 20%, 5 EGP)
+   *
+   * The floor matters because the percentage alone under-charges the cheap
+   * trips that dominate a small town: a 20 EGP delivery would otherwise yield
+   * 4 EGP. Both numbers are admin-editable settings, not constants.
+   *
+   * Commission is a share of the **delivery fee only**. What the customer paid
+   * for the goods never enters this — the driver buys those with their own
+   * money and is repaid in cash on delivery, so that amount is not the
+   * platform's to take a cut of.
    */
   commissionForFee(deliveryFee: number): number {
     const commissionPercent = this.settings.getNumber(
       SettingKey.COMMISSION_PERCENT,
       20,
     );
-    return this.round2((Number(deliveryFee) * commissionPercent) / 100);
+    const minCommission = this.settings.getNumber(SettingKey.MIN_COMMISSION, 5);
+    const fee = Math.max(0, Number(deliveryFee) || 0);
+    const percentage = this.round2((fee * commissionPercent) / 100);
+
+    // A zero-fee order (a pickup the customer collects themselves) owes
+    // nothing; the floor applies to deliveries that were actually charged for.
+    if (fee <= 0) return 0;
+
+    return this.round2(Math.max(percentage, minCommission));
   }
 
   /** Minimum driver wallet balance (EGP) required to go online. */

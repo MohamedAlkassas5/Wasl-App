@@ -16,6 +16,11 @@ class WaslOrderSummaryScreen extends StatelessWidget {
   final double latitude;
   final double longitude;
 
+  /// The chosen route. Sent to the server, which re-prices from it — the app
+  /// never sends a fee of its own.
+  final int? pickupZoneId;
+  final int? dropoffZoneId;
+
   final FlutterOrdersService _ordersService = FlutterOrdersService();
   final LocationApiService _locationApi = LocationApiService();
 
@@ -29,6 +34,8 @@ class WaslOrderSummaryScreen extends StatelessWidget {
     required this.itemsPrice,
     required this.latitude,
     required this.longitude,
+    this.pickupZoneId,
+    this.dropoffZoneId,
   }) : super(key: key);
 
   Future<void> _submitOrderToMarketplace(BuildContext context) async {
@@ -50,6 +57,8 @@ class WaslOrderSummaryScreen extends StatelessWidget {
       deliveryAddressText: customerAddress,
       latitude: latitude,
       longitude: longitude,
+      pickupZoneId: pickupZoneId,
+      dropoffZoneId: dropoffZoneId,
     );
 
     if (!context.mounted) return;
