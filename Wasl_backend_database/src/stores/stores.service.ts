@@ -19,6 +19,15 @@ export interface NearbyStore {
   latitude: number;
   longitude: number;
   distance: number;
+  /**
+   * Whether the store is open for orders right now.
+   *
+   * Closed stores are still listed rather than hidden. In a town with a handful
+   * of restaurants, a shop that vanishes at closing time reads as "gone" and
+   * sends people looking for it; one shown greyed out reads as "come back
+   * later", which is the truth. The server still refuses the order either way.
+   */
+  isAcceptingOrders: boolean;
 }
 
 /**
@@ -68,6 +77,7 @@ export class StoresService {
         merchant_store_type: m.storeType,
         logo: m.logo,
         addressDetails: m.addressDetails,
+        isAcceptingOrders: m.isAcceptingOrders,
         latitude: Number(m.latitude),
         longitude: Number(m.longitude),
         distance: roundKm(

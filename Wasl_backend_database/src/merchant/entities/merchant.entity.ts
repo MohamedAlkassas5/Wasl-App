@@ -13,6 +13,13 @@ import { User } from '../../users/entities/user.entity';
 import { MenuCategory } from '../../catalog/entities/menu-category.entity';
 import { Product } from '../../catalog/entities/product.entity';
 
+/**
+ * Whether the platform has admitted this store at all.
+ *
+ * An **administrative** state, set by admin review and changing rarely. It is
+ * not the same question as "are they open right now" — see
+ * {@link Merchant.isAcceptingOrders}.
+ */
 export enum MerchantStatus {
   PENDING = 'pending',
   APPROVED = 'approved',
@@ -88,6 +95,32 @@ export class Merchant {
     default: MerchantStatus.PENDING,
   })
   status!: MerchantStatus;
+
+  /**
+   * Whether this store is open for business **right now**.
+   *
+   * Deliberately separate from {@link status}. Approval is administrative and
+   * near-permanent: it answers "may this store trade on Wasl at all", and
+   * revoking it is a serious act. This is operational and expected to flip
+   * daily: the kitchen closed, the owner ran out of gas, it is 3 a.m. Folding
+   * the two together would mean closing for the night looked identical to
+   * being suspended for misconduct, and re-opening would need an admin review.
+   *
+   * Also — and this is a different axis again — nothing here relates to
+   * `DeliveryPartner.isOnline`. That is a *driver* being available to carry
+   * work; this is a *shop* being willing to sell. They share no table, no
+   * rule and no consequence: a closed shop does not idle a driver, and a town
+   * with no drivers online does not close the shops.
+   *
+   * V1 has no merchant dashboard, so an admin holds this switch. The column is
+   * shaped for the merchant to own later without changing its meaning.
+   */
+  @Column({
+    name: 'is_accepting_orders',
+    type: 'boolean',
+    default: true,
+  })
+  isAcceptingOrders!: boolean;
 
   @Column({
     name: 'admin_notes',

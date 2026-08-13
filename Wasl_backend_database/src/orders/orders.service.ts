@@ -154,6 +154,13 @@ export class OrdersService {
       if (!orderData.merchantId) {
         throw new BadRequestException('الطلب المفصّل لازم يكون من متجر محدد');
       }
+      // 🏪 The shop has to be open before anything is priced. Checking the
+      // products alone was not enough: an item stays `isAvailable` when a
+      // kitchen closes for the night, so a cart could be built and charged
+      // against a store that was never going to cook it.
+      await this.catalogService.assertMerchantCanTakeOrders(
+        orderData.merchantId,
+      );
       const catalog = await this.catalogService.getSellableProducts(
         orderData.merchantId,
         orderData.items.map((line) => line.productId),

@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import { MenuCategory } from './entities/menu-category.entity';
@@ -102,6 +106,51 @@ export class CatalogService {
         sizes: (sizesFor[product.id] ?? []).map(toOption),
         addons: (addonsFor[product.id] ?? []).map(toOption),
       })),
+    };
+  }
+
+  /**
+   * The one place that answers "may this store take an order right now".
+   *
+   * Both halves have to hold: admitted to the platform at all, and open for
+   * business at this moment. They fail differently on purpose — "we no longer
+   * work with this store" and "the kitchen is closed" are different facts and
+   * a customer staring at a rejected cart deserves the right one.
+   *
+   * Every path that creates an order goes through here rather than repeating
+   * the pair of conditions, so there is no route where one is checked and the
+   * other forgotten.
+   */
+  async assertMerchantCanTakeOrders(merchantId: number): Promise<Merchant> {
+    const merchant = await this.merchants.findOneBy({ id: merchantId });
+
+    if (!merchant || merchant.status !== MerchantStatus.APPROVED) {
+      throw new NotFoundException('المتجر غير متاح حالياً');
+    }
+    if (!merchant.isAcceptingOrders) {
+      throw new BadRequestException(
+        `${merchant.storeName} مقفول دلوقتي ومش بيستقبل طلبات. جرّب تاني بعدين أو اختار متجر تاني.`,
+      );
+    }
+
+    return merchant;
+  }
+
+  /** Admin toggles a store open or closed. Approval is a separate decision. */
+  async setAcceptingOrders(merchantId: number, isAcceptingOrders: boolean) {
+    const merchant = await this.merchants.findOneBy({ id: merchantId });
+    if (!merchant) throw new NotFoundException('المتجر غير موجود');
+
+    merchant.isAcceptingOrders = isAcceptingOrders;
+    await this.merchants.save(merchant);
+
+    // Orders already placed are deliberately untouched. Closing a shop stops
+    // new business; it does not reach back and cancel a delivery someone is
+    // already driving, or one the kitchen has already cooked.
+    return {
+      success: true,
+      merchantId,
+      isAcceptingOrders: merchant.isAcceptingOrders,
     };
   }
 

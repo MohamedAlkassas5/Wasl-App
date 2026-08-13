@@ -12,6 +12,7 @@ import {
 import { CatalogService } from './catalog.service';
 import { CreateMenuCategoryDto } from './dto/create-menu-category.dto';
 import { CreateProductDto } from './dto/create-product.dto';
+import { SetMerchantAvailabilityDto } from './dto/set-merchant-availability.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
@@ -70,5 +71,22 @@ export class CatalogController {
     @Body() dto: Partial<CreateProductDto>,
   ) {
     return this.service.updateProduct(id, dto);
+  }
+
+  /**
+   * Open or close a store for new orders.
+   *
+   * Separate from the approval workflow in `admin/approvals` on purpose: this
+   * is the daily "the kitchen is closed" switch, not a judgement on whether
+   * the store belongs on the platform at all.
+   */
+  @Patch('admin/catalog/merchants/:id/availability')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  setMerchantAvailability(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: SetMerchantAvailabilityDto,
+  ) {
+    return this.service.setAcceptingOrders(id, dto.isAcceptingOrders);
   }
 }
