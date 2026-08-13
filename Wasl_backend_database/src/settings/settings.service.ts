@@ -19,6 +19,7 @@ export const SettingKey = {
   DRIVER_LOCATION_TTL_MIN: 'driver_location_ttl_min',
   STORE_SEARCH_RADIUS_KM: 'store_search_radius_km',
   MIN_WALLET_TO_GO_ONLINE: 'min_wallet_to_go_online',
+  CANCELLATION_PENALTY_PERCENT: 'cancellation_penalty_percent',
   PAY_VODAFONE_NUMBER: 'pay_vodafone_number',
   PAY_INSTAPAY_HANDLE: 'pay_instapay_handle',
   PAY_INSTRUCTIONS: 'pay_instructions',
@@ -95,6 +96,12 @@ const DEFAULT_SETTINGS: SettingSeed[] = [
     key: SettingKey.MIN_WALLET_TO_GO_ONLINE,
     value: '5',
     description: 'Minimum driver wallet balance (EGP) required to go online.',
+  },
+  {
+    key: SettingKey.CANCELLATION_PENALTY_PERCENT,
+    value: '20',
+    description:
+      'Penalty (%) charged to the driver when an accepted order is cancelled. Applies to the delivery fee only, with no floor and no cap — deliberately separate from commission_percent so changing one never moves the other.',
   },
   {
     key: SettingKey.PAY_VODAFONE_NUMBER,

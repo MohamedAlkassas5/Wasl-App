@@ -613,6 +613,17 @@ export class OrdersService {
       );
     }
 
+    // 🔐 Cancellation charges a wallet, so it has its own routes with their own
+    // rules — a reason, a penalty, an appeal. Without this, an admin could put
+    // `cancelled` in the query string and terminate an order with no record and
+    // no penalty, which is exactly the bypass the dedicated routes exist to
+    // prevent. See OrderCancellationService.
+    if (status === OrderStatus.CANCELLED) {
+      throw new BadRequestException(
+        'إلغاء الطلب له مسار مخصص بقواعده، لا يتم من هنا',
+      );
+    }
+
     assertTransitionAllowed(
       order.status,
       status,

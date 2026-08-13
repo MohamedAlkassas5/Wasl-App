@@ -10,6 +10,8 @@ export enum WalletTxType {
   TOPUP = 'topup', // credit after admin-verified payment
   COMMISSION = 'commission', // debit on completed order
   ADJUSTMENT = 'adjustment', // manual admin correction
+  CANCELLATION_PENALTY = 'cancellation_penalty', // debit when an accepted order is cancelled
+  PENALTY_REFUND = 'penalty_refund', // credit when an admin finds the driver not at fault
 }
 
 /**

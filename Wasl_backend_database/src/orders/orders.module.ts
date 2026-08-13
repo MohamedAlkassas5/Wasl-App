@@ -6,6 +6,11 @@ import { OrderChatService } from './order-chat.service';
 import { OrderChatController } from './order-chat.controller';
 import { OrderMessage } from './entities/order-message.entity';
 import { OrderPriceProposal } from './entities/order-price-proposal.entity';
+import { OrderCancellationRequest } from './entities/order-cancellation-request.entity';
+import { OrderCancellationService } from './order-cancellation.service';
+import { OrderCancellationController } from './order-cancellation.controller';
+import { AdminCancellationsController } from './admin-cancellations.controller';
+import { SettingsModule } from '../settings/settings.module';
 import { Order, OrderOffer } from './entities/order.entity';
 import { DeliveryPartner } from '../delivery/entities/delivery-partner.entity';
 import { InAppNotification } from './entities/notification.entity'; // 🎯 استيراد الـ Entity الجديد المصلح
@@ -33,7 +38,11 @@ import { StorageModule } from '../storage/storage.module';
       // 💬 CP5: one conversation per order, plus the price changes decided in it.
       OrderMessage,
       OrderPriceProposal,
+      // 🚫 CP6: cancellations, their penalties, and the appeals against them.
+      OrderCancellationRequest,
     ]),
+    // The cancellation penalty percentage is an admin-editable setting.
+    SettingsModule,
     // Uploads (order photos, chat attachments) go through the storage backend.
     // StorageModule is @Global, but importing it explicitly keeps the
     // dependency real for anyone who builds this module on its own.
@@ -45,8 +54,13 @@ import { StorageModule } from '../storage/storage.module';
     PaymentsModule,
     ZonesModule,
   ],
-  controllers: [OrdersController, OrderChatController],
-  providers: [OrdersService, OrderChatService],
+  controllers: [
+    OrdersController,
+    OrderChatController,
+    OrderCancellationController,
+    AdminCancellationsController,
+  ],
+  providers: [OrdersService, OrderChatService, OrderCancellationService],
   exports: [OrdersService], // 🎯 تم التفعيل لكي تتمكن من استخدام الخدمة في الـ Modules الأخرى لو احتجت مستقبلاً
 })
 export class OrdersModule {}

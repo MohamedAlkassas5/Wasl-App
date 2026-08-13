@@ -50,6 +50,13 @@ const TRANSITIONS: Record<OrderStatus, Transition[]> = {
   ],
   // Completion is not reachable through the generic status route at all — it
   // moves money, so it has its own endpoint. See OrdersService.completeOrder.
+  //
+  // Cancelling an *accepted* order is the same shape of problem and is handled
+  // the same way: it charges the driver a penalty, so it lives on its own
+  // routes (see OrderCancellationService) and deliberately has no edge in this
+  // table. `delivering` is not cancellable by either side at all — the driver
+  // is holding the goods at the customer's door, and unwinding that is a
+  // support decision rather than a button.
   [OrderStatus.DELIVERING]: [],
   [OrderStatus.COMPLETED]: [],
   [OrderStatus.CANCELLED]: [],
