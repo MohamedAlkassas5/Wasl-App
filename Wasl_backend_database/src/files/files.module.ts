@@ -7,6 +7,7 @@ import { DeliveryPartner } from '../delivery/entities/delivery-partner.entity';
 import { Merchant } from '../merchant/entities/merchant.entity';
 import { Order } from '../orders/entities/order.entity';
 import { OrderMessage } from '../orders/entities/order-message.entity';
+import { OrderAssignment } from '../orders/entities/order-assignment.entity';
 import { WalletTopUpRequest } from '../payments/entities/wallet-topup-request.entity';
 
 @Module({
@@ -17,6 +18,9 @@ import { WalletTopUpRequest } from '../payments/entities/wallet-topup-request.en
       Order,
       WalletTopUpRequest,
       OrderMessage,
+      // Who was offered an order decides who may see its photo before it is
+      // assigned.
+      OrderAssignment,
     ]),
   ],
   controllers: [FilesController],

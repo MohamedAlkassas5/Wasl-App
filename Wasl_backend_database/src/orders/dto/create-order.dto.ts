@@ -115,6 +115,18 @@ export class CreateOrderDto {
   @MaxLength(160)
   pharmacyName?: string;
 
+  /**
+   * 🔐 Server-set only. Declared so `forbidNonWhitelisted` does not reject a
+   * request, but stripped before anything is stored — see
+   * `OrdersService.createOrder`.
+   *
+   * It used to be taken straight from the request. `FilesService.canRead`
+   * decides who may read an upload by finding the row that references its
+   * path, so a customer could create an order naming somebody else's payment
+   * proof or prescription here, then download it as a party to their own
+   * order. The app never sent this field — the pharmacy screen uploads the
+   * scan as `itemsImage` — so nothing legitimate depended on it.
+   */
   @IsOptional()
   @IsString()
   prescriptionImageUrl?: string;
@@ -191,15 +203,29 @@ export class CreateOrderDto {
   @Min(1)
   dropoffZoneId?: number;
 
+  /**
+   * Only meaningful for free-text orders (pharmacy, Waslly, general); an
+   * itemised cart is priced from the catalog and overwrites this.
+   *
+   * Bounded because it was unbounded: a negative total would have shown the
+   * customer a nonsense amount to hand over, and an astronomical one the same.
+   * It moves no platform money either way — commission is a share of the
+   * delivery fee alone — but a number the server stores should still be a
+   * number that can exist.
+   */
   @IsOptional()
   @Type(() => Number)
-  @IsNumber()
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  @Max(100000)
   itemsPrice?: number;
 
+  /** 🔐 Server-set only — see the note on `prescriptionImageUrl`. */
   @IsOptional()
   @IsString()
   itemsImageUrl?: string;
 
+  /** 🔐 Server-set only — see the note on `prescriptionImageUrl`. */
   @IsOptional()
   @IsString()
   voiceNoteUrl?: string;

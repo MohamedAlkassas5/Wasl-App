@@ -84,6 +84,14 @@ export class OrdersController {
       createOrderDto.itemsPrice = Number(createOrderDto.itemsPrice);
     }
 
+    // 🔐 Whatever the client sent here is discarded before the upload replaces
+    // it. `FilesService.canRead` grants access to an upload by finding the row
+    // that names its path, so accepting a caller-supplied path would let them
+    // mint permission to read someone else's file. Previously this was only
+    // overwritten when a file was actually attached, so a request with no file
+    // kept the client's value.
+    createOrderDto.itemsImageUrl = undefined;
+
     // Bytes go to the configured storage backend (local disk in dev, R2 in
     // production) and we persist the key it hands back.
     const itemsImageUrl = await this.uploadService.persistImage(
@@ -357,11 +365,16 @@ export class OrdersController {
     @CurrentUser() user: AuthUser,
     @Param('id', ParseIntPipe) orderId: number,
     @Query('status') status: OrderStatus,
-    @Body() body: { itemsPrice?: number; invoiceImageUrl?: string },
+    @Body() body: { itemsPrice?: number },
   ) {
+    // 🔐 `invoiceImageUrl` used to be accepted here as a plain string, which
+    // let the assigned driver point the order's receipt at any stored file and
+    // then read it — `FilesService.canRead` treats the parties to an order as
+    // entitled to the paths that order references. The receipt has its own
+    // route, `POST :id/invoice`, which takes a real upload; the app has only
+    // ever used that one.
     const parsedBody = {
       itemsPrice: body?.itemsPrice ? Number(body.itemsPrice) : undefined,
-      invoiceImageUrl: body?.invoiceImageUrl || undefined,
     };
     return this.ordersService.updateStatus(orderId, status, parsedBody, user);
   }

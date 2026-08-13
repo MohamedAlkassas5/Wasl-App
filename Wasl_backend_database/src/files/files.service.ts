@@ -14,6 +14,7 @@ import { DeliveryPartner } from '../delivery/entities/delivery-partner.entity';
 import { Merchant } from '../merchant/entities/merchant.entity';
 import { Order, OrderStatus, OrderType } from '../orders/entities/order.entity';
 import { OrderMessage } from '../orders/entities/order-message.entity';
+import { OrderAssignment } from '../orders/entities/order-assignment.entity';
 import { WalletTopUpRequest } from '../payments/entities/wallet-topup-request.entity';
 import { STORAGE_PROVIDER, StorageProvider } from '../storage/storage-provider';
 
@@ -40,6 +41,8 @@ export class FilesService {
     private readonly topUpRepository: Repository<WalletTopUpRequest>,
     @InjectRepository(OrderMessage)
     private readonly messageRepository: Repository<OrderMessage>,
+    @InjectRepository(OrderAssignment)
+    private readonly assignmentRepository: Repository<OrderAssignment>,
     @Inject(STORAGE_PROVIDER)
     private readonly storage: StorageProvider,
   ) {}
@@ -116,14 +119,18 @@ export class FilesService {
     }
 
     // 📦 Item photo on an order: the customer, the assigned driver, and — while
-    // the order is still taking offers — any driver, since they need to see what
-    // is being requested before pricing it.
+    // the order is still unassigned — a driver who was actually **offered** it,
+    // since they need to see what is being requested before accepting.
     //
-    // 🔐 That last allowance stops at pharmacy orders. The pharmacy screen sends
-    // the prescription photo through this same field, so "any driver may look at
-    // a pending order's photo" meant every driver who was online could pull any
-    // customer's prescription. Bidding on a pharmacy run needs the medicine list
-    // — which is text on the order — not the scan.
+    // 🔐 That last allowance used to be "any driver at all", which was right
+    // when every pending order was visible to everyone. CP6-B replaced that
+    // open marketplace with targeted offers, so a driver who was never asked
+    // about this order has no more business reading its photo than a stranger
+    // does. Narrowed to match.
+    //
+    // It stops at pharmacy orders regardless. The pharmacy screen sends the
+    // prescription through this same field, and choosing whether to take a
+    // pharmacy run needs the medicine list — text on the order — not the scan.
     const itemsOrder = await this.orderRepository.findOne({
       where: { itemsImageUrl: relativePath },
     });
@@ -133,7 +140,8 @@ export class FilesService {
       if (
         user.role === UserRole.DELIVERY &&
         itemsOrder.status === OrderStatus.PENDING_OFFERS &&
-        itemsOrder.orderType !== OrderType.PHARMACY
+        itemsOrder.orderType !== OrderType.PHARMACY &&
+        (await this.wasOfferedOrder(itemsOrder.id, user.sub))
       ) {
         return true;
       }
@@ -190,5 +198,22 @@ export class FilesService {
     }
 
     return false;
+  }
+
+  /**
+   * Whether this order was ever offered to this driver.
+   *
+   * Any assignment row counts, not only a live one: a driver deciding whether
+   * to accept has a minute, and an offer that lapsed while they were looking at
+   * the photo should not turn the image into a 403 mid-glance.
+   */
+  private async wasOfferedOrder(
+    orderId: number,
+    driverId: number,
+  ): Promise<boolean> {
+    const offer = await this.assignmentRepository.findOne({
+      where: { orderId, driverId },
+    });
+    return offer != null;
   }
 }

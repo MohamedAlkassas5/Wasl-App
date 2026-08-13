@@ -7,6 +7,7 @@ import { DeliveryPartner } from '../delivery/entities/delivery-partner.entity';
 import { Merchant } from '../merchant/entities/merchant.entity';
 import { Order, OrderStatus, OrderType } from '../orders/entities/order.entity';
 import { OrderMessage } from '../orders/entities/order-message.entity';
+import { OrderAssignment } from '../orders/entities/order-assignment.entity';
 import { WalletTopUpRequest } from '../payments/entities/wallet-topup-request.entity';
 import { AuthUser } from '../auth/current-user';
 import { UserRole } from '../users/entities/user.entity';
@@ -19,6 +20,12 @@ const CHAT_FILE = 'uploads/chat/chat-1-abc.jpg';
 const PHARMACY_PHOTO = 'uploads/orders/order-2-def.jpg';
 const PRESCRIPTION = 'uploads/orders/order-3-ghi.jpg';
 const STORE_PHOTO = 'uploads/orders/order-4-jkl.jpg';
+
+const PHARMACY_ORDER_ID = 2;
+const STORE_ORDER_ID = 4;
+
+/** Which orders the browsing driver has actually been offered. */
+const offeredOrderIds = new Set<number>();
 
 /**
  * Reading an attachment is a second authorization decision, not a consequence
@@ -101,11 +108,24 @@ describe('FilesService — chat attachments and prescriptions', () => {
           useValue: emptyRepo,
         },
         { provide: getRepositoryToken(OrderMessage), useValue: messageRepo },
+        {
+          provide: getRepositoryToken(OrderAssignment),
+          useValue: {
+            findOne: ({ where }: { where: { orderId: number } }) =>
+              Promise.resolve(
+                offeredOrderIds.has(where.orderId) ? { id: 1 } : null,
+              ),
+          },
+        },
       ],
     }).compile();
 
     service = moduleRef.get(FilesService);
   });
+
+  // The module is built once, so the offer set has to be reset per test rather
+  // than leaking whichever order the previous one granted.
+  beforeEach(() => offeredOrderIds.clear());
 
   describe('chat attachments', () => {
     it('serves them to the customer on that order', async () => {
@@ -141,10 +161,35 @@ describe('FilesService — chat attachments and prescriptions', () => {
       ).resolves.toBe(false);
     });
 
-    it('still shows a pending non-pharmacy photo to bidding drivers', async () => {
+    it('shows a pending non-pharmacy photo to a driver who was offered it', async () => {
+      // CP6-E narrowed this. It used to be "any driver at all", which was right
+      // while every pending order was visible to everyone; CP6-B replaced that
+      // with targeted offers, so being asked is now what earns the look.
+      offeredOrderIds.add(STORE_ORDER_ID);
+
       await expect(service.canRead(BROWSING_DRIVER, STORE_PHOTO)).resolves.toBe(
         true,
       );
+    });
+
+    it('refuses a driver who was never offered that order', async () => {
+      // Regression guard for the CP6-E narrowing: with the open marketplace
+      // gone, an unasked driver is a stranger to this order.
+      offeredOrderIds.clear();
+
+      await expect(service.canRead(BROWSING_DRIVER, STORE_PHOTO)).resolves.toBe(
+        false,
+      );
+    });
+
+    it('still refuses a pharmacy photo even to a driver who was offered it', async () => {
+      // Choosing whether to take a pharmacy run needs the medicine list, which
+      // is text on the order — never the scan.
+      offeredOrderIds.add(PHARMACY_ORDER_ID);
+
+      await expect(
+        service.canRead(BROWSING_DRIVER, PHARMACY_PHOTO),
+      ).resolves.toBe(false);
     });
 
     it('still shows the pharmacy photo to its own customer', async () => {

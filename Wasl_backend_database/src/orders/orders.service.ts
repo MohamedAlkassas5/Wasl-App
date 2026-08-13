@@ -125,6 +125,25 @@ export class OrdersService {
   // 🎯 [تم التحديث والتطهير من أي اختراقات للنوع]: حماية الـ Fallback وقتل الـ Timeout نهائياً
   // 🎯 [تحديث] دالة إنشاء الطلب مع حقن السعر التقديري في قاعدة البيانات
   async createOrder(customerId: number, orderData: CreateOrderDto) {
+    // 🔐 Storage paths are the server's to assign, never the caller's.
+    //
+    // `FilesService.canRead` grants access to an upload by finding the row that
+    // references its path. Naming an arbitrary path here therefore *created*
+    // permission to read it: a customer could point `prescriptionImageUrl` at
+    // another driver's payment proof, or at somebody else's prescription, and
+    // then download it legitimately as a party to their own order.
+    //
+    // The controller overwrites `itemsImageUrl` from the real upload when a
+    // file is attached — but only then, so a request with no file kept whatever
+    // the client sent. Clearing all three here closes that, and costs nothing:
+    // the app has never sent any of them (the pharmacy screen uploads its scan
+    // as `itemsImage`).
+    // `itemsImageUrl` is cleared in the controller, which is where the real
+    // upload replaces it; these two have no upload path at all, so they are
+    // simply dropped.
+    orderData.prescriptionImageUrl = undefined;
+    orderData.voiceNoteUrl = undefined;
+
     // تأمين تحويل الـ itemsDescription نصياً
     let processedItems = 'تفاصيل شحنة فارغة';
     if (orderData.itemsDescription) {
@@ -256,6 +275,29 @@ export class OrdersService {
    * merely browsing the marketplace does not, and neither does anyone else.
    * Enforced here rather than by trusting the app to hide a field it was sent.
    */
+  /**
+   * The assigned driver, as the customer is allowed to see them.
+   *
+   * `relations: { acceptedDriver: true }` loads the whole `User` row, and
+   * spreading that into the response handed the customer the driver's **bcrypt
+   * password hash**, along with their email, Firebase uid, admin notes and
+   * account status. Verified against a real database, not inferred: the payload
+   * really did contain `passwordHash`.
+   *
+   * What the customer actually needs is who is coming and how to reach them.
+   * Anything else about that person is not theirs to have, so this projects
+   * explicitly rather than removing known-bad keys — a deny-list would leak
+   * again the moment a column is added to `User`.
+   */
+  private publicDriver(driver: User | null | undefined) {
+    if (!driver) return null;
+    return {
+      id: driver.id,
+      name: driver.name,
+      phone: driver.phone,
+    };
+  }
+
   private redactForViewer<
     T extends {
       customerId?: number;
@@ -838,14 +880,15 @@ export class OrdersService {
       `📡 [LIVE SYNC] الطلب رقم FL-${orderId} حالته الحالية في الداتابيز هي: ${order.status}`,
     );
 
-    // Spread keeps every existing field; we enrich the acceptedDriver object
-    // with live location and expose the agreed fee explicitly.
+    // Spread keeps every existing field; the driver is projected down to what
+    // the customer may see (see `publicDriver`) and enriched with live location.
+    const publicDriver = this.publicDriver(order.acceptedDriver);
     return this.redactForViewer(
       {
         ...order,
         agreedDeliveryFee: Number(order.finalDeliveryFee) || null,
-        acceptedDriver: order.acceptedDriver
-          ? { ...order.acceptedDriver, ...driverLocation }
+        acceptedDriver: publicDriver
+          ? { ...publicDriver, ...driverLocation }
           : null,
       },
       user,
@@ -961,11 +1004,18 @@ export class OrdersService {
   }
 
   async getCustomerOrders(customerId: number) {
-    return await this.orderRepository.find({
+    const orders = await this.orderRepository.find({
       where: { customerId },
       order: { createdAt: 'DESC' },
       relations: { acceptedDriver: true },
     });
+
+    // Same projection as the tracking screen: the history list was handing out
+    // the driver's full user row, password hash included.
+    return orders.map((order) => ({
+      ...order,
+      acceptedDriver: this.publicDriver(order.acceptedDriver),
+    }));
   }
 
   async getDriverOnlineStatus(driverId: number) {
