@@ -60,12 +60,17 @@ const TRANSITIONS: Record<OrderStatus, Transition[]> = {
   [OrderStatus.DELIVERING]: [],
   [OrderStatus.COMPLETED]: [],
   [OrderStatus.CANCELLED]: [],
+  // Reached only by the assignment sweep, once every wave has run and the
+  // radius has hit its ceiling. Nobody drives an order here by hand, and
+  // nothing leads out of it.
+  [OrderStatus.EXPIRED]: [],
 };
 
 /** States after which an order is a historical record, not a live thing. */
 export const FINAL_STATES: readonly OrderStatus[] = [
   OrderStatus.COMPLETED,
   OrderStatus.CANCELLED,
+  OrderStatus.EXPIRED,
 ];
 
 export function isFinalState(status: OrderStatus): boolean {
@@ -100,11 +105,11 @@ export function assertTransitionAllowed(
   }
 
   if (isFinalState(from)) {
-    throw new BadRequestException(
-      from === OrderStatus.COMPLETED
-        ? 'الطلب مكتمل بالفعل ولا يمكن تعديله'
-        : 'الطلب ملغي ولا يمكن تعديله',
-    );
+    const reason: Partial<Record<OrderStatus, string>> = {
+      [OrderStatus.COMPLETED]: 'الطلب مكتمل بالفعل ولا يمكن تعديله',
+      [OrderStatus.EXPIRED]: 'انتهت مهلة الطلب ولم يقبله أي كابتن',
+    };
+    throw new BadRequestException(reason[from] ?? 'الطلب ملغي ولا يمكن تعديله');
   }
 
   const transition = TRANSITIONS[from].find((t) => t.to === to);

@@ -16,6 +16,7 @@ import {
 import { FileInterceptor } from '@nestjs/platform-express';
 
 import { OrdersService } from './orders.service';
+import { OrderAssignmentService } from './order-assignment.service';
 import { UploadService } from '../storage/upload.service';
 import { OrderStatus } from './entities/order.entity';
 import { plainToInstance } from 'class-transformer';
@@ -37,6 +38,7 @@ export class OrdersController {
   constructor(
     private readonly ordersService: OrdersService,
     private readonly uploadService: UploadService,
+    private readonly assignmentService: OrderAssignmentService,
   ) {}
 
   @Post('create')
@@ -112,6 +114,23 @@ export class OrdersController {
       throw new BadRequestException('هذا المسار مخصص للكباتن فقط');
     }
     return this.ordersService.acceptAvailableOrder(orderId, user.sub);
+  }
+
+  /**
+   * The driver passes on an order they were offered.
+   *
+   * Costs them nothing — it only takes them out of the running so the next
+   * wave asks somebody else instead of offering it to them again.
+   */
+  @Post(':id/decline')
+  declineAssignment(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseIntPipe) orderId: number,
+  ) {
+    if (user.role !== UserRole.DELIVERY) {
+      throw new BadRequestException('هذا المسار مخصص للكباتن فقط');
+    }
+    return this.assignmentService.decline(orderId, user.sub);
   }
 
   // 🎯 جلب طلبات عميل محدد فقط (بدون تسريب بيانات العملاء الآخرين)

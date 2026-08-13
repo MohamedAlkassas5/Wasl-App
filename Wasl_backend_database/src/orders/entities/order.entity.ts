@@ -19,7 +19,33 @@ export enum OrderStatus {
   DELIVERING = 'delivering',
   COMPLETED = 'completed',
   CANCELLED = 'cancelled',
+  /**
+   * Nobody took it. Every assignment wave ran, the radius reached its ceiling,
+   * and no eligible driver accepted.
+   *
+   * Distinct from `cancelled` on purpose: nobody decided this, no penalty
+   * applies, and the customer did nothing wrong — so telling them their order
+   * was "cancelled" would be both inaccurate and alarming. It is terminal all
+   * the same; placing it again is a new order.
+   */
+  EXPIRED = 'expired',
 }
+
+/**
+ * The statuses that mean a driver is currently working an order.
+ *
+ * One driver may hold exactly one order in any of these at a time. That rule is
+ * enforced in three places, deliberately: assignment skips occupied drivers,
+ * acceptance re-checks under a lock, and a partial unique index on
+ * `orders (accepted_driver_id)` over precisely this set makes it impossible for
+ * a race to slip a second one through.
+ */
+export const DRIVER_ACTIVE_STATUSES: readonly OrderStatus[] = [
+  OrderStatus.ACCEPTED,
+  OrderStatus.AT_STORE,
+  OrderStatus.ITEMS_BOUGHT,
+  OrderStatus.DELIVERING,
+];
 
 /**
  * How the customer pays.
@@ -387,6 +413,18 @@ export class Order {
 
   // ─── Lifecycle timestamps ────────────────────────────────────────────────
   // When each stage happened, rather than only the current state.
+
+  /**
+   * How many assignment waves have gone out on this order.
+   *
+   * Lives here rather than being derived from `order_assignments`, because a
+   * wave that finds nobody within its radius writes no rows at all — deriving
+   * the count from them would leave such an order stuck at the opening radius
+   * for ever, re-searching the same empty circle and never reaching the ceiling
+   * that lets it expire.
+   */
+  @Column({ name: 'assignment_wave', type: 'int', default: 0 })
+  assignmentWave!: number;
 
   @Column({ name: 'accepted_at', type: 'timestamp', nullable: true })
   acceptedAt?: Date | null;

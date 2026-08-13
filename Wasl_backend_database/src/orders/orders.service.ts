@@ -6,7 +6,7 @@ import {
   ForbiddenException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 
 import {
   Order,
@@ -15,7 +15,9 @@ import {
   PaymentStatus,
   PricingSource,
   SettlementStatus,
+  DRIVER_ACTIVE_STATUSES,
 } from './entities/order.entity';
+import { OrderAssignmentService } from './order-assignment.service';
 import { User } from '../users/entities/user.entity';
 import { OrderItem } from './entities/order-item.entity';
 import { OrderType } from './entities/order.entity';
@@ -63,6 +65,7 @@ export class OrdersService {
     private readonly pricingService: PricingService,
     private readonly deliveryService: DeliveryService,
     private readonly paymentsService: PaymentsService,
+    private readonly assignmentService: OrderAssignmentService,
   ) {}
 
   /**
@@ -204,10 +207,8 @@ export class OrdersService {
       );
     }
 
-    // 🚀 Notify only drivers near the PICKUP point (falls back to destination),
-    // sorted nearest-first, using an expanding radius. No more blasting every
-    // online driver in the whole system.
-    await this.notifyNearbyDrivers(savedOrder);
+    // 🚀 Offer it to the three nearest eligible, unoccupied drivers.
+    await this.openFirstWave(savedOrder);
 
     return savedOrder;
   }
@@ -344,9 +345,25 @@ export class OrdersService {
   }
 
   /**
-   * Atomically assigns a fixed-price order to the first eligible driver who
-   * accepts it. The row lock prevents two nearby drivers from winning the same
-   * order when their requests arrive at nearly the same time.
+   * Assigns an order to the driver who accepted it — exactly one of them.
+   *
+   * Three separate races have to be impossible here, and each has its own
+   * guard rather than one lock being asked to cover all of them:
+   *
+   *  1. **Two drivers, one order.** The order row is locked, then claimed with
+   *     a conditional update that requires it still be unassigned. Whoever
+   *     loses affects zero rows and is told the order is gone.
+   *  2. **One driver, two orders.** The one-active-order rule. Checked here
+   *     under the lock, and backed by a partial unique index on
+   *     `orders (accepted_driver_id)` over the active statuses — so two
+   *     acceptances arriving together on *different* orders still cannot both
+   *     land, whatever the timing.
+   *  3. **An offer that lapsed mid-request.** `markWinnerWithin` only promotes
+   *     an assignment row that is still `offered`; a sweep that expired it a
+   *     moment ago wins, and acceptance is refused.
+   *
+   * The price is not part of any of this. It was decided at creation and is
+   * copied across as-is.
    */
   async acceptAvailableOrder(orderId: number, driverId: number) {
     const result = await this.orderRepository.manager.transaction(
@@ -382,14 +399,56 @@ export class OrdersService {
           );
         }
 
-        order.acceptedDriverId = driverId;
-        // The fee was decided by the server at creation; acceptance freezes it
-        // rather than recomputing, so a rate change mid-flight can't move it.
-        order.finalDeliveryFee = Number(order.estimatedDeliveryFee);
-        order.status = OrderStatus.ACCEPTED;
-        order.acceptedAt = new Date();
-        const saved = await orders.save(order);
-        return { order: saved, customerId: saved.customerId };
+        // 🚚 One active order at a time.
+        const active = await orders.count({
+          where: {
+            acceptedDriverId: driverId,
+            status: In([...DRIVER_ACTIVE_STATUSES]),
+          },
+        });
+        if (active > 0) {
+          throw new ConflictException(
+            'لديك طلب قيد التنفيذ بالفعل، أنهِه أولاً قبل استلام طلب جديد',
+          );
+        }
+
+        // 🎯 The order has to have been offered to them. Without this the
+        // targeted waves would be decorative: any driver could accept anything
+        // by calling the route directly, which is the open marketplace again.
+        const won = await OrderAssignmentService.markWinnerWithin(
+          manager,
+          orderId,
+          driverId,
+        );
+        if (!won) {
+          throw new ConflictException(
+            'انتهت مهلة هذا العرض أو لم يعد متاحًا لك',
+          );
+        }
+
+        // Claim the order itself, conditional on it still being unclaimed.
+        const claimed = await manager.update(
+          Order,
+          {
+            id: orderId,
+            status: OrderStatus.PENDING_OFFERS,
+          },
+          {
+            acceptedDriverId: driverId,
+            // The fee was decided by the server at creation; acceptance
+            // freezes it rather than recomputing, so a rate change mid-flight
+            // can't move it.
+            finalDeliveryFee: Number(order.estimatedDeliveryFee),
+            status: OrderStatus.ACCEPTED,
+            acceptedAt: new Date(),
+          },
+        );
+        if (!claimed.affected) {
+          throw new ConflictException('الطلب تم إسناده أو لم يعد متاحًا');
+        }
+
+        const saved = await orders.findOne({ where: { id: orderId } });
+        return { order: saved!, customerId: order.customerId };
       },
     );
 
@@ -402,38 +461,33 @@ export class OrdersService {
   }
 
   /**
-   * Radius-scoped driver notification for a newly created order. Uses the
-   * pickup point when available, otherwise the delivery destination.
+   * Opens the first assignment wave on a newly created order.
+   *
+   * This replaced a broadcast: every online driver within an expanding radius
+   * used to get a "new order near you" notification and then race each other
+   * to it. Now three specific drivers are offered the order for sixty seconds
+   * and only they can take it — the notification goes to the people who can
+   * actually act on it.
+   *
+   * Failures here are logged, not thrown: an order that was created and priced
+   * must not be rolled back because the matching pass had a bad moment. The
+   * sweep re-waves anything left sitting in `pending_offers`.
    */
-  private async notifyNearbyDrivers(order: Order): Promise<void> {
+  private async openFirstWave(order: Order): Promise<void> {
     try {
-      const originLat = Number(order.pickupLatitude ?? order.latitude);
-      const originLng = Number(order.pickupLongitude ?? order.longitude);
+      const wave = await this.assignmentService.openNextWave(order.id);
 
-      if (!isValidCoordinate(originLat, originLng)) return;
-
-      const { drivers, radiusKm } =
-        await this.deliveryService.findNearbyWithExpansion(
-          originLat,
-          originLng,
-        );
-
-      const title = '📦 طلب توصيل جديد قريب منك!';
       await Promise.all(
-        drivers.map((d) =>
+        wave.offered.map((driverId) =>
           this.createNotification(
-            d.driverId,
-            title,
-            `طلب توصيل إلى: ${order.deliveryAddressText} — يبعد ${d.distanceKm} كم عنك. قدّم عرضك الآن! 🏁`,
+            driverId,
+            '📦 طلب توصيل جديد ليك!',
+            `طلب توصيل إلى: ${order.deliveryAddressText} — رسوم التوصيل ${Number(order.estimatedDeliveryFee)} ج.م. عندك دقيقة تقبله. 🏁`,
           ),
         ),
       );
-
-      console.log(
-        `📡 [MARKETPLACE NOTIF] أُشعر ${drivers.length} كابتن ضمن نطاق ${radiusKm} كم بالطلب رقم FL-${order.id}`,
-      );
     } catch (error) {
-      console.error('💥 [MARKETPLACE NOTIF ERROR]:', error);
+      console.error('💥 [ASSIGNMENT WAVE ERROR]:', error);
     }
   }
 
@@ -802,8 +856,14 @@ export class OrdersService {
   }
 
   private async loadAvailableOrders(driverId?: number) {
-    // 🔐 An unapproved driver sees their own assigned work but no marketplace:
-    // "receive new orders" is part of what approval gates, and showing offers
+    const ownWork = (id: number) =>
+      DRIVER_ACTIVE_STATUSES.map((status) => ({
+        acceptedDriverId: id,
+        status,
+      }));
+
+    // 🔐 An unapproved driver sees their own assigned work but no offers:
+    // "receive new orders" is part of what approval gates, and showing work
     // they cannot accept would only produce confusing failures.
     if (driverId) {
       const [driverUser, partner] = await Promise.all([
@@ -812,31 +872,38 @@ export class OrdersService {
       ]);
       if (!checkDriverEligibility(driverUser, partner).eligible) {
         return this.orderRepository.find({
-          where: [
-            { acceptedDriverId: driverId, status: OrderStatus.ACCEPTED },
-            { acceptedDriverId: driverId, status: OrderStatus.AT_STORE },
-            { acceptedDriverId: driverId, status: OrderStatus.ITEMS_BOUGHT },
-            { acceptedDriverId: driverId, status: OrderStatus.DELIVERING },
-          ],
+          where: ownWork(driverId),
           order: { createdAt: 'DESC' },
         });
       }
     }
 
-    const orders = await this.orderRepository.find({
-      where: driverId
-        ? [
-            { status: OrderStatus.PENDING_OFFERS },
-            { acceptedDriverId: driverId, status: OrderStatus.ACCEPTED },
-            { acceptedDriverId: driverId, status: OrderStatus.AT_STORE },
-            { acceptedDriverId: driverId, status: OrderStatus.ITEMS_BOUGHT },
-            { acceptedDriverId: driverId, status: OrderStatus.DELIVERING },
-          ]
-        : { status: OrderStatus.PENDING_OFFERS },
-      order: {
-        createdAt: 'DESC',
-      },
-    });
+    // 📡 No open marketplace any more. A driver sees the orders they were
+    // actually offered — and only while the offer is live — plus whatever they
+    // are already working on. An order nobody offered them is not theirs to
+    // take, so listing it would only invite a request the server refuses.
+    let orders: Order[];
+    if (driverId) {
+      const offers = await this.assignmentService.liveOffersFor(driverId);
+      const offeredIds = offers
+        .filter((offer) => new Date(offer.expiresAt) > new Date())
+        .map((offer) => offer.orderId);
+
+      orders = await this.orderRepository.find({
+        where: [
+          ...(offeredIds.length
+            ? [{ id: In(offeredIds), status: OrderStatus.PENDING_OFFERS }]
+            : []),
+          ...ownWork(driverId),
+        ],
+        order: { createdAt: 'DESC' },
+      });
+    } else {
+      orders = await this.orderRepository.find({
+        where: { status: OrderStatus.PENDING_OFFERS },
+        order: { createdAt: 'DESC' },
+      });
+    }
 
     if (!driverId) return orders;
 

@@ -92,6 +92,7 @@ import { OrderItem } from '../orders/entities/order-item.entity';
 import { OrderMessage } from '../orders/entities/order-message.entity';
 import { OrderPriceProposal } from '../orders/entities/order-price-proposal.entity';
 import { OrderCancellationRequest } from '../orders/entities/order-cancellation-request.entity';
+import { OrderAssignment } from '../orders/entities/order-assignment.entity';
 
 /**
  * Every entity that maps to a table.
@@ -116,6 +117,7 @@ export const ENTITIES = [
   OrderMessage,
   OrderPriceProposal,
   OrderCancellationRequest,
+  OrderAssignment,
 ];
 
 export function buildDataSourceOptions(): DataSourceOptions {

@@ -7,16 +7,13 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 
 import { OrdersService } from './orders.service';
-import {
-  Order,
-  OrderStatus,
-  SettlementStatus,
-} from './entities/order.entity';
+import { Order, OrderStatus, SettlementStatus } from './entities/order.entity';
 import { InAppNotification } from './entities/notification.entity';
 import { DeliveryPartner } from '../delivery/entities/delivery-partner.entity';
 import { PricingService } from '../pricing/pricing.service';
 import { DeliveryService } from '../delivery/delivery.service';
 import { PaymentsService } from '../payments/payments.service';
+import { OrderAssignmentService } from './order-assignment.service';
 import { User, UserRole } from '../users/entities/user.entity';
 import { AuthUser } from '../auth/current-user';
 import { WalletTransaction } from '../payments/entities/wallet-transaction.entity';
@@ -142,6 +139,15 @@ describe('OrdersService — completion & settlement', () => {
         },
         { provide: DeliveryService, useValue: {} },
         { provide: PaymentsService, useValue: {} },
+        {
+          // Order creation opens the first assignment wave; these suites are
+          // about pricing and settlement, so it only has to exist.
+          provide: OrderAssignmentService,
+          useValue: {
+            openNextWave: jest.fn().mockResolvedValue({ offered: [] }),
+            liveOffersFor: jest.fn().mockResolvedValue([]),
+          },
+        },
       ],
     }).compile();
 
@@ -321,6 +327,15 @@ describe('OrdersService — completion & settlement', () => {
         },
         { provide: DeliveryService, useValue: {} },
         { provide: PaymentsService, useValue: {} },
+        {
+          // Order creation opens the first assignment wave; these suites are
+          // about pricing and settlement, so it only has to exist.
+          provide: OrderAssignmentService,
+          useValue: {
+            openNextWave: jest.fn().mockResolvedValue({ offered: [] }),
+            liveOffersFor: jest.fn().mockResolvedValue([]),
+          },
+        },
       ],
     }).compile();
 

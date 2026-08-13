@@ -83,6 +83,8 @@ describe('accepted orders survive a driver going offline or broke (CP6 §15)', (
       } as never,
       {} as never,
       {} as never,
+      // Assignment plays no part once an order is already the driver's.
+      { liveOffersFor: jest.fn().mockResolvedValue([]) } as never,
     );
 
     return { service, orderRepository, deliveryRepository, updates };

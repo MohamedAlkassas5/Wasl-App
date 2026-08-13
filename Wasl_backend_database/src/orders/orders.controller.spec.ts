@@ -4,6 +4,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 
 import { OrdersController } from './orders.controller';
 import { OrdersService } from './orders.service';
+import { OrderAssignmentService } from './order-assignment.service';
 import { AuthUser } from '../auth/current-user';
 import { UserRole } from '../users/entities/user.entity';
 import { CreateOrderDto } from './dto/create-order.dto';
@@ -32,7 +33,10 @@ describe('OrdersController (authorization)', () => {
     >
   >;
 
+  let decline: jest.Mock;
+
   beforeEach(async () => {
+    decline = jest.fn().mockResolvedValue({ success: true });
     service = {
       createOrder: jest.fn().mockResolvedValue({ success: true }),
       getCustomerOrders: jest.fn().mockResolvedValue([]),
@@ -56,6 +60,7 @@ describe('OrdersController (authorization)', () => {
         // The guard now also rejects closed accounts, so it needs the account
         // lookup even though it never runs in these handler-level tests.
         { provide: AccountAccessService, useValue: { isClosed: () => false } },
+        { provide: OrderAssignmentService, useValue: { decline } },
       ],
     }).compile();
 
@@ -107,6 +112,19 @@ describe('OrdersController (authorization)', () => {
     controller.acceptAvailableOrder(DRIVER, 5);
 
     expect(service.acceptAvailableOrder).toHaveBeenCalledWith(5, DRIVER.sub);
+  });
+
+  it('declines as the authenticated driver', () => {
+    controller.declineAssignment(DRIVER, 5);
+
+    expect(decline).toHaveBeenCalledWith(5, DRIVER.sub);
+  });
+
+  it('refuses a decline from anyone who is not a driver', () => {
+    expect(() => controller.declineAssignment(CUSTOMER, 5)).toThrow(
+      BadRequestException,
+    );
+    expect(decline).not.toHaveBeenCalled();
   });
 
   it('refuses acceptance from anyone who is not a driver', () => {

@@ -10,6 +10,8 @@ import { OrderCancellationRequest } from './entities/order-cancellation-request.
 import { OrderCancellationService } from './order-cancellation.service';
 import { OrderCancellationController } from './order-cancellation.controller';
 import { AdminCancellationsController } from './admin-cancellations.controller';
+import { OrderAssignment } from './entities/order-assignment.entity';
+import { OrderAssignmentService } from './order-assignment.service';
 import { SettingsModule } from '../settings/settings.module';
 import { Order } from './entities/order.entity';
 import { DeliveryPartner } from '../delivery/entities/delivery-partner.entity';
@@ -39,6 +41,8 @@ import { StorageModule } from '../storage/storage.module';
       OrderPriceProposal,
       // 🚫 CP6: cancellations, their penalties, and the appeals against them.
       OrderCancellationRequest,
+      // 📡 CP6-B: which drivers were offered which order, and for how long.
+      OrderAssignment,
     ]),
     // The cancellation penalty percentage is an admin-editable setting.
     SettingsModule,
@@ -59,7 +63,12 @@ import { StorageModule } from '../storage/storage.module';
     OrderCancellationController,
     AdminCancellationsController,
   ],
-  providers: [OrdersService, OrderChatService, OrderCancellationService],
-  exports: [OrdersService], // 🎯 تم التفعيل لكي تتمكن من استخدام الخدمة في الـ Modules الأخرى لو احتجت مستقبلاً
+  providers: [
+    OrdersService,
+    OrderChatService,
+    OrderCancellationService,
+    OrderAssignmentService,
+  ],
+  exports: [OrdersService, OrderAssignmentService], // 🎯 تم التفعيل لكي تتمكن من استخدام الخدمة في الـ Modules الأخرى لو احتجت مستقبلاً
 })
 export class OrdersModule {}

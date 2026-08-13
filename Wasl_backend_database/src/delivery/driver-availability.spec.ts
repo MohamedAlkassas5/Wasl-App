@@ -56,6 +56,7 @@ describe('driver availability (CP6-B)', () => {
       pricingService as never,
       {} as never, // delivery
       {} as never, // payments
+      { liveOffersFor: jest.fn().mockResolvedValue([]) } as never, // assignment
     );
 
     return { service, saved, deliveryRepository };
@@ -198,6 +199,7 @@ describe('driver availability (CP6-B)', () => {
         { minWalletToGoOnline: () => MIN_WALLET } as never,
         {} as never,
         {} as never,
+        { liveOffersFor: jest.fn().mockResolvedValue([]) } as never,
       );
 
       const orders = await service.getAvailableOrders(20);
