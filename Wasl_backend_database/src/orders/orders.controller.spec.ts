@@ -8,6 +8,7 @@ import { AuthUser } from '../auth/current-user';
 import { UserRole } from '../users/entities/user.entity';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { AccountAccessService } from '../auth/account-access.service';
+import { UploadService } from '../storage/upload.service';
 
 /**
  * These cover the broken-access-control fix: the caller's identity comes from
@@ -46,6 +47,12 @@ describe('OrdersController (authorization)', () => {
       controllers: [OrdersController],
       providers: [
         { provide: OrdersService, useValue: service },
+        // Uploads go through the storage backend now; no file is sent in these
+        // handler-level tests, so this only has to exist.
+        {
+          provide: UploadService,
+          useValue: { persistImage: jest.fn().mockResolvedValue(undefined) },
+        },
         // The guard now also rejects closed accounts, so it needs the account
         // lookup even though it never runs in these handler-level tests.
         { provide: AccountAccessService, useValue: { isClosed: () => false } },
@@ -59,10 +66,10 @@ describe('OrdersController (authorization)', () => {
     expect(controller).toBeDefined();
   });
 
-  it('ignores a client-supplied customerId and books the order for the token owner', () => {
+  it('ignores a client-supplied customerId and books the order for the token owner', async () => {
     const dto = { customerId: 999, items: [] } as unknown as CreateOrderDto;
 
-    controller.create(
+    await controller.create(
       CUSTOMER,
       undefined as unknown as Express.Multer.File,
       dto,

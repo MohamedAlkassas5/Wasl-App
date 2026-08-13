@@ -26,9 +26,26 @@ class CartController extends ChangeNotifier {
   double? get merchantLat => _lines.isEmpty ? null : _lines.first.merchantLat;
   double? get merchantLng => _lines.isEmpty ? null : _lines.first.merchantLng;
 
-  /// The whole cart as the plain-text item list the orders API accepts.
+  /// The whole cart as the plain-text item list, for display only.
   String get asOrderDescription =>
       _lines.map((l) => l.asOrderText).join('\n');
+
+  /// The cart as the structured lines the orders API takes.
+  ///
+  /// Identifiers only — no prices. The server resolves each product, size and
+  /// add-on against the merchant's catalog and works out the total itself, so
+  /// the amount charged is the merchant's price rather than a number this
+  /// device supplied.
+  List<Map<String, dynamic>> get asOrderItems => _lines
+      .map((line) => {
+            'productId': line.product.id,
+            if (line.size != null) 'sizeId': line.size!.id,
+            if (line.addons.isNotEmpty)
+              'addonIds': line.addons.map((a) => a.id).toList(),
+            'quantity': line.quantity,
+            if ((line.note ?? '').isNotEmpty) 'note': line.note,
+          })
+      .toList();
 
   bool get isEmpty => _lines.isEmpty;
 

@@ -18,6 +18,10 @@ import {
   SettlementStatus,
 } from './entities/order.entity';
 import { User } from '../users/entities/user.entity';
+import { OrderItem } from './entities/order-item.entity';
+import { OrderType } from './entities/order.entity';
+import { CatalogService } from '../catalog/catalog.service';
+import { buildOrderItems } from './order-items.builder';
 import {
   assertTransitionAllowed,
   COMPLETABLE_FROM,
@@ -36,6 +40,7 @@ import { WalletTxType } from '../payments/entities/wallet-transaction.entity';
 import { haversineKm, roundKm, isValidCoordinate } from '../common/geo.util';
 import { AuthUser } from '../auth/current-user';
 import { UserRole } from '../users/entities/user.entity';
+import { assertOrderParticipant } from './order-participation';
 
 @Injectable()
 export class OrdersService {
@@ -55,6 +60,10 @@ export class OrdersService {
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
 
+    @InjectRepository(OrderItem)
+    private readonly orderItemRepository: Repository<OrderItem>,
+
+    private readonly catalogService: CatalogService,
     private readonly pricingService: PricingService,
     private readonly deliveryService: DeliveryService,
     private readonly paymentsService: PaymentsService,
@@ -76,23 +85,7 @@ export class OrdersService {
     if (!order) {
       throw new NotFoundException('الطلب غير موجود');
     }
-    if (user.role === UserRole.ADMIN) return order;
-
-    const isCustomer = Number(order.customerId) === Number(user.sub);
-    const isDriver =
-      order.acceptedDriverId != null &&
-      Number(order.acceptedDriverId) === Number(user.sub);
-
-    const allowed =
-      as === 'customer'
-        ? isCustomer
-        : as === 'driver'
-          ? isDriver
-          : isCustomer || isDriver;
-
-    if (!allowed) {
-      throw new ForbiddenException('عفواً، هذا الطلب لا يخصك');
-    }
+    assertOrderParticipant(order, user, as);
     return order;
   }
 
@@ -138,6 +131,31 @@ export class OrdersService {
       );
     }
 
+    const orderType = this.resolveOrderType(orderData);
+
+    // 🛒 An itemised order is priced from the catalog, never from the client.
+    // `itemsPrice` used to be whatever number the app put in the request.
+    let orderItems: Partial<OrderItem>[] = [];
+    let itemsPrice = Number(orderData.itemsPrice) || 0;
+
+    if (orderData.items?.length) {
+      if (!orderData.merchantId) {
+        throw new BadRequestException('الطلب المفصّل لازم يكون من متجر محدد');
+      }
+      const catalog = await this.catalogService.getSellableProducts(
+        orderData.merchantId,
+        orderData.items.map((line) => line.productId),
+      );
+      const built = buildOrderItems(orderData.items, catalog);
+      orderItems = built.items;
+      itemsPrice = built.itemsTotal;
+      processedItems = built.description;
+    }
+
+    if (orderType === OrderType.PHARMACY && !orderData.pharmacyName?.trim()) {
+      throw new BadRequestException('اكتب اسم الصيدلية المطلوبة');
+    }
+
     // 💰 The fee is decided here and nowhere else. Nothing the client sends can
     // set or influence it — the app passes areas, the server passes back money.
     const pricing = await this.resolvePricing(customerId, orderData);
@@ -146,8 +164,14 @@ export class OrdersService {
 
     const order = this.orderRepository.create({
       customerId: customerId || orderData.customerId,
+      orderType,
+      merchantId: orderData.merchantId ?? null,
       categoryType: orderData.categoryType || 'طلب عام',
       storeName: orderData.storeName || 'غير محدد',
+      pharmacyName: orderData.pharmacyName?.trim() || null,
+      prescriptionImageUrl: orderData.prescriptionImageUrl ?? null,
+      recipientPhone: orderData.recipientPhone?.replace(/[^0-9]/g, '') || null,
+      recipientName: orderData.recipientName?.trim() || null,
       itemsDescription: processedItems,
       customerName: orderData.customerName || 'عميل وصل',
       customerPhone: orderData.customerPhone || '',
@@ -165,16 +189,11 @@ export class OrdersService {
       estimatedDeliveryFee,
       pricingSource: pricing.source,
 
-      itemsPrice: Number(orderData.itemsPrice) || 0,
-      paymentMethod: Object.values(PaymentMethod).includes(
-        orderData.paymentMethod as PaymentMethod,
-      )
-        ? orderData.paymentMethod
-        : PaymentMethod.COD,
-      paymentStatus:
-        orderData.paymentMethod === PaymentMethod.COD
-          ? PaymentStatus.COD_DUE
-          : PaymentStatus.PENDING,
+      itemsPrice,
+      // Cash on delivery is the only method the platform can actually collect
+      // through, so it is not negotiable by the request.
+      paymentMethod: PaymentMethod.COD,
+      paymentStatus: PaymentStatus.COD_DUE,
       itemsImageUrl: orderData.itemsImageUrl,
       voiceNoteUrl: orderData.voiceNoteUrl,
 
@@ -183,12 +202,60 @@ export class OrdersService {
 
     const savedOrder = await this.orderRepository.save(order);
 
+    if (orderItems.length) {
+      await this.orderItemRepository.insert(
+        orderItems.map((item) => ({ ...item, orderId: savedOrder.id })),
+      );
+    }
+
     // 🚀 Notify only drivers near the PICKUP point (falls back to destination),
     // sorted nearest-first, using an expanding radius. No more blasting every
     // online driver in the whole system.
     await this.notifyNearbyDrivers(savedOrder);
 
     return savedOrder;
+  }
+
+  /**
+   * Which contract an order follows.
+   *
+   * Explicit when the app says so. Otherwise inferred, so builds that predate
+   * typed orders keep behaving: a run with both areas and nothing bought is a
+   * Waslly courier job, and anything else stays `general`.
+   */
+  private resolveOrderType(orderData: CreateOrderDto): OrderType {
+    if (orderData.orderType) return orderData.orderType;
+    if (orderData.pickupZoneId && orderData.dropoffZoneId) {
+      return OrderType.WASLLY;
+    }
+    return OrderType.GENERAL;
+  }
+
+  /**
+   * Strips fields the viewer is not entitled to.
+   *
+   * The recipient's phone belongs to a third party who never agreed to be in
+   * this app. The assigned driver needs it to hand the parcel over; a driver
+   * merely browsing the marketplace does not, and neither does anyone else.
+   * Enforced here rather than by trusting the app to hide a field it was sent.
+   */
+  private redactForViewer<
+    T extends {
+      customerId?: number;
+      acceptedDriverId?: number | null;
+      recipientPhone?: string | null;
+      customerPhone?: string | null;
+    },
+  >(order: T, viewer: AuthUser): T {
+    const isCustomer = Number(order.customerId) === Number(viewer.sub);
+    const isAssignedDriver =
+      order.acceptedDriverId != null &&
+      Number(order.acceptedDriverId) === Number(viewer.sub);
+
+    if (isCustomer || isAssignedDriver || viewer.role === UserRole.ADMIN) {
+      return order;
+    }
+    return { ...order, recipientPhone: null, customerPhone: null };
   }
 
   /**
@@ -558,12 +625,20 @@ export class OrdersService {
       order.deliveringAt = new Date();
     }
 
-    // 🔐 The purchase amount and its receipt are the driver's report of what
-    // they actually paid at the shop. They are only writable while the order is
-    // still moving; a closed order's numbers never change (see the final-state
-    // rejection in assertTransitionAllowed).
+    // 🔐 The receipt is the driver's report of what they paid — but the *price*
+    // is not theirs to change. This route used to write whatever number the
+    // driver sent, so a customer discovered the new total when they were asked
+    // to pay it. A differing figure is now refused and the driver is sent to
+    // the price-change request, which the customer explicitly approves or
+    // rejects (see OrderChatService.decideProposal — the only writer of
+    // `itemsPrice` after creation).
     if (extraData?.itemsPrice !== undefined) {
-      order.itemsPrice = extraData.itemsPrice;
+      const current = Number(order.itemsPrice) || 0;
+      if (Number(extraData.itemsPrice) !== current) {
+        throw new BadRequestException(
+          'لا يمكن تعديل سعر المشتريات مباشرة. أرسل طلب تعديل سعر ليوافق عليه العميل.',
+        );
+      }
     }
 
     if (extraData?.invoiceImageUrl) {
@@ -765,6 +840,7 @@ export class OrdersService {
       where: { id: orderId },
       relations: {
         acceptedDriver: true,
+        items: true,
       },
     });
 
@@ -802,19 +878,35 @@ export class OrdersService {
 
     // Spread keeps every existing field; we enrich the acceptedDriver object
     // with live location and expose the agreed fee explicitly.
-    return {
-      ...order,
-      agreedDeliveryFee: Number(order.finalDeliveryFee) || null,
-      acceptedDriver: order.acceptedDriver
-        ? { ...order.acceptedDriver, ...driverLocation }
-        : null,
-    };
+    return this.redactForViewer(
+      {
+        ...order,
+        agreedDeliveryFee: Number(order.finalDeliveryFee) || null,
+        acceptedDriver: order.acceptedDriver
+          ? { ...order.acceptedDriver, ...driverLocation }
+          : null,
+      },
+      user,
+    );
   }
 
   // 🎯 Available orders for the marketplace. When a driverId is supplied and
   // the driver has a live GPS fix, each pending order is annotated with its
   // distance from the driver and the list is sorted nearest-first.
-  async getAvailableOrders(driverId?: number) {
+  /**
+   * The marketplace, as one driver sees it.
+   *
+   * `viewer` drives redaction: a driver browsing orders they have not been
+   * assigned must not be handed the recipient's or the customer's phone
+   * number just because the row contains it.
+   */
+  async getAvailableOrders(driverId?: number, viewer?: AuthUser) {
+    const orders = await this.loadAvailableOrders(driverId);
+    if (!viewer) return orders;
+    return orders.map((order) => this.redactForViewer(order, viewer));
+  }
+
+  private async loadAvailableOrders(driverId?: number) {
     // 🔐 An unapproved driver sees their own assigned work but no marketplace:
     // "receive new orders" is part of what approval gates, and showing offers
     // they cannot accept would only produce confusing failures.

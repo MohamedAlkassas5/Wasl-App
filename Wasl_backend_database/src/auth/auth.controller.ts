@@ -11,11 +11,9 @@ import {
 } from '@nestjs/common';
 import { FileFieldsInterceptor } from '@nestjs/platform-express';
 import { Throttle } from '@nestjs/throttler';
-import { diskStorage } from 'multer';
-import { extname } from 'path';
-import * as fs from 'fs';
 
 import { AuthService } from './auth.service';
+import { UploadService } from '../storage/upload.service';
 import { JwtAuthGuard } from './jwt-auth.guard';
 import { AuthUser, CurrentUser } from './current-user';
 import { UserRole } from '../users/entities/user.entity';
@@ -25,7 +23,10 @@ import { imageUploadPolicy } from '../common/upload-policy';
 
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly authService: AuthService) {}
+  constructor(
+    private readonly authService: AuthService,
+    private readonly uploadService: UploadService,
+  ) {}
 
   // 🎯 تم إزالة الـ Endpoint الخاصة بـ verify-otp لأن التحقق أصبح يتم بالكامل داخل الفلاتر عبر Firebase
 
@@ -40,28 +41,10 @@ export class AuthController {
         { name: 'storeLogo', maxCount: 1 },
         { name: 'vehicleImage', maxCount: 1 },
       ],
-      {
-        ...imageUploadPolicy,
-        storage: diskStorage({
-          // ✅ الحفظ المباشر في الفولدر العام يمنع تعليق الـ Stream في الـ Localhost والمحاكي
-          destination: (req, file, callback) => {
-            const uploadPath = './uploads';
-            if (!fs.existsSync(uploadPath)) {
-              fs.mkdirSync(uploadPath, { recursive: true });
-            }
-            callback(null, uploadPath);
-          },
-          filename: (req, file, callback) => {
-            const uniqueSuffix =
-              Date.now() + '-' + Math.round(Math.random() * 1e9);
-            const extension = extname(file.originalname);
-            callback(null, `${file.fieldname}-${uniqueSuffix}${extension}`);
-          },
-        }),
-      },
+      imageUploadPolicy,
     ),
   )
-  register(
+  async register(
     @Body() registerDto: RegisterDto,
     @UploadedFiles()
     files: {
@@ -71,22 +54,21 @@ export class AuthController {
       vehicleImage?: Express.Multer.File[];
     },
   ) {
-    // ✅ الحقول بتتقرأ هنا بسلاسة تامة بعد معالجة الـ Multi-part
-    const idFrontName = files?.idFront?.[0]?.filename
-      ? `uploads/${files.idFront[0].filename}`
-      : 'pending_front.jpg';
+    // Registration documents go to the configured storage backend, same as
+    // every other upload. The placeholder names are kept for a registration
+    // that arrives without a given document.
+    const store = (file: Express.Multer.File | undefined, field: string) =>
+      this.uploadService.persistImage(file, '', field);
 
-    const idBackName = files?.idBack?.[0]?.filename
-      ? `uploads/${files.idBack[0].filename}`
-      : 'pending_back.jpg';
-
-    const storeLogoName = files?.storeLogo?.[0]?.filename
-      ? `uploads/${files.storeLogo[0].filename}`
-      : 'pending_logo.jpg';
-
-    const vehicleImageName = files?.vehicleImage?.[0]?.filename
-      ? `uploads/${files.vehicleImage[0].filename}`
-      : 'pending_vehicle.jpg';
+    const idFrontName =
+      (await store(files?.idFront?.[0], 'idFront')) ?? 'pending_front.jpg';
+    const idBackName =
+      (await store(files?.idBack?.[0], 'idBack')) ?? 'pending_back.jpg';
+    const storeLogoName =
+      (await store(files?.storeLogo?.[0], 'storeLogo')) ?? 'pending_logo.jpg';
+    const vehicleImageName =
+      (await store(files?.vehicleImage?.[0], 'vehicleImage')) ??
+      'pending_vehicle.jpg';
 
     return this.authService.register(
       registerDto,

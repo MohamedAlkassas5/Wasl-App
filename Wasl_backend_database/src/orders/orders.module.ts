@@ -2,6 +2,10 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { OrdersService } from './orders.service';
 import { OrdersController } from './orders.controller';
+import { OrderChatService } from './order-chat.service';
+import { OrderChatController } from './order-chat.controller';
+import { OrderMessage } from './entities/order-message.entity';
+import { OrderPriceProposal } from './entities/order-price-proposal.entity';
 import { Order, OrderOffer } from './entities/order.entity';
 import { DeliveryPartner } from '../delivery/entities/delivery-partner.entity';
 import { InAppNotification } from './entities/notification.entity'; // 🎯 استيراد الـ Entity الجديد المصلح
@@ -10,6 +14,9 @@ import { DeliveryModule } from '../delivery/delivery.module';
 import { PaymentsModule } from '../payments/payments.module';
 import { ZonesModule } from '../zones/zones.module';
 import { User } from '../users/entities/user.entity';
+import { OrderItem } from './entities/order-item.entity';
+import { CatalogModule } from '../catalog/catalog.module';
+import { StorageModule } from '../storage/storage.module';
 
 @Module({
   imports: [
@@ -19,17 +26,27 @@ import { User } from '../users/entities/user.entity';
     TypeOrmModule.forFeature([
       Order,
       OrderOffer,
+      OrderItem,
       DeliveryPartner,
       InAppNotification,
       User,
+      // 💬 CP5: one conversation per order, plus the price changes decided in it.
+      OrderMessage,
+      OrderPriceProposal,
     ]),
+    // Uploads (order photos, chat attachments) go through the storage backend.
+    // StorageModule is @Global, but importing it explicitly keeps the
+    // dependency real for anyone who builds this module on its own.
+    StorageModule,
+    // Itemised orders are priced from the merchant's catalog, server-side.
+    CatalogModule,
     PricingModule,
     DeliveryModule,
     PaymentsModule,
     ZonesModule,
   ],
-  controllers: [OrdersController],
-  providers: [OrdersService],
+  controllers: [OrdersController, OrderChatController],
+  providers: [OrdersService, OrderChatService],
   exports: [OrdersService], // 🎯 تم التفعيل لكي تتمكن من استخدام الخدمة في الـ Modules الأخرى لو احتجت مستقبلاً
 })
 export class OrdersModule {}

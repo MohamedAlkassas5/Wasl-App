@@ -3,11 +3,13 @@ import {
   PrimaryGeneratedColumn,
   Column,
   CreateDateColumn,
+  Index,
   ManyToOne,
   OneToMany,
 } from 'typeorm';
 
 import { User } from '../../users/entities/user.entity';
+import { OrderItem } from './order-item.entity';
 
 export enum OrderStatus {
   PENDING_OFFERS = 'pending_offers',
@@ -19,11 +21,48 @@ export enum OrderStatus {
   CANCELLED = 'cancelled',
 }
 
+/**
+ * How the customer pays.
+ *
+ * Cash on delivery only. `paymob` and `fawry` used to sit here as enum values
+ * with no integration anywhere behind them — no provider account, no webhook,
+ * no payment record — so an order could be created claiming to be card-paid
+ * and nothing would ever collect the money. Offering a payment method the
+ * system cannot take payment through is worse than not offering it, so they
+ * are gone until a provider is actually chosen and wired.
+ */
 export enum PaymentMethod {
   COD = 'cod',
-  PAYMOB = 'paymob',
-  FAWRY = 'fawry',
 }
+
+/**
+ * What kind of order this is.
+ *
+ * Drives which contract applies: an itemised catalog order, a free-text
+ * pharmacy request, or a courier run between two areas. Previously only
+ * `categoryType` existed — a free-text Arabic label chosen by the app — which
+ * meant the server could not tell a restaurant order from a Waslly one, and
+ * so could not validate either.
+ */
+export enum OrderType {
+  /** Itemised, from a merchant's catalog. */
+  RESTAURANT = 'restaurant',
+  STORE = 'store',
+  /** Free-text medicines, optionally with a prescription photo. */
+  PHARMACY = 'pharmacy',
+  /** Courier run: area → area, nothing bought. */
+  WASLLY = 'waslly',
+  /** "هاتلي" and anything predating the typed contracts. */
+  GENERAL = 'general',
+}
+
+/** Order types where the driver buys goods and needs a shop stage. */
+export const PURCHASE_ORDER_TYPES: readonly OrderType[] = [
+  OrderType.RESTAURANT,
+  OrderType.STORE,
+  OrderType.PHARMACY,
+  OrderType.GENERAL,
+];
 
 /**
  * Which pricing rule produced the fee stored on an order.
@@ -60,6 +99,9 @@ export enum SettlementStatus {
 }
 
 @Entity('orders')
+@Index('idx_orders_status', ['status'])
+@Index('idx_orders_customer', ['customerId', 'createdAt'])
+@Index('idx_orders_driver_status', ['acceptedDriverId', 'status'])
 export class Order {
   @PrimaryGeneratedColumn()
   id!: number;
@@ -77,11 +119,79 @@ export class Order {
   @Column({ nullable: true })
   customerPhone?: string;
 
+  /**
+   * The typed contract this order follows. `categoryType` below stays as the
+   * customer-facing Arabic label the app already shows; this is the one the
+   * server validates against.
+   */
+  @Column({
+    name: 'order_type',
+    type: 'varchar',
+    length: 20,
+    default: OrderType.GENERAL,
+  })
+  orderType!: OrderType;
+
   @Column()
   categoryType!: string;
 
   @Column({ nullable: true })
   storeName?: string;
+
+  /** The merchant this order is for, when it came from a catalog. */
+  @Column({ name: 'merchant_id', type: 'int', nullable: true })
+  merchantId?: number | null;
+
+  /** Itemised lines with their prices frozen. Empty for pharmacy/Waslly. */
+  @OneToMany(() => OrderItem, (item) => item.order)
+  items!: OrderItem[];
+
+  // ─── Pharmacy request ────────────────────────────────────────────────────
+
+  @Column({
+    name: 'pharmacy_name',
+    type: 'varchar',
+    length: 160,
+    nullable: true,
+  })
+  pharmacyName?: string | null;
+
+  /**
+   * Photo of a prescription. Sensitive medical data — served only through
+   * `FilesController`, which checks the caller is a party to this order.
+   */
+  @Column({
+    name: 'prescription_image_url',
+    type: 'varchar',
+    nullable: true,
+  })
+  prescriptionImageUrl?: string | null;
+
+  // ─── Waslly ──────────────────────────────────────────────────────────────
+
+  /**
+   * Who receives the parcel, when that is not the customer.
+   *
+   * A third party's phone number: visible to the assigned driver once they
+   * have accepted (they need to call ahead), never to drivers merely browsing
+   * the marketplace. Enforced server-side in `OrdersService`, not by hoping
+   * the app hides it.
+   */
+  @Column({
+    name: 'recipient_phone',
+    type: 'varchar',
+    length: 20,
+    nullable: true,
+  })
+  recipientPhone?: string | null;
+
+  @Column({
+    name: 'recipient_name',
+    type: 'varchar',
+    length: 100,
+    nullable: true,
+  })
+  recipientName?: string | null;
 
   @Column({ type: 'text' })
   itemsDescription!: string;

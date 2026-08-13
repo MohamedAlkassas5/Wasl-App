@@ -15,6 +15,7 @@ import { UserRole } from '../users/entities/user.entity';
 import { DeliveryPartner } from '../delivery/entities/delivery-partner.entity';
 import { Merchant } from '../merchant/entities/merchant.entity';
 import { Order } from '../orders/entities/order.entity';
+import { OrderMessage } from '../orders/entities/order-message.entity';
 import { WalletTopUpRequest } from '../payments/entities/wallet-topup-request.entity';
 import { AccountAccessService } from '../auth/account-access.service';
 
@@ -74,6 +75,7 @@ describe('FilesController (uploads access control)', () => {
           provide: getRepositoryToken(WalletTopUpRequest),
           useValue: emptyRepo,
         },
+        { provide: getRepositoryToken(OrderMessage), useValue: emptyRepo },
         // These tests exercise the guard for real, so the account lookup has to
         // answer: every account here is live.
         {

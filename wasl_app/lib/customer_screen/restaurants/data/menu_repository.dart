@@ -145,13 +145,19 @@ class HttpMenuRepository implements MenuRepository {
   @override
   bool get isPlaceholderData => false;
 
-  Future<Map<String, dynamic>> _get(int restaurantId) async {
+  /// The id here is a **merchant** id — the one `/stores/nearby` returns.
+  ///
+  /// It always was: the app has only ever had merchant ids to work with. The
+  /// old path sent it to `/restaurants/:id/menu`, which looked it up in a
+  /// separate table with its own id sequence, so the menu resolved to an
+  /// unrelated row or, in practice, to nothing at all.
+  Future<Map<String, dynamic>> _get(int merchantId) async {
     final response = await http
-        .get(Uri.parse('${WaslApiConfig.baseUrl}/restaurants/$restaurantId/menu'),
+        .get(Uri.parse('${WaslApiConfig.baseUrl}/merchants/$merchantId/menu'),
             headers: await WaslApiConfig.authHeaders())
         .timeout(const Duration(seconds: 15));
     if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw Exception('تعذر تحميل قائمة المطعم (${response.statusCode})');
+      throw Exception('تعذر تحميل قائمة المتجر (${response.statusCode})');
     }
     return jsonDecode(response.body) as Map<String, dynamic>;
   }
@@ -170,7 +176,7 @@ class HttpMenuRepository implements MenuRepository {
     final data = await _get(merchantId);
     return ((data['products'] as List?) ?? [])
         .whereType<Map<String, dynamic>>()
-        .map((item) => Product.fromJson({...item, 'merchantId': item['restaurantId']}))
+        .map(Product.fromJson)
         .toList();
   }
 }

@@ -11,6 +11,8 @@ import { DeliveryService } from '../delivery/delivery.service';
 import { PaymentsService } from '../payments/payments.service';
 import { AuthUser } from '../auth/current-user';
 import { User, UserRole } from '../users/entities/user.entity';
+import { OrderItem } from './entities/order-item.entity';
+import { CatalogService } from '../catalog/catalog.service';
 
 /**
  * Ownership rules on orders, with the repositories stubbed. The point of these
@@ -63,6 +65,15 @@ describe('OrdersService (order ownership)', () => {
           // order; these ownership tests never get that far.
           provide: getRepositoryToken(User),
           useValue: { findOne: jest.fn().mockResolvedValue(null) },
+        },
+        {
+          // Itemised orders only: these suites never build a cart.
+          provide: getRepositoryToken(OrderItem),
+          useValue: { insert: jest.fn().mockResolvedValue(undefined) },
+        },
+        {
+          provide: CatalogService,
+          useValue: { getSellableProducts: jest.fn().mockResolvedValue([]) },
         },
         { provide: PricingService, useValue: { commissionForFee: () => 4 } },
         { provide: DeliveryService, useValue: {} },

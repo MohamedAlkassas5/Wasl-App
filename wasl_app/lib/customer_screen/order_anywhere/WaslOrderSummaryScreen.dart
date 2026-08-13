@@ -21,6 +21,10 @@ class WaslOrderSummaryScreen extends StatelessWidget {
   final int? pickupZoneId;
   final int? dropoffZoneId;
 
+  /// Who receives the parcel, when that is not the customer.
+  final String? recipientName;
+  final String? recipientPhone;
+
   final FlutterOrdersService _ordersService = FlutterOrdersService();
   final LocationApiService _locationApi = LocationApiService();
 
@@ -36,6 +40,8 @@ class WaslOrderSummaryScreen extends StatelessWidget {
     required this.longitude,
     this.pickupZoneId,
     this.dropoffZoneId,
+    this.recipientName,
+    this.recipientPhone,
   }) : super(key: key);
 
   Future<void> _submitOrderToMarketplace(BuildContext context) async {
@@ -59,6 +65,9 @@ class WaslOrderSummaryScreen extends StatelessWidget {
       longitude: longitude,
       pickupZoneId: pickupZoneId,
       dropoffZoneId: dropoffZoneId,
+      orderType: 'waslly',
+      recipientName: (recipientName ?? '').isEmpty ? null : recipientName,
+      recipientPhone: (recipientPhone ?? '').isEmpty ? null : recipientPhone,
     );
 
     if (!context.mounted) return;

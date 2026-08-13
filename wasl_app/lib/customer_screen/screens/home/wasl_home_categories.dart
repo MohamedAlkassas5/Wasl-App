@@ -45,6 +45,9 @@ const List<WaslHomeCategory> kWaslHomeCategories = [
     tagline: 'أدوية ومستلزمات طبية من أقرب صيدلية ليك',
     assetPath: 'assets/demo/categories/pharmacy.png',
     fallbackIcon: Icons.local_pharmacy_rounded,
+    // Free-text request with an optional prescription photo — pharmacies do
+    // not publish a catalog, so there is nothing to browse.
+    isImplemented: true,
   ),
   WaslHomeCategory(
     id: 'stores',
@@ -52,6 +55,8 @@ const List<WaslHomeCategory> kWaslHomeCategories = [
     tagline: 'تصفّح المتاجر الشريكة واطلب منها مباشرة',
     assetPath: 'assets/demo/categories/stores.png',
     fallbackIcon: Icons.storefront_rounded,
+    // Same merchant catalog the restaurants tab uses, filtered by store type.
+    isImplemented: true,
   ),
   WaslHomeCategory(
     id: 'wasly',

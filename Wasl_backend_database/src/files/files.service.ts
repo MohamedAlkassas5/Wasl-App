@@ -12,12 +12,13 @@ import { AuthUser } from '../auth/current-user';
 import { UserRole } from '../users/entities/user.entity';
 import { DeliveryPartner } from '../delivery/entities/delivery-partner.entity';
 import { Merchant } from '../merchant/entities/merchant.entity';
-import { Order, OrderStatus } from '../orders/entities/order.entity';
+import { Order, OrderStatus, OrderType } from '../orders/entities/order.entity';
+import { OrderMessage } from '../orders/entities/order-message.entity';
 import { WalletTopUpRequest } from '../payments/entities/wallet-topup-request.entity';
 import { STORAGE_PROVIDER, StorageProvider } from '../storage/storage-provider';
 
 /** Sub-folders under `uploads/` that the app actually writes to. */
-const ALLOWED_FOLDERS = ['orders', 'invoices', 'payments'];
+const ALLOWED_FOLDERS = ['orders', 'invoices', 'payments', 'chat'];
 
 /** Multer names files itself, so anything outside this charset is an attack. */
 const SAFE_NAME = /^[A-Za-z0-9._-]+$/;
@@ -37,6 +38,8 @@ export class FilesService {
     private readonly orderRepository: Repository<Order>,
     @InjectRepository(WalletTopUpRequest)
     private readonly topUpRepository: Repository<WalletTopUpRequest>,
+    @InjectRepository(OrderMessage)
+    private readonly messageRepository: Repository<OrderMessage>,
     @Inject(STORAGE_PROVIDER)
     private readonly storage: StorageProvider,
   ) {}
@@ -115,6 +118,12 @@ export class FilesService {
     // 📦 Item photo on an order: the customer, the assigned driver, and — while
     // the order is still taking offers — any driver, since they need to see what
     // is being requested before pricing it.
+    //
+    // 🔐 That last allowance stops at pharmacy orders. The pharmacy screen sends
+    // the prescription photo through this same field, so "any driver may look at
+    // a pending order's photo" meant every driver who was online could pull any
+    // customer's prescription. Bidding on a pharmacy run needs the medicine list
+    // — which is text on the order — not the scan.
     const itemsOrder = await this.orderRepository.findOne({
       where: { itemsImageUrl: relativePath },
     });
@@ -123,10 +132,24 @@ export class FilesService {
       if (itemsOrder.acceptedDriverId === user.sub) return true;
       if (
         user.role === UserRole.DELIVERY &&
-        itemsOrder.status === OrderStatus.PENDING_OFFERS
+        itemsOrder.status === OrderStatus.PENDING_OFFERS &&
+        itemsOrder.orderType !== OrderType.PHARMACY
       ) {
         return true;
       }
+    }
+
+    // 💊 Prescription, when it was stored in its own column: the two parties
+    // only, never a browsing driver.
+    const prescriptionOrder = await this.orderRepository.findOne({
+      where: { prescriptionImageUrl: relativePath },
+    });
+    if (
+      prescriptionOrder &&
+      (prescriptionOrder.customerId === user.sub ||
+        prescriptionOrder.acceptedDriverId === user.sub)
+    ) {
+      return true;
     }
 
     // 🧾 Purchase receipt: strictly the two parties to that order.
@@ -146,6 +169,25 @@ export class FilesService {
       where: { proofImageUrl: relativePath },
     });
     if (topUp && topUp.driverId === user.sub) return true;
+
+    // 💬 Chat attachment: the two parties to the order it was sent on. A driver
+    // browsing the marketplace is not a party — by the time a conversation
+    // exists the order already has an assigned driver.
+    const message = await this.messageRepository.findOne({
+      where: { attachmentUrl: relativePath },
+    });
+    if (message) {
+      const chatOrder = await this.orderRepository.findOne({
+        where: { id: message.orderId },
+      });
+      if (
+        chatOrder &&
+        (chatOrder.customerId === user.sub ||
+          chatOrder.acceptedDriverId === user.sub)
+      ) {
+        return true;
+      }
+    }
 
     return false;
   }

@@ -21,6 +21,8 @@ import { PaymentsService } from '../payments/payments.service';
 import { User, UserRole } from '../users/entities/user.entity';
 import { AuthUser } from '../auth/current-user';
 import { WalletTransaction } from '../payments/entities/wallet-transaction.entity';
+import { OrderItem } from './entities/order-item.entity';
+import { CatalogService } from '../catalog/catalog.service';
 
 /**
  * Delivery completion and the money that moves with it.
@@ -125,6 +127,15 @@ describe('OrdersService — completion & settlement', () => {
         {
           provide: getRepositoryToken(User),
           useValue: { findOne: () => Promise.resolve(null) },
+        },
+        {
+          // Itemised orders only: this suite settles, it never builds a cart.
+          provide: getRepositoryToken(OrderItem),
+          useValue: { insert: jest.fn().mockResolvedValue(undefined) },
+        },
+        {
+          provide: CatalogService,
+          useValue: { getSellableProducts: jest.fn().mockResolvedValue([]) },
         },
         {
           provide: PricingService,
@@ -308,6 +319,8 @@ describe('OrdersService — completion & settlement', () => {
           useValue: { create: (v: unknown) => v, save: jest.fn() },
         },
         { provide: getRepositoryToken(User), useValue: {} },
+        { provide: getRepositoryToken(OrderItem), useValue: {} },
+        { provide: CatalogService, useValue: {} },
         {
           provide: PricingService,
           useValue: {

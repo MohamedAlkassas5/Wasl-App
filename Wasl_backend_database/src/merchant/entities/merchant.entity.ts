@@ -2,6 +2,7 @@ import {
   Entity,
   PrimaryGeneratedColumn,
   Column,
+  OneToMany,
   OneToOne,
   JoinColumn,
   CreateDateColumn,
@@ -9,6 +10,8 @@ import {
 } from 'typeorm';
 
 import { User } from '../../users/entities/user.entity';
+import { MenuCategory } from '../../catalog/entities/menu-category.entity';
+import { Product } from '../../catalog/entities/product.entity';
 
 export enum MerchantStatus {
   PENDING = 'pending',
@@ -92,6 +95,20 @@ export class Merchant {
     nullable: true,
   })
   adminNotes?: string;
+
+  /**
+   * The merchant's own catalog.
+   *
+   * There is no separate `Restaurant` entity: a restaurant, a pharmacy and a
+   * shop are all merchants distinguished by {@link storeType}. Keeping a
+   * second business entity alongside this one is what made the customer app
+   * hand a `merchants.id` to a lookup against a different table entirely.
+   */
+  @OneToMany(() => MenuCategory, (category) => category.merchant)
+  menuCategories!: MenuCategory[];
+
+  @OneToMany(() => Product, (product) => product.merchant)
+  products!: Product[];
 
   @CreateDateColumn({
     name: 'created_at',

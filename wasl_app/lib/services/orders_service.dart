@@ -425,7 +425,7 @@ class FlutterOrdersService {
     String? storeName,
     required String itemsDescription,
     required String deliveryAddressText,
-    required double itemsPrice,
+    double? itemsPrice,
     required double latitude,
     required double longitude,
     double? pickupLatitude,
@@ -433,6 +433,12 @@ class FlutterOrdersService {
     String? pickupAddressText,
     int? pickupZoneId,
     int? dropoffZoneId,
+    String? orderType,
+    int? merchantId,
+    List<Map<String, dynamic>>? items,
+    String? pharmacyName,
+    String? recipientPhone,
+    String? recipientName,
   }) async {
     final url = Uri.parse('$baseUrl/orders/create');
     try {
@@ -447,9 +453,17 @@ class FlutterOrdersService {
           'storeName': storeName ?? 'غير محدد',
           'itemsDescription': itemsDescription,
           'deliveryAddressText': deliveryAddressText,
-          'itemsPrice': itemsPrice,
+          // بيتبعت بس للطلبات اللي مفيهاش أصناف من كتالوج (صيدلية / وصللي /
+          // هاتلي)، وساعتها هو تقدير العميل. الطلب المفصّل السيرفر بيحسبه.
+          if (itemsPrice != null) 'itemsPrice': itemsPrice,
           'latitude': latitude,
           'longitude': longitude,
+          if (orderType != null) 'orderType': orderType,
+          if (merchantId != null) 'merchantId': merchantId,
+          if (items != null && items.isNotEmpty) 'items': items,
+          if (pharmacyName != null) 'pharmacyName': pharmacyName,
+          if (recipientPhone != null) 'recipientPhone': recipientPhone,
+          if (recipientName != null) 'recipientName': recipientName,
           if (pickupLatitude != null) 'pickupLatitude': pickupLatitude,
           if (pickupLongitude != null) 'pickupLongitude': pickupLongitude,
           if (pickupAddressText != null) 'pickupAddressText': pickupAddressText,
@@ -513,6 +527,12 @@ class FlutterOrdersService {
     required double latitude,
     required double longitude,
     File? itemsImage,
+    String? orderType,
+    String? pharmacyName,
+    int? pickupZoneId,
+    int? dropoffZoneId,
+    String? recipientPhone,
+    String? recipientName,
   }) async {
     final url = Uri.parse('$baseUrl/orders/create');
     try {
@@ -527,6 +547,20 @@ class FlutterOrdersService {
       request.fields['itemsPrice'] = itemsPrice.toString();
       request.fields['latitude'] = latitude.toString();
       request.fields['longitude'] = longitude.toString();
+      if (orderType != null) request.fields['orderType'] = orderType;
+      if (pharmacyName != null) request.fields['pharmacyName'] = pharmacyName;
+      if (pickupZoneId != null) {
+        request.fields['pickupZoneId'] = pickupZoneId.toString();
+      }
+      if (dropoffZoneId != null) {
+        request.fields['dropoffZoneId'] = dropoffZoneId.toString();
+      }
+      if (recipientPhone != null) {
+        request.fields['recipientPhone'] = recipientPhone;
+      }
+      if (recipientName != null) {
+        request.fields['recipientName'] = recipientName;
+      }
 
       final headers = await _headers();
       headers.remove('Content-Type');

@@ -7,6 +7,7 @@ import { PaymentsService } from './payments.service';
 import { PaymentsController } from './payments.controller';
 import { AdminPaymentsController } from './admin-payments.controller';
 import { SettingsModule } from '../settings/settings.module';
+import { StorageModule } from '../storage/storage.module';
 
 @Module({
   imports: [
@@ -16,6 +17,8 @@ import { SettingsModule } from '../settings/settings.module';
       DeliveryPartner,
     ]),
     SettingsModule,
+    // Top-up proof screenshots go through the configured storage backend.
+    StorageModule,
   ],
   controllers: [PaymentsController, AdminPaymentsController],
   providers: [PaymentsService],

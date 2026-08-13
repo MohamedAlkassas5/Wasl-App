@@ -10,7 +10,6 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { CatalogService } from './catalog.service';
-import { CreateRestaurantDto } from './dto/create-restaurant.dto';
 import { CreateMenuCategoryDto } from './dto/create-menu-category.dto';
 import { CreateProductDto } from './dto/create-product.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
@@ -22,28 +21,31 @@ import { UserRole } from '../users/entities/user.entity';
 export class CatalogController {
   constructor(private readonly service: CatalogService) {}
 
-  @Get('restaurants') list(@Query('all') all?: string) {
-    return this.service.listRestaurants(all === 'true');
+  /** Approved merchants; `?type=مطاعم` narrows to one store type. */
+  @Get('merchants')
+  listMerchants(@Query('type') type?: string) {
+    return this.service.listMerchants(type);
   }
-  @Get('restaurants/:id/menu') menu(@Param('id', ParseIntPipe) id: number) {
+
+  @Get('merchants/:id/menu')
+  menu(@Param('id', ParseIntPipe) id: number) {
     return this.service.getMenu(id);
   }
 
-  @Post('admin/restaurants')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.ADMIN)
-  createRestaurant(@Body() dto: CreateRestaurantDto) {
-    return this.service.createRestaurant(dto);
+  /**
+   * @deprecated Aliases kept so app builds already on customers' phones keep
+   * working. They now resolve a **merchant** id, which is what those builds
+   * were sending all along — the id came from `/stores/nearby` and was only
+   * ever mislabelled. Remove once the old builds are out of circulation.
+   */
+  @Get('restaurants')
+  listRestaurantsAlias(@Query('type') type?: string) {
+    return this.service.listMerchants(type);
   }
 
-  @Patch('admin/restaurants/:id')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.ADMIN)
-  updateRestaurant(
-    @Param('id', ParseIntPipe) id: number,
-    @Body() dto: Partial<CreateRestaurantDto>,
-  ) {
-    return this.service.updateRestaurant(id, dto);
+  @Get('restaurants/:id/menu')
+  menuAlias(@Param('id', ParseIntPipe) id: number) {
+    return this.service.getMenu(id);
   }
 
   @Post('admin/catalog/categories')

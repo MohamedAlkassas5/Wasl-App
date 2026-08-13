@@ -582,6 +582,10 @@ class WaslLocationSelectionScreen extends StatefulWidget {
   final int? pickupZoneId;
   final int? dropoffZoneId;
 
+  /// Recipient details for a Waslly run, carried through untouched.
+  final String? recipientName;
+  final String? recipientPhone;
+
   const WaslLocationSelectionScreen({
     Key? key,
     required this.category,
@@ -593,6 +597,8 @@ class WaslLocationSelectionScreen extends StatefulWidget {
     required this.longitude,
     this.pickupZoneId,
     this.dropoffZoneId,
+    this.recipientName,
+    this.recipientPhone,
   }) : super(key: key);
 
   @override
@@ -648,6 +654,8 @@ class _WaslLocationSelectionScreenState extends State<WaslLocationSelectionScree
           longitude: widget.longitude,
           pickupZoneId: widget.pickupZoneId,
           dropoffZoneId: widget.dropoffZoneId,
+          recipientName: widget.recipientName,
+          recipientPhone: widget.recipientPhone,
         ),
       ),
     );

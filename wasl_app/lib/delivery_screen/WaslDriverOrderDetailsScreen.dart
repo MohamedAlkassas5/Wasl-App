@@ -330,6 +330,7 @@ import 'package:wasl_app/core/theme/app_colors.dart';
 import 'package:wasl_app/core/utils/phone_format.dart';
 import 'package:wasl_app/delivery_screen/WaslSubmitBidDialog.dart';
 import 'package:wasl_app/services/orders_service.dart';
+import 'package:wasl_app/customer_screen/chat/WaslOrderChatScreen.dart';
 
 class WaslDriverOrderDetailsScreen extends StatefulWidget {
   final Map<String, dynamic> orderData;
@@ -421,6 +422,25 @@ class _WaslDriverOrderDetailsScreenState extends State<WaslDriverOrderDetailsScr
         elevation: 0,
         centerTitle: true,
         title: const Text('تفاصيل الرحلة', style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold, fontFamily: 'Cairo')),
+        actions: [
+          // 💬 المحادثة متاحة للكابتن المسند له الطلب بس — السيرفر بيرفض
+          // غيره، فما بنعرضش الزرار أصلاً وهو لسه بيتصفح السوق.
+          if (_liveOrderData['acceptedDriverId'] != null)
+            IconButton(
+              tooltip: 'محادثة الطلب',
+              icon: const Icon(Icons.chat_bubble_outline, color: AppColors.primary),
+              onPressed: () {
+                final orderId = int.tryParse(_liveOrderData['id']?.toString() ?? '');
+                if (orderId == null) return;
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => WaslOrderChatScreen(orderId: orderId),
+                  ),
+                );
+              },
+            ),
+        ],
       ),
       body: _isFirstLoading
           ? const Center(child: CircularProgressIndicator(color: AppColors.primary))

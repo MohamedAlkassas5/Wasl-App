@@ -19,6 +19,8 @@ class _WaslOrderDetailsFormScreenState extends State<WaslOrderDetailsFormScreen>
   final _itemsDescriptionController = TextEditingController();
   final _deliveryAddressController = TextEditingController();
   final _itemsPriceController = TextEditingController();
+  final _recipientNameController = TextEditingController();
+  final _recipientPhoneController = TextEditingController();
   final _zonesService = ZonesService();
 
   double? _latitude;
@@ -39,6 +41,8 @@ class _WaslOrderDetailsFormScreenState extends State<WaslOrderDetailsFormScreen>
     _itemsDescriptionController.dispose();
     _deliveryAddressController.dispose();
     _itemsPriceController.dispose();
+    _recipientNameController.dispose();
+    _recipientPhoneController.dispose();
     super.dispose();
   }
 
@@ -182,6 +186,25 @@ class _WaslOrderDetailsFormScreenState extends State<WaslOrderDetailsFormScreen>
                       const Text('📝 ماذا تريد؟ (الطلبات والكميات)', style: TextStyle(fontWeight: FontWeight.bold, fontFamily: 'Cairo')),
                       const SizedBox(height: 10),
                       TextField(controller: _itemsDescriptionController, maxLines: 4, decoration: _inputDecoration('أريد: 2 لتر لبن، 1 كيلو أرز...')),
+                      const SizedBox(height: 20),
+
+                      // 📦 المستلم — لو الشحنة رايحة لحد تاني غير صاحب الطلب.
+                      const Text('👤 المستلم (اختياري)', style: TextStyle(fontWeight: FontWeight.bold, fontFamily: 'Cairo')),
+                      const SizedBox(height: 10),
+                      TextField(controller: _recipientNameController, decoration: _inputDecoration('اسم المستلم لو غيرك')),
+                      const SizedBox(height: 10),
+                      TextField(
+                        controller: _recipientPhoneController,
+                        keyboardType: TextInputType.phone,
+                        decoration: _inputDecoration('رقم هاتف المستلم'),
+                      ),
+                      const Padding(
+                        padding: EdgeInsets.only(top: 6, right: 4),
+                        child: Text(
+                          'الرقم ده مش بيظهر لأي كابتن غير اللي هيقبل الطلب فعلاً',
+                          style: TextStyle(fontSize: 11, color: AppColors.textSecondary, fontFamily: 'Cairo'),
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -227,6 +250,8 @@ class _WaslOrderDetailsFormScreenState extends State<WaslOrderDetailsFormScreen>
                           longitude: _longitude!,
                           pickupZoneId: _fromArea!.id,
                           dropoffZoneId: _toArea!.id,
+                          recipientName: _recipientNameController.text.trim(),
+                          recipientPhone: _recipientPhoneController.text.trim(),
                         ),
                       ),
                     );

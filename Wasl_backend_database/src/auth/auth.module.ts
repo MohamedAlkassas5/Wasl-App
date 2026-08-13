@@ -10,11 +10,14 @@ import { User } from '../users/entities/user.entity';
 import { DeliveryPartner } from '../delivery/entities/delivery-partner.entity';
 import { Merchant } from '../merchant/entities/merchant.entity';
 import { ZonesModule } from '../zones/zones.module';
+import { StorageModule } from '../storage/storage.module';
 
 @Module({
   imports: [
     // 🎯 حقن الكيانات الثلاثة معاً لكي يراهم الـ AuthService
     TypeOrmModule.forFeature([User, DeliveryPartner, Merchant]),
+    // Registration documents go through the configured storage backend.
+    StorageModule,
     JwtModule.register({
       global: true,
       secret: JWT_SECRET,

@@ -3,6 +3,9 @@ import 'package:flutter/material.dart';
 import 'package:wasl_app/core/theme/app_colors.dart';
 // 🎯 استيراد الـ Service الخاصة بالطلبات
 import 'package:wasl_app/services/orders_service.dart';
+// 💬 محادثة الطلب — نفس الشاشة اللي بيستخدمها العميل
+import 'package:wasl_app/customer_screen/chat/WaslOrderChatScreen.dart';
+import 'package:wasl_app/services/chat_service.dart';
 
 class WaslDriverJobExecutionScreen extends StatefulWidget {
   // 1️⃣ [تم التحديث]: استقبال كائن البيانات الحي والشامل للطلب المقبول من قاعدة البيانات
@@ -61,6 +64,13 @@ class _WaslDriverJobExecutionScreenState extends State<WaslDriverJobExecutionScr
     if (_currentStep == 2) {
       if (!_formKey.currentState!.validate()) return;
       _receiptPrice = double.parse(_receiptPriceController.text.trim());
+
+      // 💰 السعر مش بتاع الكابتن يغيّره لوحده. لو الفاتورة طلعت مختلفة عن
+      // السعر المتفق عليه، بيتبعت طلب تعديل للعميل ويستنى موافقته — السيرفر
+      // كمان بيرفض أي تعديل مباشر، فده مش مجرد فحص في التطبيق.
+      final approved = await _ensurePriceApproved(parsedOrderId, _receiptPrice);
+      if (!approved || !mounted) return;
+
       _isReceiptConfirmed = true;
       priceToSend = _receiptPrice;
     }
@@ -103,6 +113,75 @@ class _WaslDriverJobExecutionScreenState extends State<WaslDriverJobExecutionScr
     }
   }
 
+  /// هل السعر اللي الكابتن كتبه معتمد من العميل؟
+  ///
+  /// بيقارن بالسعر اللي على الطلب في السيرفر دلوقتي (مش النسخة المحفوظة في
+  /// الشاشة). لو نفس السعر → كمّل عادي. لو مختلف → بيتبعت طلب تعديل وبيستنى.
+  Future<bool> _ensurePriceApproved(int orderId, double receiptPrice) async {
+    setState(() => _isLoading = true);
+    final details = await _ordersService.getOrderCustomerDetails(orderId);
+    if (!mounted) return false;
+    setState(() => _isLoading = false);
+
+    if (details['success'] != true) {
+      _showSnackBar('تعذّر التأكد من سعر الطلب، حاول تاني', AppColors.danger);
+      return false;
+    }
+
+    final serverPrice =
+        double.tryParse(details['data']?['itemsPrice']?.toString() ?? '') ?? 0;
+
+    // فرق أقل من قرش يعتبر نفس الرقم.
+    if ((serverPrice - receiptPrice).abs() < 0.01) return true;
+
+    final send = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text('السعر مختلف عن المتفق عليه',
+            style: TextStyle(fontFamily: 'Cairo')),
+        content: Text(
+          'السعر على الطلب ${serverPrice.toStringAsFixed(2)} ج.م، والفاتورة '
+          '${receiptPrice.toStringAsFixed(2)} ج.م.\n\n'
+          'العميل لازم يوافق على التعديل قبل ما تكمّل.',
+          style: const TextStyle(fontFamily: 'Cairo'),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('رجوع'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('اطلب موافقة العميل'),
+          ),
+        ],
+      ),
+    );
+    if (send != true || !mounted) return false;
+
+    final result = await WaslChatService().proposePriceChange(
+      orderId,
+      newItemsPrice: receiptPrice,
+      reason: 'سعر الفاتورة الفعلي',
+    );
+    if (!mounted) return false;
+
+    // 409 معناها فيه طلب مستني رد أصلاً — الاتنين بيروحوا نفس المكان.
+    _showSnackBar(
+      result['success'] == true
+          ? 'تم إرسال طلب تعديل السعر للعميل، استنى موافقته'
+          : (result['message']?.toString() ?? 'تعذّر إرسال طلب التعديل'),
+      result['success'] == true ? AppColors.primary : AppColors.danger,
+    );
+
+    await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => WaslOrderChatScreen(orderId: orderId)),
+    );
+    return false;
+  }
+
   void _showSnackBar(String text, Color bg) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(text, style: const TextStyle(fontFamily: 'Cairo')), backgroundColor: bg, behavior: SnackBarBehavior.floating),
@@ -135,6 +214,24 @@ class _WaslDriverJobExecutionScreenState extends State<WaslDriverJobExecutionScr
           style: const TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.bold, fontFamily: 'Cairo', fontSize: 16),
         ),
         centerTitle: true,
+        actions: [
+          // 💬 محادثة الطلب: من هنا الكابتن بيطلب تعديل السعر لو اختلف عن
+          // المتوقع — ما بقاش ينفع يكتبه بنفسه من غير موافقة العميل.
+          IconButton(
+            tooltip: 'محادثة الطلب',
+            icon: const Icon(Icons.chat_bubble_outline, color: AppColors.primary),
+            onPressed: () {
+              final orderId = int.tryParse(safeOrderId);
+              if (orderId == null) return;
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => WaslOrderChatScreen(orderId: orderId),
+                ),
+              );
+            },
+          ),
+        ],
       ),
       body: Directionality(
         textDirection: TextDirection.rtl,

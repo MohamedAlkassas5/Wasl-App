@@ -297,6 +297,7 @@ import 'package:latlong2/latlong.dart';
 import 'package:wasl_app/core/theme/app_colors.dart';
 import 'package:wasl_app/core/utils/phone_format.dart';
 import 'package:wasl_app/delivery_screen/WaslDriverRatingScreen.dart';
+import 'package:wasl_app/customer_screen/chat/WaslOrderChatScreen.dart';
 import 'package:wasl_app/customer_screen/order_anywhere/WaslOrderInvoiceScreen.dart';
 import 'package:wasl_app/services/orders_service.dart';
 
@@ -364,6 +365,19 @@ class _WaslOrderTrackingScreenState extends State<WaslOrderTrackingScreen> {
     });
   }
 
+  /// يفتح محادثة الطلب. نفس الشاشة اللي بيستخدمها الكابتن.
+  void _openChat() {
+    final orderId = int.tryParse(_liveOrder['id']?.toString() ?? '');
+    if (orderId == null) return;
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => WaslOrderChatScreen(orderId: orderId),
+      ),
+    );
+  }
+
   void _showConfirmationDialog(Map<String, dynamic> orderData) {
     showDialog(
       context: context,
@@ -428,10 +442,20 @@ class _WaslOrderTrackingScreenState extends State<WaslOrderTrackingScreen> {
                       children: [
                         CircleAvatar(backgroundColor: AppColors.primary, child: const Icon(Icons.person, color: Colors.white)),
                         const SizedBox(width: 15),
-                        Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                          Text(name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                          Text('⭐ $rating | 📞 $phone', style: TextStyle(color: Colors.grey[600])),
-                        ]),
+                        Expanded(
+                          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                            Text(name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                            Text('⭐ $rating | 📞 $phone', style: TextStyle(color: Colors.grey[600])),
+                          ]),
+                        ),
+                        // 💬 المحادثة بتفتح بعد ما الطلب يتسند لكابتن — قبل كده
+                        // مفيش طرف تاني أصلاً، والسيرفر بيرفض الكتابة.
+                        if (_liveOrder['acceptedDriverId'] != null)
+                          IconButton(
+                            tooltip: 'محادثة الطلب',
+                            icon: const Icon(Icons.chat_bubble_outline, color: AppColors.primary),
+                            onPressed: _openChat,
+                          ),
                       ],
                     ),
                   ),

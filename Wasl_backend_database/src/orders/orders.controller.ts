@@ -14,19 +14,17 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { diskStorage } from 'multer';
-import { extname } from 'path';
-import { existsSync, mkdirSync } from 'fs';
 
 import { OrdersService } from './orders.service';
+import { UploadService } from '../storage/upload.service';
 import { OrderStatus } from './entities/order.entity';
-import { CreateOrderDto } from './dto/create-order.dto';
+import { plainToInstance } from 'class-transformer';
+
+import { CreateOrderDto, OrderItemDto } from './dto/create-order.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CurrentUser, AuthUser, assertSelfOrAdmin } from '../auth/current-user';
 import { imageUploadPolicy } from '../common/upload-policy';
 import { UserRole } from '../users/entities/user.entity';
-
-const orderUploadPath = './uploads/orders';
 
 // 🔐 Every order/wallet/offer/notification route requires a valid JWT, AND the
 // caller's own id (from the token) is what identifies them — ids in the URL or
@@ -36,27 +34,14 @@ const orderUploadPath = './uploads/orders';
 @Controller('orders')
 @UseGuards(JwtAuthGuard)
 export class OrdersController {
-  constructor(private readonly ordersService: OrdersService) {}
+  constructor(
+    private readonly ordersService: OrdersService,
+    private readonly uploadService: UploadService,
+  ) {}
 
   @Post('create')
-  @UseInterceptors(
-    FileInterceptor('itemsImage', {
-      ...imageUploadPolicy,
-      storage: diskStorage({
-        destination: (_req, _file, cb) => {
-          if (!existsSync(orderUploadPath)) {
-            mkdirSync(orderUploadPath, { recursive: true });
-          }
-          cb(null, orderUploadPath);
-        },
-        filename: (_req, file, cb) => {
-          const uniqueSuffix = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
-          cb(null, `order-${uniqueSuffix}${extname(file.originalname)}`);
-        },
-      }),
-    }),
-  )
-  create(
+  @UseInterceptors(FileInterceptor('itemsImage', imageUploadPolicy))
+  async create(
     @CurrentUser() user: AuthUser,
     @UploadedFile() file: Express.Multer.File,
     @Body() createOrderDto: CreateOrderDto,
@@ -69,14 +54,18 @@ export class OrdersController {
     // customerId is ignored so nobody can place orders in someone else's name.
     createOrderDto.customerId = user.sub;
 
-    // 2. معالجة وتأمين قائمة الأصناف
+    // 2. Cart lines arrive as a JSON string on the multipart path (a form field
+    //    cannot carry an array). A malformed value is rejected rather than
+    //    coerced into a one-element array of garbage, which is what used to
+    //    happen — the resulting "item" then failed validation much later with
+    //    an error that pointed nowhere near the real problem.
     if (typeof createOrderDto.items === 'string') {
       try {
-        createOrderDto.items = JSON.parse(createOrderDto.items) as unknown[];
+        const parsed: unknown = JSON.parse(createOrderDto.items);
+        if (!Array.isArray(parsed)) throw new Error('not an array');
+        createOrderDto.items = plainToInstance(OrderItemDto, parsed);
       } catch {
-        createOrderDto.items = createOrderDto.items
-          ? [createOrderDto.items]
-          : [];
+        throw new BadRequestException('تعذّر قراءة أصناف الطلب');
       }
     } else if (!createOrderDto.items) {
       createOrderDto.items = [];
@@ -93,8 +82,15 @@ export class OrdersController {
       createOrderDto.itemsPrice = Number(createOrderDto.itemsPrice);
     }
 
-    if (file?.filename) {
-      createOrderDto.itemsImageUrl = `uploads/orders/${file.filename}`;
+    // Bytes go to the configured storage backend (local disk in dev, R2 in
+    // production) and we persist the key it hands back.
+    const itemsImageUrl = await this.uploadService.persistImage(
+      file,
+      'orders',
+      'order',
+    );
+    if (itemsImageUrl) {
+      createOrderDto.itemsImageUrl = itemsImageUrl;
     }
 
     return this.ordersService.createOrder(user.sub, createOrderDto);
@@ -104,7 +100,7 @@ export class OrdersController {
   // 🔐 The marketplace is always scoped to the calling driver.
   @Get('available')
   getAvailable(@CurrentUser() user: AuthUser) {
-    return this.ordersService.getAvailableOrders(user.sub);
+    return this.ordersService.getAvailableOrders(user.sub, user);
   }
 
   @Post(':id/accept')
@@ -308,33 +304,18 @@ export class OrdersController {
   // items price + receipt image and advances the order to "items_bought" so the
   // customer can review the real total before delivery.
   @Post(':id/invoice')
-  @UseInterceptors(
-    FileInterceptor('invoiceImage', {
-      ...imageUploadPolicy,
-      storage: diskStorage({
-        destination: (_req, _file, cb) => {
-          const invoicePath = './uploads/invoices';
-          if (!existsSync(invoicePath)) {
-            mkdirSync(invoicePath, { recursive: true });
-          }
-          cb(null, invoicePath);
-        },
-        filename: (_req, file, cb) => {
-          const suffix = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
-          cb(null, `invoice-${suffix}${extname(file.originalname)}`);
-        },
-      }),
-    }),
-  )
-  uploadInvoice(
+  @UseInterceptors(FileInterceptor('invoiceImage', imageUploadPolicy))
+  async uploadInvoice(
     @CurrentUser() user: AuthUser,
     @Param('id', ParseIntPipe) orderId: number,
     @UploadedFile() file: Express.Multer.File,
     @Body() body: { itemsPrice?: number },
   ) {
-    const invoiceImageUrl = file?.filename
-      ? `uploads/invoices/${file.filename}`
-      : undefined;
+    const invoiceImageUrl = await this.uploadService.persistImage(
+      file,
+      'invoices',
+      'invoice',
+    );
     return this.ordersService.updateStatus(
       orderId,
       OrderStatus.ITEMS_BOUGHT,

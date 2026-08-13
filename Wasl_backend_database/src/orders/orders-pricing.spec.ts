@@ -11,6 +11,8 @@ import { DeliveryService } from '../delivery/delivery.service';
 import { PaymentsService } from '../payments/payments.service';
 import { User } from '../users/entities/user.entity';
 import { CreateOrderDto } from './dto/create-order.dto';
+import { OrderItem } from './entities/order-item.entity';
+import { CatalogService } from '../catalog/catalog.service';
 
 /**
  * Who decides what a delivery costs.
@@ -100,6 +102,15 @@ describe('OrdersService (pricing authority)', () => {
           useValue: {
             findOne: () => Promise.resolve({ id: CUSTOMER_ID, customerZoneId }),
           },
+        },
+        {
+          // Itemised orders only: these suites never build a cart.
+          provide: getRepositoryToken(OrderItem),
+          useValue: { insert: jest.fn().mockResolvedValue(undefined) },
+        },
+        {
+          provide: CatalogService,
+          useValue: { getSellableProducts: jest.fn().mockResolvedValue([]) },
         },
         { provide: PricingService, useValue: pricingService },
         {

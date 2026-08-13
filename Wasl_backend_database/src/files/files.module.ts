@@ -6,6 +6,7 @@ import { FilesService } from './files.service';
 import { DeliveryPartner } from '../delivery/entities/delivery-partner.entity';
 import { Merchant } from '../merchant/entities/merchant.entity';
 import { Order } from '../orders/entities/order.entity';
+import { OrderMessage } from '../orders/entities/order-message.entity';
 import { WalletTopUpRequest } from '../payments/entities/wallet-topup-request.entity';
 
 @Module({
@@ -15,6 +16,7 @@ import { WalletTopUpRequest } from '../payments/entities/wallet-topup-request.en
       Merchant,
       Order,
       WalletTopUpRequest,
+      OrderMessage,
     ]),
   ],
   controllers: [FilesController],

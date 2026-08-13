@@ -1,18 +1,28 @@
-import { Column, Entity, ManyToOne, PrimaryGeneratedColumn } from 'typeorm';
-import { Restaurant } from './restaurant.entity';
+import {
+  Column,
+  Entity,
+  JoinColumn,
+  Index,
+  ManyToOne,
+  PrimaryGeneratedColumn,
+} from 'typeorm';
+import { Merchant } from '../../merchant/entities/merchant.entity';
 
+/** A tab inside a merchant's menu — "وجبات رئيسية", "مشروبات". */
 @Entity('menu_categories')
+@Index('idx_menu_categories_merchant', ['merchantId'])
 export class MenuCategory {
   @PrimaryGeneratedColumn()
   id!: number;
 
-  @Column()
-  restaurantId!: number;
+  @Column({ name: 'merchant_id' })
+  merchantId!: number;
 
-  @ManyToOne(() => Restaurant, (restaurant) => restaurant.categories, {
+  @ManyToOne(() => Merchant, (merchant) => merchant.menuCategories, {
     onDelete: 'CASCADE',
   })
-  restaurant!: Restaurant;
+  @JoinColumn({ name: 'merchant_id' })
+  merchant!: Merchant;
 
   @Column({ length: 120 })
   name!: string;

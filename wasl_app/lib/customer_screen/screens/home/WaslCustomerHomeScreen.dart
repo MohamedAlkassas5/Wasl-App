@@ -536,6 +536,7 @@ import 'package:wasl_app/customer_screen/restaurants/WaslOffersCarousel.dart';
 import 'package:wasl_app/customer_screen/screens/home/wasl_home_categories.dart';
 import 'package:wasl_app/customer_screen/screens/home/WaslServiceComingSoonScreen.dart';
 import 'package:wasl_app/customer_screen/order_anywhere/WaslOrderCategoryScreen.dart';
+import 'package:wasl_app/customer_screen/pharmacy/WaslPharmacyRequestScreen.dart';
 import 'package:wasl_app/customer_screen/profile/WaslSettingsScreen.dart';
 import 'package:wasl_app/customer_screen/cart_orders/WaslMyOrdersScreen.dart';
 import 'package:wasl_app/customer_screen/profile/WaslCustomerWalletScreen.dart';
@@ -734,6 +735,29 @@ class _WaslCustomerHomeScreenState extends State<WaslCustomerHomeScreen> {
             builder: (_) => const WaslCategoryDetailsScreen(
               categoryFilter: 'مطاعم',
               title: 'مطاعم',
+            ),
+          ),
+        );
+        break;
+
+      // الصيدلية طلب نصي مع صورة روشتة اختيارية — الصيدليات مش بتنشر كتالوج.
+      case 'pharmacy':
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => const WaslPharmacyRequestScreen(),
+          ),
+        );
+        break;
+
+      // المتاجر بتستخدم نفس كتالوج التجار بتاع المطاعم، مفلتر بنوع المتجر.
+      case 'stores':
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => const WaslCategoryDetailsScreen(
+              categoryFilter: 'متاجر',
+              title: 'المتاجر',
             ),
           ),
         );

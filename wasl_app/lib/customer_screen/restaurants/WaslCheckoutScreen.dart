@@ -811,24 +811,26 @@ class _WaslCheckoutScreenState extends State<WaslCheckoutScreen> {
 
     final note = _noteController.text.trim();
     final description = [
-      _cart.asOrderDescription,
       if (note.isNotEmpty) 'ملاحظات للكابتن: $note',
       if (_mode == FulfilmentMode.pickup) 'استلام من المطعم (بدون توصيل)',
-      _payment == CheckoutPaymentMethod.wallet
-          ? 'الدفع: محفظة فلاش'
-          : 'الدفع: نقداً عند الاستلام',
+      'الدفع: نقداً عند الاستلام',
     ].join('\n');
 
+    // 🛒 السلة بتتبعت كأصناف منظّمة — منتج وحجم وإضافات وكمية. السيرفر هو
+    // اللي بيجيب الأسعار من كتالوج التاجر ويحسب الإجمالي، فالتطبيق مش بيبعت
+    // فلوس أصلاً.
     final result = await _orders.createOrder(
       customerId: customerId,
       customerName: customerName,
       customerPhone: customerPhone,
       categoryType: 'مطاعم',
+      orderType: 'restaurant',
+      merchantId: _cart.merchantId,
       storeName: _cart.merchantName,
+      items: _cart.asOrderItems,
       itemsDescription: description,
       deliveryAddressText:
           address.isEmpty ? 'استلام من المطعم' : address,
-      itemsPrice: _subtotal,
       latitude: destLat,
       longitude: destLng,
       pickupLatitude: _cart.merchantLat,

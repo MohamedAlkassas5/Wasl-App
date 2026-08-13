@@ -1,75 +1,155 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import { Restaurant } from './entities/restaurant.entity';
+import { In, Repository } from 'typeorm';
 import { MenuCategory } from './entities/menu-category.entity';
 import { Product } from './entities/product.entity';
-import { CreateRestaurantDto } from './dto/create-restaurant.dto';
+import { ProductAddon, ProductSize } from './entities/product-option.entity';
+import { Merchant, MerchantStatus } from '../merchant/entities/merchant.entity';
 import { CreateMenuCategoryDto } from './dto/create-menu-category.dto';
 import { CreateProductDto } from './dto/create-product.dto';
 
+/** The shape a size or add-on is exposed to the app in. */
+function toOption(option: ProductSize | ProductAddon) {
+  return { id: option.id, name: option.name, price: Number(option.price) };
+}
+
+/**
+ * A merchant's catalog.
+ *
+ * There is no separate restaurant catalog: a restaurant, a pharmacy and a shop
+ * are merchants that differ by `storeType`, and they all read through here.
+ */
 @Injectable()
 export class CatalogService {
   constructor(
-    @InjectRepository(Restaurant)
-    private readonly restaurants: Repository<Restaurant>,
+    @InjectRepository(Merchant)
+    private readonly merchants: Repository<Merchant>,
     @InjectRepository(MenuCategory)
     private readonly categories: Repository<MenuCategory>,
     @InjectRepository(Product) private readonly products: Repository<Product>,
+    @InjectRepository(ProductSize)
+    private readonly sizes: Repository<ProductSize>,
+    @InjectRepository(ProductAddon)
+    private readonly addons: Repository<ProductAddon>,
   ) {}
 
-  listRestaurants(includeInactive = false) {
-    return this.restaurants.find({
-      where: includeInactive ? {} : { isActive: true },
-      order: { name: 'ASC' },
+  /** Approved merchants, optionally narrowed to one store type. */
+  listMerchants(storeType?: string) {
+    return this.merchants.find({
+      where: {
+        status: MerchantStatus.APPROVED,
+        ...(storeType ? { storeType } : {}),
+      },
+      order: { storeName: 'ASC' },
     });
   }
 
-  async getMenu(id: number) {
-    const restaurant = await this.restaurants.findOne({
-      where: { id, isActive: true },
+  /**
+   * The menu a customer sees.
+   *
+   * Only approved merchants resolve — an unapproved store is not open for
+   * business, and its catalog must not be browsable through a guessed id.
+   * Sizes and add-ons are attached to their products in one pass rather than
+   * a query per item.
+   */
+  async getMenu(merchantId: number) {
+    const merchant = await this.merchants.findOne({
+      where: { id: merchantId, status: MerchantStatus.APPROVED },
     });
-    if (!restaurant) throw new NotFoundException('Restaurant not found');
+    if (!merchant) throw new NotFoundException('المتجر غير متاح حالياً');
+
     const [categories, products] = await Promise.all([
       this.categories.find({
-        where: { restaurantId: id, isActive: true },
+        where: { merchantId, isActive: true },
         order: { sortOrder: 'ASC', name: 'ASC' },
       }),
       this.products.find({
-        where: { restaurantId: id, isAvailable: true },
+        where: { merchantId, isAvailable: true },
         order: { name: 'ASC' },
       }),
     ]);
-    return { restaurant, categories, products };
+
+    const productIds = products.map((p) => p.id);
+    const [sizes, addons] = productIds.length
+      ? await Promise.all([
+          this.sizes.find({
+            where: { productId: In(productIds), isAvailable: true },
+            order: { sortOrder: 'ASC' },
+          }),
+          this.addons.find({
+            where: { productId: In(productIds), isAvailable: true },
+            order: { sortOrder: 'ASC' },
+          }),
+        ])
+      : [[], []];
+
+    const byProduct = <T extends { productId: number }>(rows: T[]) =>
+      rows.reduce<Record<number, T[]>>((acc, row) => {
+        (acc[row.productId] ??= []).push(row);
+        return acc;
+      }, {});
+    const sizesFor = byProduct(sizes);
+    const addonsFor = byProduct(addons);
+
+    return {
+      // `restaurant` is kept alongside `merchant` so app builds already
+      // shipped keep rendering the header while they migrate.
+      merchant,
+      restaurant: merchant,
+      categories,
+      products: products.map((product) => ({
+        ...product,
+        sizes: (sizesFor[product.id] ?? []).map(toOption),
+        addons: (addonsFor[product.id] ?? []).map(toOption),
+      })),
+    };
   }
 
-  createRestaurant(dto: CreateRestaurantDto) {
-    return this.restaurants.save(this.restaurants.create(dto));
-  }
-  async updateRestaurant(id: number, dto: Partial<CreateRestaurantDto>) {
-    const entity = await this.restaurants.preload({ id, ...dto });
-    if (!entity) throw new NotFoundException('Restaurant not found');
-    return this.restaurants.save(entity);
-  }
-  async createCategory(dto: CreateMenuCategoryDto) {
-    const restaurant = await this.restaurants.findOneBy({
-      id: dto.restaurantId,
+  /**
+   * A single product with its options, resolved fresh from the catalog.
+   * Used when an order is placed, so the price charged is the merchant's
+   * price and not a number the client sent.
+   */
+  async getSellableProducts(merchantId: number, productIds: number[]) {
+    if (productIds.length === 0) return [];
+    const products = await this.products.find({
+      where: { id: In(productIds), merchantId, isAvailable: true },
     });
-    if (!restaurant) throw new NotFoundException('Restaurant not found');
+    const found = products.map((p) => p.id);
+    const [sizes, addons] = found.length
+      ? await Promise.all([
+          this.sizes.find({ where: { productId: In(found) } }),
+          this.addons.find({ where: { productId: In(found) } }),
+        ])
+      : [[], []];
+
+    return products.map((product) => ({
+      product,
+      sizes: sizes.filter((s) => s.productId === product.id),
+      addons: addons.filter((a) => a.productId === product.id),
+    }));
+  }
+
+  async createCategory(dto: CreateMenuCategoryDto) {
+    await this.assertMerchantExists(dto.merchantId);
     return this.categories.save(this.categories.create(dto));
   }
+
   async createProduct(dto: CreateProductDto) {
-    const restaurant = await this.restaurants.findOneBy({
-      id: dto.restaurantId,
-    });
-    if (!restaurant) throw new NotFoundException('Restaurant not found');
+    await this.assertMerchantExists(dto.merchantId);
     return this.products.save(
       this.products.create({ ...dto, isAvailable: dto.isAvailable ?? true }),
     );
   }
+
   async updateProduct(id: number, dto: Partial<CreateProductDto>) {
     const entity = await this.products.preload({ id, ...dto });
     if (!entity) throw new NotFoundException('Product not found');
     return this.products.save(entity);
+  }
+
+  private async assertMerchantExists(merchantId: number) {
+    const merchant = await this.merchants.findOneBy({ id: merchantId });
+    if (!merchant) throw new NotFoundException('المتجر غير موجود');
   }
 }

@@ -82,9 +82,15 @@ import { WalletTopUpRequest } from '../payments/entities/wallet-topup-request.en
 import { WalletTransaction } from '../payments/entities/wallet-transaction.entity';
 import { DeliveryZone } from '../zones/entities/delivery-zone.entity';
 import { DeliveryZoneRate } from '../zones/entities/delivery-zone-rate.entity';
-import { Restaurant } from '../catalog/entities/restaurant.entity';
 import { MenuCategory } from '../catalog/entities/menu-category.entity';
 import { Product } from '../catalog/entities/product.entity';
+import {
+  ProductAddon,
+  ProductSize,
+} from '../catalog/entities/product-option.entity';
+import { OrderItem } from '../orders/entities/order-item.entity';
+import { OrderMessage } from '../orders/entities/order-message.entity';
+import { OrderPriceProposal } from '../orders/entities/order-price-proposal.entity';
 
 /**
  * Every entity that maps to a table.
@@ -102,9 +108,13 @@ export const ENTITIES = [
   WalletTransaction,
   DeliveryZone,
   DeliveryZoneRate,
-  Restaurant,
   MenuCategory,
   Product,
+  ProductSize,
+  ProductAddon,
+  OrderItem,
+  OrderMessage,
+  OrderPriceProposal,
 ];
 
 export function buildDataSourceOptions(): DataSourceOptions {
