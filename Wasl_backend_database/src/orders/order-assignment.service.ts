@@ -23,6 +23,10 @@ import { DeliveryService } from '../delivery/delivery.service';
 import { SettingsService, SettingKey } from '../settings/settings.service';
 import { checkDriverEligibility } from '../delivery/driver-eligibility';
 import { isValidCoordinate } from '../common/geo.util';
+import {
+  NotificationsService,
+  NotificationKind,
+} from '../notifications/notifications.service';
 
 /**
  * How many drivers a single wave goes out to.
@@ -86,6 +90,7 @@ export class OrderAssignmentService {
     private readonly userRepository: Repository<User>,
     private readonly deliveryService: DeliveryService,
     private readonly settings: SettingsService,
+    private readonly notifications: NotificationsService,
   ) {}
 
   // ─── Reading ─────────────────────────────────────────────────────────────
@@ -221,6 +226,18 @@ export class OrderAssignmentService {
 
     this.logger.log(
       `📡 Order FL-${orderId} wave ${waveNumber} @ ${radiusKm}km → ${offered.length} driver(s)`,
+    );
+
+    // 🔔 Tell them. A sixty-second window is worthless if the driver only finds
+    // out by happening to refresh, which is why this lives here rather than at
+    // the creation site — every wave notifies, not just the first.
+    await this.notifyQuietly(() =>
+      this.notifications.notifyMany(
+        offered,
+        '📦 طلب توصيل جديد ليك!',
+        `طلب جديد قريب منك برسوم توصيل ${Number(order.estimatedDeliveryFee)} ج.م. عندك دقيقة تقبله.`,
+        { kind: NotificationKind.ORDER_OFFER, orderId },
+      ),
     );
 
     return { offered, waveNumber, radiusKm, exhausted: atCeiling };
@@ -420,6 +437,18 @@ export class OrderAssignmentService {
       { status: AssignmentStatus.EXPIRED },
     );
 
+    // 🔔 Close the loop for the drivers who ran out of time, so a stale offer
+    // does not sit in their list looking answerable. Deliberately quiet — no
+    // reproach, they may simply have been riding.
+    await this.notifyQuietly(() =>
+      this.notifications.notifyMany(
+        [...new Set(lapsed.map((a) => a.driverId))],
+        '⌛ انتهت مهلة العرض',
+        'انتهت مهلة قبول أحد الطلبات المعروضة عليك، وتم عرضه على كابتن آخر.',
+        { kind: NotificationKind.OFFER_EXPIRED },
+      ),
+    );
+
     const rewaved: number[] = [];
     const expiredOrders: number[] = [];
 
@@ -456,10 +485,46 @@ export class OrderAssignmentService {
       { id: orderId, status: OrderStatus.PENDING_OFFERS },
       { status: OrderStatus.EXPIRED },
     );
-    if (result.affected) {
-      this.logger.warn(`⌛ Order FL-${orderId} expired — no captain found`);
-      return true;
+    if (!result.affected) return false;
+
+    this.logger.warn(`⌛ Order FL-${orderId} expired — no captain found`);
+
+    // 🔔 The customer has been watching a spinner. Tell them plainly what
+    // happened and that they are free to try again — this is not a rejection
+    // and nothing was charged, so the wording says neither.
+    const order = await this.orderRepository.findOne({
+      where: { id: orderId },
+    });
+    if (order) {
+      await this.notifyQuietly(() =>
+        this.notifications.notify(
+          order.customerId,
+          '⌛ معلش، مفيش كابتن متاح دلوقتي',
+          `مقدرناش نلاقي كابتن لطلبك رقم FL-${orderId} في الوقت الحالي. تقدر تعيد الطلب تاني بعد شوية.`,
+          { kind: NotificationKind.ORDER_EXPIRED, orderId },
+        ),
+      );
     }
-    return false;
+
+    return true;
+  }
+
+  /**
+   * Runs a notification without letting it unwind the assignment that caused it.
+   *
+   * The offers are already written and the order's state already decided by the
+   * time any of these fire. Letting a notifier throw would not undo that — it
+   * would only abandon the rest of the sweep's loop, leaving other orders
+   * unprocessed for no better reason than one message failing to send.
+   */
+  private async notifyQuietly(send: () => Promise<unknown>): Promise<void> {
+    try {
+      await send();
+    } catch (error) {
+      this.logger.error(
+        'Assignment notification failed',
+        error instanceof Error ? error.message : String(error),
+      );
+    }
   }
 }

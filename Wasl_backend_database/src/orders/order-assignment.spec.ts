@@ -15,6 +15,10 @@ import {
 import { AccountStatus, User } from '../users/entities/user.entity';
 import { DeliveryService } from '../delivery/delivery.service';
 import { SettingsService } from '../settings/settings.service';
+import {
+  NotificationsService,
+  NotificationKind,
+} from '../notifications/notifications.service';
 
 /**
  * Who gets offered an order, for how long, and what happens when nobody says
@@ -47,6 +51,14 @@ describe('OrderAssignmentService', () => {
   let orderUpdates: Partial<Order>[];
   let service: OrderAssignmentService;
   let nextId: number;
+  /** Every notification the engine asked for, in order. */
+  let notified: {
+    to: number[];
+    title: string;
+    body: string;
+    kind?: NotificationKind;
+    orderId?: number;
+  }[];
 
   const partnerFor = (driverId: number): Partial<DeliveryPartner> => ({
     userId: driverId,
@@ -81,6 +93,7 @@ describe('OrderAssignmentService', () => {
     partnerOverrides = new Map();
     busyDrivers = new Set();
     orderUpdates = [];
+    notified = [];
     nextId = 1;
     order = {
       id: ORDER_ID,
@@ -175,6 +188,29 @@ describe('OrderAssignmentService', () => {
           useValue: {
             getNumber: (key: string, fallback: number) =>
               key === 'driver_search_radius_km' ? START_RADIUS : fallback,
+          },
+        },
+        {
+          provide: NotificationsService,
+          useValue: {
+            notify: (
+              to: number,
+              title: string,
+              body: string,
+              o: { kind?: NotificationKind; orderId?: number } = {},
+            ) => {
+              notified.push({ to: [to], title, body, ...o });
+              return Promise.resolve(undefined);
+            },
+            notifyMany: (
+              to: number[],
+              title: string,
+              body: string,
+              o: { kind?: NotificationKind; orderId?: number } = {},
+            ) => {
+              notified.push({ to, title, body, ...o });
+              return Promise.resolve(undefined);
+            },
           },
         },
       ],
@@ -475,6 +511,154 @@ describe('OrderAssignmentService', () => {
 
     it('reports an idle driver as free', async () => {
       await expect(service.isDriverFree(1)).resolves.toBe(true);
+    });
+  });
+
+  /**
+   * CP6-C. A sixty-second window is only real if the driver is told about it —
+   * without a push they would have to be staring at the app to ever win one.
+   */
+  describe('notifications', () => {
+    const kinds = () => notified.map((n) => n.kind);
+
+    it('tells exactly the drivers who were offered the order', async () => {
+      nearby = [
+        { driverId: 1, distanceKm: 1 },
+        { driverId: 2, distanceKm: 2 },
+        { driverId: 3, distanceKm: 3 },
+        { driverId: 4, distanceKm: 4 },
+      ];
+
+      await service.openNextWave(ORDER_ID);
+
+      expect(notified).toHaveLength(1);
+      expect(notified[0].to).toEqual([1, 2, 3]);
+      expect(notified[0].kind).toBe(NotificationKind.ORDER_OFFER);
+      expect(notified[0].orderId).toBe(ORDER_ID);
+    });
+
+    it('notifies on later waves too, not just the first', async () => {
+      nearby = [
+        { driverId: 1, distanceKm: 1 },
+        { driverId: 2, distanceKm: 8 },
+      ];
+      await service.openNextWave(ORDER_ID);
+      notified = [];
+
+      assignments[0].status = AssignmentStatus.EXPIRED;
+      await service.openNextWave(ORDER_ID);
+
+      expect(notified).toHaveLength(1);
+      expect(notified[0].to).toEqual([2]);
+    });
+
+    it('says nothing when a wave reaches nobody', async () => {
+      nearby = [];
+
+      await service.openNextWave(ORDER_ID);
+
+      expect(notified).toHaveLength(0);
+    });
+
+    it('tells a driver when their offer ran out', async () => {
+      nearby = [{ driverId: 1, distanceKm: 1 }];
+      await service.openNextWave(ORDER_ID);
+      notified = [];
+      assignments.forEach((a) => {
+        a.expiresAt = new Date(Date.now() - 1000);
+      });
+
+      await service.runSweep();
+
+      const expiredNote = notified.find(
+        (n) => n.kind === NotificationKind.OFFER_EXPIRED,
+      );
+      expect(expiredNote).toBeDefined();
+      expect(expiredNote!.to).toEqual([1]);
+    });
+
+    it('tells the customer when the order expires with no captain found', async () => {
+      order.customerId = 555;
+      nearby = [{ driverId: 1, distanceKm: 1 }];
+      await service.openNextWave(ORDER_ID);
+      assignments.forEach((a) => {
+        a.expiresAt = new Date(Date.now() - 1000);
+      });
+      notified = [];
+
+      await service.runSweep();
+
+      const customerNote = notified.find(
+        (n) => n.kind === NotificationKind.ORDER_EXPIRED,
+      );
+      expect(customerNote).toBeDefined();
+      expect(customerNote!.to).toEqual([555]);
+      expect(customerNote!.orderId).toBe(ORDER_ID);
+    });
+
+    it('does not tell the customer anything while the search is still going', async () => {
+      nearby = [
+        { driverId: 1, distanceKm: 1 },
+        { driverId: 2, distanceKm: 8 },
+      ];
+      await service.openNextWave(ORDER_ID);
+      assignments[0].expiresAt = new Date(Date.now() - 1000);
+      notified = [];
+
+      await service.runSweep();
+
+      expect(kinds()).not.toContain(NotificationKind.ORDER_EXPIRED);
+    });
+
+    it('carries no personal detail into the payload', async () => {
+      // These strings end up in a push payload on Google's servers and in the
+      // notification shade of a phone anyone can pick up. The fee is fine; an
+      // address or a phone number is not.
+      order.deliveryAddressText = '12 شارع سري جدا';
+      order.customerPhone = '01000000000';
+      nearby = [{ driverId: 1, distanceKm: 1 }];
+
+      await service.openNextWave(ORDER_ID);
+
+      const text = `${notified[0].title} ${notified[0].body}`;
+      expect(text).not.toContain('12 شارع سري جدا');
+      expect(text).not.toContain('01000000000');
+    });
+
+    it('never lets a failed notification break or duplicate an assignment', async () => {
+      // The offers are already written by the time this fires. A notifier that
+      // throws must not unwind them, and must not abort the caller either —
+      // in the sweep that would abandon every other order in the same pass.
+      (
+        service as unknown as { notifications: { notifyMany: unknown } }
+      ).notifications.notifyMany = () => Promise.reject(new Error('FCM down'));
+      nearby = [{ driverId: 1, distanceKm: 1 }];
+
+      const wave = await service.openNextWave(ORDER_ID);
+
+      expect(wave.offered).toEqual([1]);
+      // Exactly one assignment, still offered — no duplicate, no rollback.
+      expect(assignments).toHaveLength(1);
+      expect(assignments[0].status).toBe(AssignmentStatus.OFFERED);
+      expect(order.status).toBe(OrderStatus.PENDING_OFFERS);
+    });
+
+    it('keeps sweeping other orders when one notification fails', async () => {
+      nearby = [{ driverId: 1, distanceKm: 1 }];
+      await service.openNextWave(ORDER_ID);
+      assignments.forEach((a) => {
+        a.expiresAt = new Date(Date.now() - 1000);
+      });
+      (
+        service as unknown as { notifications: { notifyMany: unknown } }
+      ).notifications.notifyMany = () => Promise.reject(new Error('FCM down'));
+
+      const result = await service.runSweep();
+
+      // The lapse was still recorded and the order still reached its verdict.
+      expect(result.expiredOffers).toBe(1);
+      expect(result.expiredOrders).toEqual([ORDER_ID]);
+      expect(order.status).toBe(OrderStatus.EXPIRED);
     });
   });
 });

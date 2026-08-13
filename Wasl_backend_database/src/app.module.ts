@@ -25,6 +25,7 @@ import { StorageModule } from './storage/storage.module';
 import { ZonesModule } from './zones/zones.module';
 import { CatalogModule } from './catalog/catalog.module';
 import { AccountAccessModule } from './auth/account-access.module';
+import { NotificationsModule } from './notifications/notifications.module';
 
 @Module({
   imports: [
@@ -59,6 +60,8 @@ import { AccountAccessModule } from './auth/account-access.module';
     StorageModule,
     // Global: JwtAuthGuard needs it wherever a route is guarded.
     AccountAccessModule,
+    // Global: every module that notifies injects the one service.
+    NotificationsModule,
     ZonesModule,
     CatalogModule,
     AuthModule,

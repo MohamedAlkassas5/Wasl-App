@@ -14,6 +14,7 @@ import { AuthUser } from '../auth/current-user';
 import { User, UserRole } from '../users/entities/user.entity';
 import { OrderItem } from './entities/order-item.entity';
 import { CatalogService } from '../catalog/catalog.service';
+import { NotificationsService } from '../notifications/notifications.service';
 
 /**
  * Ownership rules on orders, with the repositories stubbed. The point of these
@@ -81,6 +82,14 @@ describe('OrdersService (order ownership)', () => {
         { provide: PricingService, useValue: { commissionForFee: () => 4 } },
         { provide: DeliveryService, useValue: {} },
         { provide: PaymentsService, useValue: {} },
+        {
+          // Notifications are a side effect of these flows, not their subject.
+          provide: NotificationsService,
+          useValue: {
+            notify: jest.fn().mockResolvedValue(undefined),
+            notifyMany: jest.fn().mockResolvedValue(undefined),
+          },
+        },
         {
           // Order creation opens the first assignment wave; these suites are
           // about pricing and settlement, so it only has to exist.

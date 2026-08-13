@@ -19,6 +19,7 @@ import { AuthUser } from '../auth/current-user';
 import { WalletTransaction } from '../payments/entities/wallet-transaction.entity';
 import { OrderItem } from './entities/order-item.entity';
 import { CatalogService } from '../catalog/catalog.service';
+import { NotificationsService } from '../notifications/notifications.service';
 
 /**
  * Delivery completion and the money that moves with it.
@@ -139,6 +140,14 @@ describe('OrdersService — completion & settlement', () => {
         },
         { provide: DeliveryService, useValue: {} },
         { provide: PaymentsService, useValue: {} },
+        {
+          // Notifications are a side effect of these flows, not their subject.
+          provide: NotificationsService,
+          useValue: {
+            notify: jest.fn().mockResolvedValue(undefined),
+            notifyMany: jest.fn().mockResolvedValue(undefined),
+          },
+        },
         {
           // Order creation opens the first assignment wave; these suites are
           // about pricing and settlement, so it only has to exist.
@@ -334,6 +343,13 @@ describe('OrdersService — completion & settlement', () => {
           useValue: {
             openNextWave: jest.fn().mockResolvedValue({ offered: [] }),
             liveOffersFor: jest.fn().mockResolvedValue([]),
+          },
+        },
+        {
+          provide: NotificationsService,
+          useValue: {
+            notify: jest.fn().mockResolvedValue(undefined),
+            notifyMany: jest.fn().mockResolvedValue(undefined),
           },
         },
       ],

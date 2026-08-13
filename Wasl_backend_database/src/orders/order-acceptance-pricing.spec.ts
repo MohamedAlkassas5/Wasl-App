@@ -16,6 +16,7 @@ import { PaymentsService } from '../payments/payments.service';
 import { AccountStatus, User } from '../users/entities/user.entity';
 import { OrderItem } from './entities/order-item.entity';
 import { CatalogService } from '../catalog/catalog.service';
+import { NotificationsService } from '../notifications/notifications.service';
 
 /**
  * What a driver can and cannot change by accepting an order.
@@ -150,6 +151,14 @@ describe('OrdersService — acceptance freezes the server price', () => {
         },
         { provide: DeliveryService, useValue: {} },
         { provide: PaymentsService, useValue: {} },
+        {
+          // Notifications are a side effect of these flows, not their subject.
+          provide: NotificationsService,
+          useValue: {
+            notify: jest.fn().mockResolvedValue(undefined),
+            notifyMany: jest.fn().mockResolvedValue(undefined),
+          },
+        },
         {
           provide: OrderAssignmentService,
           useValue: { liveOffersFor: jest.fn().mockResolvedValue([]) },

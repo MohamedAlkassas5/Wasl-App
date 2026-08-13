@@ -93,6 +93,7 @@ import { OrderMessage } from '../orders/entities/order-message.entity';
 import { OrderPriceProposal } from '../orders/entities/order-price-proposal.entity';
 import { OrderCancellationRequest } from '../orders/entities/order-cancellation-request.entity';
 import { OrderAssignment } from '../orders/entities/order-assignment.entity';
+import { DeviceToken } from '../notifications/entities/device-token.entity';
 
 /**
  * Every entity that maps to a table.
@@ -118,6 +119,7 @@ export const ENTITIES = [
   OrderPriceProposal,
   OrderCancellationRequest,
   OrderAssignment,
+  DeviceToken,
 ];
 
 export function buildDataSourceOptions(): DataSourceOptions {

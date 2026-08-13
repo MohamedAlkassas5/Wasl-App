@@ -57,6 +57,7 @@ describe('driver availability (CP6-B)', () => {
       {} as never, // delivery
       {} as never, // payments
       { liveOffersFor: jest.fn().mockResolvedValue([]) } as never, // assignment
+      { notify: jest.fn(), notifyMany: jest.fn() } as never,
     );
 
     return { service, saved, deliveryRepository };
@@ -200,6 +201,7 @@ describe('driver availability (CP6-B)', () => {
         {} as never,
         {} as never,
         { liveOffersFor: jest.fn().mockResolvedValue([]) } as never,
+        { notify: jest.fn(), notifyMany: jest.fn() } as never,
       );
 
       const orders = await service.getAvailableOrders(20);

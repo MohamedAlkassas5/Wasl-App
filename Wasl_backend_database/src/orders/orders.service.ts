@@ -18,6 +18,11 @@ import {
   DRIVER_ACTIVE_STATUSES,
 } from './entities/order.entity';
 import { OrderAssignmentService } from './order-assignment.service';
+import {
+  NotificationsService,
+  NotificationKind,
+  NotifyOptions,
+} from '../notifications/notifications.service';
 import { User } from '../users/entities/user.entity';
 import { OrderItem } from './entities/order-item.entity';
 import { OrderType } from './entities/order.entity';
@@ -66,6 +71,7 @@ export class OrdersService {
     private readonly deliveryService: DeliveryService,
     private readonly paymentsService: PaymentsService,
     private readonly assignmentService: OrderAssignmentService,
+    private readonly notifications: NotificationsService,
   ) {}
 
   /**
@@ -88,17 +94,24 @@ export class OrdersService {
     return order;
   }
 
-  // 🔔 دالة داخلية لإنشاء وحفظ الإشعارات تلقائياً في قاعدة البيانات
-  async createNotification(userId: number, title: string, message: string) {
-    const notification = this.notificationRepository.create({
-      userId,
-      title,
-      message,
+  /**
+   * 🔔 Records a notification and pushes it to the user's devices.
+   *
+   * Delegates to {@link NotificationsService} rather than writing the row here:
+   * every notification in the system goes through that one place, so adding
+   * push did not mean touching each of the callers below, and there is no
+   * second path where a row is written but no phone ever lights up.
+   */
+  async createNotification(
+    userId: number,
+    title: string,
+    message: string,
+    options: NotifyOptions = {},
+  ) {
+    await this.notifications.notify(userId, title, message, {
+      kind: NotificationKind.ORDER_UPDATE,
+      ...options,
     });
-    await this.notificationRepository.save(notification);
-    console.log(
-      `🔔 [NOTIFICATION SENT] إشعار جديد للمستخدم رقم ${userId}: ${title}`,
-    );
   }
 
   // 🔔 دالة لجلب الإشعارات غير المقروءة حياً للمستخدم (كابتن أو عميل)
@@ -475,17 +488,10 @@ export class OrdersService {
    */
   private async openFirstWave(order: Order): Promise<void> {
     try {
-      const wave = await this.assignmentService.openNextWave(order.id);
-
-      await Promise.all(
-        wave.offered.map((driverId) =>
-          this.createNotification(
-            driverId,
-            '📦 طلب توصيل جديد ليك!',
-            `طلب توصيل إلى: ${order.deliveryAddressText} — رسوم التوصيل ${Number(order.estimatedDeliveryFee)} ج.م. عندك دقيقة تقبله. 🏁`,
-          ),
-        ),
-      );
+      // The wave notifies the drivers it offers to — here and on every later
+      // wave the sweep opens. Doing it there rather than here is what keeps
+      // one notification per offer instead of one only for the first round.
+      await this.assignmentService.openNextWave(order.id);
     } catch (error) {
       console.error('💥 [ASSIGNMENT WAVE ERROR]:', error);
     }
