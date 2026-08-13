@@ -2,8 +2,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 // 🎯 استيراد كلاس الألوان الموحد الخاص بهوية وصل الجديدة
 import 'package:wasl_app/core/theme/app_colors.dart';
-// 🎯 استيراد شاشة عروض الأسعار للانتقال إليها تلقائياً
-import 'package:wasl_app/customer_screen/cart_orders/WaslOrderOffersScreen.dart';
+// 🎯 بعد نجاح الطلب بنروح على قائمة طلباتي — مفيش شاشة عروض بعد إلغاء المزايدة
+import 'package:wasl_app/customer_screen/cart_orders/WaslMyOrdersScreen.dart';
 
 class WaslOrderSuccessScreen extends StatefulWidget {
   final String orderId;
@@ -23,9 +23,9 @@ class _WaslOrderSuccessScreenState extends State<WaslOrderSuccessScreen> {
   @override
   void initState() {
     super.initState();
-    // ⏳ مؤقت تلقائي للانتقال لشاشة استقبال العروض بعد 3 ثوانٍ
+    // ⏳ مؤقت تلقائي للانتقال لقائمة طلباتي بعد 3 ثوانٍ
     _timer = Timer(const Duration(seconds: 3), () {
-      _navigateToOffers();
+      _navigateToMyOrders();
     });
   }
 
@@ -35,19 +35,14 @@ class _WaslOrderSuccessScreenState extends State<WaslOrderSuccessScreen> {
     super.dispose();
   }
 
-  void _navigateToOffers() {
+  void _navigateToMyOrders() {
     if (!mounted) return;
 
-    // 🎯 الحل السحري: استخراج الأرقام فقط والتحويل إلى int لتفادي أي عوائق في الـ Types
-    // في حالة وجود حروف مثل "FL-9082" نقوم بتنظيف النص ليحتوي على أرقام فقط قبل الـ parse
-    final cleanIdString = widget.orderId.replaceAll(RegExp(r'[^0-9]'), '');
-    final int parsedOrderId = int.tryParse(cleanIdString) ?? 9082;
-
+    // الطلب اتسجل بسعر السيرفر، ومستني كابتن يقبله. مفيش عروض أسعار
+    // يستناها العميل، فبنوديه على قائمة طلباته يتابع منها الحالة والتتبع.
     Navigator.pushReplacement(
       context,
-      MaterialPageRoute(
-        builder: (_) => WaslOrderOffersScreen(orderId: parsedOrderId), // 👈 تم التمرير كـ int بنجاح
-      ),
+      MaterialPageRoute(builder: (_) => const WaslMyOrdersScreen()),
     );
   }
 
@@ -142,7 +137,7 @@ class _WaslOrderSuccessScreenState extends State<WaslOrderSuccessScreen> {
 
                 // زر يدوي اختياري لو العميل مستعجل ومش عايز يستنى الـ 3 ثواني للمؤقت
                 GestureDetector(
-                  onTap: _navigateToOffers,
+                  onTap: _navigateToMyOrders,
                   child: Container(
                     height: 54,
                     decoration: BoxDecoration(

@@ -48,7 +48,6 @@ describe('driver availability (CP6-B)', () => {
 
     const service = new OrdersService(
       { findOne: jest.fn() } as never, // orders
-      {} as never, // offers
       deliveryRepository as never,
       {} as never, // notifications
       userRepository as never,
@@ -182,7 +181,6 @@ describe('driver availability (CP6-B)', () => {
       };
       const service = new OrdersService(
         orderRepository as never,
-        {} as never,
         {
           findOne: jest.fn().mockResolvedValue({
             userId: 20,

@@ -67,7 +67,6 @@ describe('accepted orders survive a driver going offline or broke (CP6 §15)', (
 
     const service = new OrdersService(
       orderRepository as never,
-      { delete: jest.fn() } as never,
       deliveryRepository as never,
       { create: jest.fn(), save: jest.fn() } as never,
       {

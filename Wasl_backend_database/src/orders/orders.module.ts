@@ -11,7 +11,7 @@ import { OrderCancellationService } from './order-cancellation.service';
 import { OrderCancellationController } from './order-cancellation.controller';
 import { AdminCancellationsController } from './admin-cancellations.controller';
 import { SettingsModule } from '../settings/settings.module';
-import { Order, OrderOffer } from './entities/order.entity';
+import { Order } from './entities/order.entity';
 import { DeliveryPartner } from '../delivery/entities/delivery-partner.entity';
 import { InAppNotification } from './entities/notification.entity'; // 🎯 استيراد الـ Entity الجديد المصلح
 import { PricingModule } from '../pricing/pricing.module';
@@ -30,7 +30,6 @@ import { StorageModule } from '../storage/storage.module';
     // saved area without the app having to send it.
     TypeOrmModule.forFeature([
       Order,
-      OrderOffer,
       OrderItem,
       DeliveryPartner,
       InAppNotification,

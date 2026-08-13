@@ -10,7 +10,6 @@ import { Repository } from 'typeorm';
 
 import {
   Order,
-  OrderOffer,
   OrderStatus,
   PaymentMethod,
   PaymentStatus,
@@ -47,9 +46,6 @@ export class OrdersService {
   constructor(
     @InjectRepository(Order)
     private readonly orderRepository: Repository<Order>,
-
-    @InjectRepository(OrderOffer)
-    private readonly offerRepository: Repository<OrderOffer>,
 
     @InjectRepository(DeliveryPartner)
     private readonly deliveryRepository: Repository<DeliveryPartner>,
@@ -441,131 +437,19 @@ export class OrdersService {
     }
   }
 
-  // 🎯 تقديم العروض + إشعار فوري للعميل بوصل عرض جديد
-  async submitOffer(
-    driverId: number,
-    orderId: number,
-    deliveryFee: number,
-    estimatedTime: number,
-  ) {
-    const [driverUser, driver] = await Promise.all([
-      this.userRepository.findOne({ where: { id: driverId } }),
-      this.deliveryRepository.findOne({ where: { userId: driverId } }),
-    ]);
-
-    if (!driver) {
-      throw new NotFoundException('الكابتن غير موجود');
-    }
-
-    // 🔐 Same eligibility gate as accepting. This is the legacy offer path,
-    // still reachable from older app builds, so it must not be a way around
-    // the approval check.
-    assertDriverEligible(driverUser, driver);
-
-    if (Number(driver.balance) < this.pricingService.minWalletToGoOnline()) {
-      throw new BadRequestException(
-        'رصيد المحفظة غير كافٍ لاستقبال الطلبات، يرجى الشحن أولاً.',
-      );
-    }
-
-    if (!driver.isOnline) {
-      throw new BadRequestException(
-        'يجب تفعيل وضع الأونلاين أولاً لتقديم عروض الأسعار.',
-      );
-    }
-
-    const order = await this.orderRepository.findOne({
-      where: { id: orderId },
-    });
-
-    if (!order) {
-      throw new NotFoundException('الطلب غير موجود');
-    }
-
-    if (order.status !== OrderStatus.PENDING_OFFERS) {
-      throw new BadRequestException('الطلب لا يستقبل عروض حالياً');
-    }
-
-    const offer = this.offerRepository.create({
-      orderId,
-      driverId,
-      deliveryFee,
-      estimatedTime,
-    });
-
-    const savedOffer = await this.offerRepository.save(offer);
-
-    // 🎯 [إشعار فوري للعميل]: الكابتن قدم عرض سعر على طلبك
-    await this.createNotification(
-      order.customerId,
-      '🏁 عرض سعر جديد!',
-      `قدم الكابتن عرض توصيل بقيمة ${deliveryFee} ج.م لطلبك المعلق.`,
-    );
-
-    return savedOffer;
-  }
-
-  // 🔐 Offers reveal which drivers bid and for how much — only the order's own
-  // customer (or an admin) may read them.
-  async getOrderOffers(orderId: number, user: AuthUser) {
-    await this.getOrderFor(orderId, user, 'customer');
-    return await this.offerRepository.find({
-      where: {
-        orderId,
-      },
-      relations: {
-        driver: true,
-      },
-    });
-  }
-
-  // 🎯 قبول العرض من العميل + إشعار فوري للكابتن لبدء الرحلة
-  // 🔐 Only the order's own customer may accept an offer on it.
-  async acceptOffer(orderId: number, offerId: number, user: AuthUser) {
-    const order = await this.getOrderFor(orderId, user, 'customer');
-
-    const offer = await this.offerRepository.findOne({
-      where: {
-        id: offerId,
-      },
-    });
-
-    if (!offer) {
-      throw new NotFoundException('العرض غير موجود');
-    }
-
-    // The offer must belong to this order — otherwise a customer could accept
-    // an unrelated (cheaper) offer from someone else's order.
-    if (Number(offer.orderId) !== Number(orderId)) {
-      throw new BadRequestException('هذا العرض لا يخص هذا الطلب');
-    }
-
-    if (order.status !== OrderStatus.PENDING_OFFERS) {
-      throw new BadRequestException('تم قبول عرض لهذا الطلب بالفعل');
-    }
-
-    order.status = OrderStatus.ACCEPTED;
-    order.acceptedDriverId = offer.driverId;
-    order.finalDeliveryFee = Number(offer.deliveryFee);
-
-    await this.orderRepository.save(order);
-
-    await this.offerRepository.delete({
-      orderId,
-    });
-
-    // 🎯 [إشعار فوري للكابتن]: العميل وافق على عرضك وبدأت الرحلة
-    await this.createNotification(
-      offer.driverId,
-      '🚀 تم قبول عرضك!',
-      `وافق العميل على عرض السعر الخاص بك للطلب FL-${orderId}. جاري بدء الرحلة والتحرك.`,
-    );
-
-    return {
-      success: true,
-      message: 'تم قبول العرض',
-    };
-  }
+  // 🗑️ Driver bidding is gone. `submitOffer`, `getOrderOffers` and
+  // `acceptOffer` used to live here and let a driver name their own delivery
+  // fee, which `acceptOffer` then wrote straight onto `finalDeliveryFee` with
+  // no bound check against the zone table. That made the driver, not the
+  // server, the last word on price.
+  //
+  // The delivery fee now comes from the central zone rate table and nowhere
+  // else: `createOrder` quotes it, and `acceptAvailableOrder` freezes that
+  // quote onto the order. A driver accepts an order or does not.
+  //
+  // This is unrelated to the price *proposals* in OrderChatService — those
+  // change `itemsPrice`, what the goods actually cost at the shop, and only
+  // ever with the customer's explicit approval.
 
   /**
    * Platform commission for a delivery fee, using the configurable percentage
@@ -1094,8 +978,9 @@ export class OrdersService {
     order.cancelledAt = new Date();
     await this.orderRepository.save(order);
 
-    // Drop any offers so a driver can't accept a cancelled order.
-    await this.offerRepository.delete({ orderId });
+    // Nothing to clean up behind this: with bidding gone the only way to take
+    // an order is `acceptAvailableOrder`, which re-reads the status under a row
+    // lock and refuses anything that is no longer PENDING_OFFERS.
 
     await this.createNotification(
       order.customerId,

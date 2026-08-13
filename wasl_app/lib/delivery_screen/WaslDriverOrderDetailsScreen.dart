@@ -328,7 +328,6 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:wasl_app/core/theme/app_colors.dart';
 import 'package:wasl_app/core/utils/phone_format.dart';
-import 'package:wasl_app/delivery_screen/WaslSubmitBidDialog.dart';
 import 'package:wasl_app/services/orders_service.dart';
 import 'package:wasl_app/customer_screen/chat/WaslOrderChatScreen.dart';
 
@@ -344,6 +343,7 @@ class _WaslDriverOrderDetailsScreenState extends State<WaslDriverOrderDetailsScr
   late Map<String, dynamic> _liveOrderData;
   Timer? _refreshTimer;
   bool _isFirstLoading = true;
+  bool _isAccepting = false;
 
   @override
   void initState() {
@@ -504,22 +504,90 @@ class _WaslDriverOrderDetailsScreenState extends State<WaslDriverOrderDetailsScr
     ]),
   );
 
-  Widget _buildActionButtons() => Padding(
-    padding: const EdgeInsets.all(20),
-    child: ElevatedButton(
-      onPressed: () => showDialog(
-        context: context,
-        builder: (context) => WaslSubmitBidDialog(
-          orderId: _liveOrderData['id'].toString(),
-          suggestedFee: double.tryParse(
-              _liveOrderData['estimatedDeliveryFee']?.toString() ?? ''),
-          onSubmit: (p, m) {},
+  /// 🚀 قبول الطلب بالسعر اللي السيرفر حدده.
+  ///
+  /// مفيش تقديم عرض سعر بعد كده: رسوم التوصيل بتيجي من جدول المناطق،
+  /// والكابتن بيقبل الطلب زي ما هو أو يسيبه.
+  Future<void> _acceptOrder() async {
+    final parsedId = int.tryParse(_liveOrderData['id']?.toString() ?? '');
+    if (parsedId == null) return;
+
+    // 🔒 منع الضغط المزدوج: أول ضغطة تقفل الزرار لحد ما السيرفر يرد.
+    setState(() => _isAccepting = true);
+
+    final result = await FlutterOrdersService().acceptAvailableOrder(parsedId);
+    if (!mounted) return;
+
+    setState(() => _isAccepting = false);
+
+    final ok = result['success'] == true;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          ok
+              ? 'تم قبول الطلب، يلا نبدأ 🚀'
+              : (result['message']?.toString() ?? 'تعذّر قبول الطلب'),
+          style: const TextStyle(fontFamily: 'Cairo'),
         ),
+        backgroundColor: ok ? Colors.green.shade600 : Colors.red.shade600,
       ),
-      style: ElevatedButton.styleFrom(backgroundColor: AppColors.textPrimary, minimumSize: const Size(double.infinity, 55), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16))),
-      child: const Text('تقديم عرض توصيل الآن 🚀', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, fontFamily: 'Cairo', color: Colors.white)),
-    ),
-  );
+    );
+
+    // نجح: نرجع بنتيجة عشان الشاشة اللي قبلها تعمل refresh لقائمة الطلبات.
+    if (ok) Navigator.pop(context, true);
+  }
+
+  Widget _buildActionButtons() {
+    final fee = _liveOrderData['estimatedDeliveryFee']?.toString() ?? '—';
+
+    return Padding(
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // السعر ظاهر قبل القبول، عشان الكابتن يعرف بياخد كام من غير مفاجآت.
+          Text(
+            'رسوم التوصيل: $fee ج.م',
+            style: const TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.bold,
+              fontFamily: 'Cairo',
+              color: AppColors.textPrimary,
+            ),
+          ),
+          const SizedBox(height: 10),
+          ElevatedButton(
+            onPressed: _isAccepting ? null : _acceptOrder,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.textPrimary,
+              minimumSize: const Size(double.infinity, 55),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
+            ),
+            child: _isAccepting
+                ? const SizedBox(
+                    height: 22,
+                    width: 22,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2.4,
+                      valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                    ),
+                  )
+                : const Text(
+                    'قبول الطلب الآن 🚀',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      fontFamily: 'Cairo',
+                      color: Colors.white,
+                    ),
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
 
   @override void dispose() { _refreshTimer?.cancel(); super.dispose(); }
 }

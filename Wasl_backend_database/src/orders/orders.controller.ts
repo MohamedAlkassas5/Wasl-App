@@ -261,44 +261,10 @@ export class OrdersController {
     };
   }
 
-  // 🔐 The bidding driver is taken from the token, so nobody can submit an
-  // offer in another captain's name (and charge their wallet).
-  @Post(':id/submit-offer')
-  submitOffer(
-    @CurrentUser() user: AuthUser,
-    @Param('id', ParseIntPipe) orderId: number,
-    @Body()
-    body: { deliveryFee: number; estimatedTime: number },
-  ) {
-    if (!body) {
-      throw new BadRequestException('بيانات تقديم العرض غير مكتملة');
-    }
-    return this.ordersService.submitOffer(
-      user.sub,
-      orderId,
-      Number(body.deliveryFee || 0),
-      Number(body.estimatedTime || 15),
-    );
-  }
-
-  // 🔐 Offers on an order are visible only to that order's customer (or admin).
-  @Get(':id/offers')
-  getOffers(
-    @CurrentUser() user: AuthUser,
-    @Param('id', ParseIntPipe) orderId: number,
-  ) {
-    return this.ordersService.getOrderOffers(orderId, user);
-  }
-
-  // 🔐 Only the order's own customer may accept an offer on it.
-  @Post(':id/offers/:offerId/accept')
-  acceptOffer(
-    @CurrentUser() user: AuthUser,
-    @Param('id', ParseIntPipe) orderId: number,
-    @Param('offerId', ParseIntPipe) offerId: number,
-  ) {
-    return this.ordersService.acceptOffer(orderId, offerId, user);
-  }
+  // 🗑️ `POST :id/submit-offer`, `GET :id/offers` and
+  // `POST :id/offers/:offerId/accept` are gone with driver bidding. The
+  // delivery fee is the server's to decide, from the central zone rate table;
+  // a driver takes an order through `POST :id/accept` or does not take it.
 
   // 🧾 Driver uploads the purchase receipt/invoice image at pickup. Sets the
   // items price + receipt image and advances the order to "items_bought" so the

@@ -402,52 +402,16 @@ export class Order {
 
   @CreateDateColumn()
   createdAt!: Date;
-
-  @OneToMany(() => OrderOffer, (offer) => offer.order)
-  offers!: OrderOffer[];
 }
 
-@Entity('order_offers')
-export class OrderOffer {
-  @PrimaryGeneratedColumn()
-  id!: number;
-
-  @Column()
-  orderId!: number;
-
-  @ManyToOne(() => Order, (order) => order.offers, {
-    onDelete: 'CASCADE',
-  })
-  order!: Order;
-
-  @Column()
-  driverId!: number;
-
-  @ManyToOne(() => User)
-  driver!: User;
-
-  @Column({
-    type: 'decimal',
-    precision: 10,
-    scale: 2,
-  })
-  deliveryFee!: number;
-
-  @Column()
-  estimatedTime!: number;
-
-  @CreateDateColumn()
-  createdAt!: Date;
-
-  @Column({
-    type: 'decimal',
-    precision: 10,
-    scale: 2,
-    nullable: true, // 👈 ضيف دي عشان ما يجبركش على قيمة ابتدائية
-    default: 0,
-  })
-  itemsPrice?: number;
-}
+// 🗑️ `OrderOffer` / `order_offers` lived here and held one driver's bid on one
+// order: their own delivery fee and an ETA. Accepting a bid wrote that fee onto
+// `finalDeliveryFee` unchecked, which made the driver the final authority on
+// price and left the central zone rate table advisory.
+//
+// V1 has no bidding. The fee is quoted from the zone table at creation and
+// frozen on acceptance, so there is no second price to store and nothing to
+// choose between.
 // import {
 //   Entity,
 //   PrimaryGeneratedColumn,

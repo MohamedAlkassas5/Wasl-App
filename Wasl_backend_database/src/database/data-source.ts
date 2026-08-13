@@ -74,7 +74,7 @@ import { DataSource, DataSourceOptions } from 'typeorm';
 import { User } from '../users/entities/user.entity';
 import { DeliveryPartner } from '../delivery/entities/delivery-partner.entity';
 import { Merchant } from '../merchant/entities/merchant.entity';
-import { Order, OrderOffer } from '../orders/entities/order.entity';
+import { Order } from '../orders/entities/order.entity';
 import { InAppNotification } from '../orders/entities/notification.entity';
 import { AppSetting } from '../settings/entities/app-setting.entity';
 import { OtpVerification } from '../otp/entities/otp-verification.entity';
@@ -101,7 +101,6 @@ export const ENTITIES = [
   DeliveryPartner,
   Merchant,
   Order,
-  OrderOffer,
   InAppNotification,
   AppSetting,
   OtpVerification,

@@ -3,7 +3,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 
 import { OrdersService } from './orders.service';
-import { Order, OrderOffer, PricingSource } from './entities/order.entity';
+import { Order, PricingSource } from './entities/order.entity';
 import { InAppNotification } from './entities/notification.entity';
 import { DeliveryPartner } from '../delivery/entities/delivery-partner.entity';
 import { PricingService } from '../pricing/pricing.service';
@@ -81,10 +81,6 @@ describe('OrdersService (pricing authority)', () => {
             },
             findOne: jest.fn().mockResolvedValue(null),
           },
-        },
-        {
-          provide: getRepositoryToken(OrderOffer),
-          useValue: { find: jest.fn(), findOne: jest.fn(), delete: jest.fn() },
         },
         {
           provide: getRepositoryToken(DeliveryPartner),

@@ -585,36 +585,12 @@ class FlutterOrdersService {
     }
   }
 
-  // 🎯 3️⃣ تقديم عرض سعر من الكابتن للطلب
-  Future<Map<String, dynamic>> submitOffer({
-    required int orderId,
-    required int driverId,
-    required double deliveryFee,
-    required int estimatedTime,
-  }) async {
-    final url = Uri.parse('$baseUrl/orders/$orderId/submit-offer');
-    try {
-      final response = await http.post(
-        url,
-        headers: await _headers(),
-        body: jsonEncode({
-          'driverId': driverId,
-          'deliveryFee': deliveryFee,
-          'estimatedTime': estimatedTime,
-        }),
-      ).timeout(const Duration(seconds: 15));
-
-      final decodedData = jsonDecode(response.body);
-      if (response.statusCode >= 200 && response.statusCode < 300) {
-        return {'success': true, 'data': decodedData};
-      }
-      return {'success': false, 'message': decodedData['message'] ?? 'فشل تقديم العرض'};
-    } on TimeoutException {
-      return {'success': false, 'message': 'انتهى وقت الاتصال بالسيرفر.'};
-    } catch (e) {
-      return {'success': false, 'message': 'خطأ: $e'};
-    }
-  }
+  // 🗑️ `submitOffer`, `getOrderOffers` and `acceptOffer` are gone with driver
+  // bidding. رسوم التوصيل بيحسبها السيرفر من جدول المناطق، والكابتن بيقبل
+  // الطلب زي ما هو من غير ما يقترح سعر.
+  //
+  // ملاحظة: ده مالوش علاقة بطلب تعديل سعر المشتريات في الشات — ده لسه شغال
+  // وبيغيّر `itemsPrice` بعد موافقة العميل الصريحة (شوف ChatService).
 
   Future<Map<String, dynamic>> acceptAvailableOrder(int orderId) async {
     final url = Uri.parse('$baseUrl/orders/$orderId/accept');
@@ -627,44 +603,6 @@ class FlutterOrdersService {
       return {'success': false, 'message': 'انتهى وقت الاتصال.'};
     } catch (e) {
       return {'success': false, 'message': 'خطأ في الاتصال: $e'};
-    }
-  }
-
-  // 🎯 4️⃣ جلب كافة العروض المتاحة لطلب محدد
-  Future<Map<String, dynamic>> getOrderOffers(int orderId) async {
-    final url = Uri.parse('$baseUrl/orders/$orderId/offers');
-    try {
-      final response = await http.get(url, headers: await _headers()).timeout(const Duration(seconds: 15));
-      if (response.statusCode == 200) {
-        return {'success': true, 'offers': jsonDecode(response.body)};
-      }
-      return {'success': false, 'message': 'فشل جلب العروض'};
-    } on TimeoutException {
-      return {'success': false, 'message': 'انتهى وقت الاتصال.'};
-    } catch (e) {
-      return {'success': false, 'message': 'خطأ: $e'};
-    }
-  }
-
-  // 🎯 5️⃣ قبول عرض الكابتن من قبل العميل
-  Future<Map<String, dynamic>> acceptOffer({required int orderId, required int offerId}) async {
-    final url = Uri.parse('$baseUrl/orders/$orderId/offers/$offerId/accept');
-    try {
-      final response = await http.post(url, headers: await _headers()).timeout(const Duration(seconds: 15));
-      final decodedData = jsonDecode(response.body);
-      if (response.statusCode >= 200 && response.statusCode < 300) {
-        final details = await getOrderCustomerDetails(orderId);
-        return {
-          'success': true,
-          'message': 'تم قبول العرض بنجاح',
-          'order': details['success'] == true ? details['data'] : null,
-        };
-      }
-      return {'success': false, 'message': decodedData['message'] ?? 'فشل قبول العرض'};
-    } on TimeoutException {
-      return {'success': false, 'message': 'انتهى وقت الاتصال.'};
-    } catch (e) {
-      return {'success': false, 'message': 'خطأ: $e'};
     }
   }
 

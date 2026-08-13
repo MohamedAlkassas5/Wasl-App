@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:wasl_app/core/theme/app_colors.dart';
-import 'package:wasl_app/customer_screen/cart_orders/WaslOrderOffersScreen.dart';
 import 'package:wasl_app/customer_screen/cart_orders/WaslOrderTrackingScreen.dart';
 import 'package:wasl_app/services/orders_service.dart';
 
@@ -221,19 +220,14 @@ class _WaslMyOrdersScreenState extends State<WaslMyOrdersScreen> with SingleTick
                 Text('المشتريات: ${order['itemsDescription'] ?? ''}', maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 13, color: AppColors.textSecondary, fontFamily: 'Cairo')),
                 const SizedBox(height: 16),
                 ElevatedButton(
+                  // الطلب اللي لسه مستني كابتن والطلب اللي اتقبل بيروحوا نفس
+                  // الشاشة: التتبع بيعرض الحالة الحالية في الحالتين. مفيش
+                  // شاشة عروض أسعار بعد إلغاء المزايدة.
                   onPressed: () async {
-                    if (isPendingOffers) {
-                      final int parsedId = orderId is num ? orderId.toInt() : int.tryParse(orderId.toString()) ?? 1;
-                      await Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (_) => WaslOrderOffersScreen(orderId: parsedId)),
-                      );
-                    } else {
-                      await Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (_) => WaslOrderTrackingScreen(orderData: order)),
-                      );
-                    }
+                    await Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => WaslOrderTrackingScreen(orderData: order)),
+                    );
                     _fetchCustomerOrdersFromServer();
                   },
                   style: ElevatedButton.styleFrom(
@@ -243,7 +237,7 @@ class _WaslMyOrdersScreenState extends State<WaslMyOrdersScreen> with SingleTick
                     elevation: 0,
                   ),
                   child: Text(
-                    isPendingOffers ? 'عرض عروض الكباتن 🏁' : 'تتبع الكابتن 📍',
+                    isPendingOffers ? 'متابعة الطلب ⏳' : 'تتبع الكابتن 📍',
                     style: const TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold, color: Colors.white, fontSize: 14),
                   ),
                 ),

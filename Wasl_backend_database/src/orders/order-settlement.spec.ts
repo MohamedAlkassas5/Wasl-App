@@ -9,7 +9,6 @@ import { getRepositoryToken } from '@nestjs/typeorm';
 import { OrdersService } from './orders.service';
 import {
   Order,
-  OrderOffer,
   OrderStatus,
   SettlementStatus,
 } from './entities/order.entity';
@@ -111,10 +110,6 @@ describe('OrdersService — completion & settlement', () => {
             save: (o: Partial<Order>) => Promise.resolve(o),
             find: () => Promise.resolve([]),
           },
-        },
-        {
-          provide: getRepositoryToken(OrderOffer),
-          useValue: { find: jest.fn(), findOne: jest.fn(), delete: jest.fn() },
         },
         {
           provide: getRepositoryToken(DeliveryPartner),
@@ -308,10 +303,6 @@ describe('OrdersService — completion & settlement', () => {
                 run(manager),
             },
           },
-        },
-        {
-          provide: getRepositoryToken(OrderOffer),
-          useValue: {},
         },
         { provide: getRepositoryToken(DeliveryPartner), useValue: {} },
         {

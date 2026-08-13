@@ -1,4 +1,4 @@
-import { ForbiddenException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
 import { Test, TestingModule } from '@nestjs/testing';
 
@@ -28,7 +28,7 @@ describe('OrdersController (authorization)', () => {
       | 'createOrder'
       | 'getCustomerOrders'
       | 'deleteDriverProfile'
-      | 'submitOffer'
+      | 'acceptAvailableOrder'
     >
   >;
 
@@ -37,7 +37,7 @@ describe('OrdersController (authorization)', () => {
       createOrder: jest.fn().mockResolvedValue({ success: true }),
       getCustomerOrders: jest.fn().mockResolvedValue([]),
       deleteDriverProfile: jest.fn().mockResolvedValue(undefined),
-      submitOffer: jest.fn().mockResolvedValue({ success: true }),
+      acceptAvailableOrder: jest.fn().mockResolvedValue({ success: true }),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -103,12 +103,19 @@ describe('OrdersController (authorization)', () => {
     expect(service.deleteDriverProfile).not.toHaveBeenCalled();
   });
 
-  it('submits an offer as the authenticated driver, not as the id in the body', () => {
-    controller.submitOffer(DRIVER, 5, {
-      deliveryFee: 30,
-      estimatedTime: 15,
-    });
+  it('accepts an order as the authenticated driver, not as an id in the request', () => {
+    controller.acceptAvailableOrder(DRIVER, 5);
 
-    expect(service.submitOffer).toHaveBeenCalledWith(DRIVER.sub, 5, 30, 15);
+    expect(service.acceptAvailableOrder).toHaveBeenCalledWith(5, DRIVER.sub);
+  });
+
+  it('refuses acceptance from anyone who is not a driver', () => {
+    // There is no delivery fee in this request to argue about any more — the
+    // only thing acceptance decides is who gets the order, so the one check
+    // that matters is that the caller is a captain.
+    expect(() => controller.acceptAvailableOrder(CUSTOMER, 5)).toThrow(
+      BadRequestException,
+    );
+    expect(service.acceptAvailableOrder).not.toHaveBeenCalled();
   });
 });
