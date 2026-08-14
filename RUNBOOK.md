@@ -227,9 +227,9 @@ A database restore therefore brings back the row referencing a document, and the
 document is still gone. Approved drivers' identity documents in particular are
 already being lost on each deploy today.
 
-Fixing this means moving uploads to object storage. The storage seam exists
-(`STORAGE_DRIVER`, see AUDIT_REPORT §2.17); performing the cutover is **CP6-G**
-and is deliberately out of scope here.
+Fixing this means moving uploads to object storage. That work is **CP6-G**, and
+its code is complete — see §7. What remains is the live bucket itself, so until
+that exists this section still describes reality.
 
 ---
 
@@ -246,3 +246,86 @@ Render dashboard. There is no committed default, on purpose.
 
 Events are tagged with `requestId`, `method` and `route`, so an event maps back
 to the exact log lines for that request (§2).
+
+---
+
+## 7. Object storage (Cloudflare R2)
+
+### Status: code complete, **live bucket outstanding**
+
+The application is fully wired for R2. What has **not** happened is verification
+against a real Cloudflare bucket, because no R2 account exists yet. Until that
+run is done, CP6-G is not complete and uploads are still on ephemeral disk (§5).
+
+| Verified | How |
+|---|---|
+| ✅ Provider logic | 23 unit tests (`s3-storage.provider.spec.ts`) |
+| ✅ Real S3 wire protocol | `verify-r2.js` run against a local S3-compatible server: upload, exists, byte-for-byte retrieve, missing-key false, anonymous read refused, cleanup — 6/6 |
+| ✅ End-to-end through the app | Server booted with `STORAGE_DRIVER=s3`; a real upload route stored the object in the bucket (not on disk) and `/uploads` served it back byte-identical |
+| ✅ Authorization over object storage | owner 200 · stranger 403 · anonymous 401 · admin 200 · unreferenced 404 |
+| ❌ **Cloudflare R2 itself** | **Not done — no account exists.** Nothing below has been proven against real R2 |
+
+An S3-compatible server is not Cloudflare. It does not prove your credentials
+work, your bucket exists, R2's error shapes match, or — most importantly — that
+your bucket is private. Do not read the green rows above as "R2 works".
+
+### Setting up the bucket
+
+1. Cloudflare dashboard → **R2** → activate (expect to be asked for a payment
+   method even on the free tier).
+2. **Create bucket** — any name; pick the location hint deliberately, it is
+   **permanent**.
+3. In the bucket's **Settings**, leave it private:
+   - ❌ no **Public Development URL** (`r2.dev`)
+   - ❌ no **Custom Domain**
+   - ❌ no public access policy
+
+   This is not optional. Every file is served through `GET /uploads`, which runs
+   the ownership rules in `FilesService.canRead` before sending a byte. A public
+   object URL bypasses all of them — national IDs, prescriptions, payment proofs.
+4. **Manage R2 API Tokens** → Create → **Object Read & Write**, scoped to that
+   one bucket. Admin rights are not needed; the app never creates or deletes
+   buckets. Copy the Access Key ID, Secret Access Key and endpoint — the secret
+   is shown once.
+
+### Configuration
+
+Locally, in `Wasl_backend_database/.env` (gitignored — verified via
+`git check-ignore`):
+
+```
+STORAGE_DRIVER=s3
+R2_ENDPOINT=https://<ACCOUNT_ID>.r2.cloudflarestorage.com
+R2_BUCKET=<bucket name>
+R2_ACCESS_KEY_ID=<access key id>
+R2_SECRET_ACCESS_KEY=<secret access key>
+```
+
+In production, the same keys are set in the **Render dashboard** — `render.yaml`
+declares them `sync: false` so no value is ever committed. Note `R2_*` takes
+precedence over the `S3_*` aliases; set only one family.
+
+### Verifying a real bucket
+
+```bash
+cd Wasl_backend_database && node scripts/verify-r2.js
+```
+
+Reads `.env`, never prints a credential, and cleans up after itself. It checks
+upload, existence, byte-for-byte integrity, missing-key handling, that the S3
+endpoint refuses anonymous reads, and deletion.
+
+It **cannot** see whether a public `r2.dev` or custom domain is enabled — those
+URLs are not derivable from the S3 endpoint. Confirm that in the dashboard by
+hand; it is the single most important check in this section.
+
+Then repeat the end-to-end run: upload through a real route, fetch it from
+`/uploads` as the owner (200), a stranger (403) and anonymously (401).
+
+### Once R2 is live
+
+Uploaded files become durable and are no longer lost on deploy — §5 stops
+applying to new uploads. They are still **not** covered by the database backup
+in §3; object storage is versioned and replicated by Cloudflare rather than by
+`pg_dump`. Existing files already on Render's disk are not migrated: they were
+lost on earlier deploys, and CP6-G deliberately defines no migration.

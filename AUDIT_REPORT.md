@@ -481,19 +481,19 @@ seam so the physical location is swappable:
   `createReadStream`) keyed on the DB-relative path (`uploads/orders/x.jpg`).
 - `local-disk-storage.provider.ts` — the default; **behaviour identical** to
   before, and it now owns the path-traversal guard. Unit-tested.
-- `s3-storage.provider.ts` — a documented stub that **fails fast on boot** if
-  `STORAGE_DRIVER=s3` is set before the adapter is finished, rather than
-  silently losing files. It spells out the exact steps (AWS SDK, the four
-  methods, and switching the multer write paths to `memoryStorage` +
-  `save()`).
+- `s3-storage.provider.ts` — **implemented** (CP6-G), using `@aws-sdk/client-s3`
+  against Cloudflare R2. It **fails fast on boot** unless `R2_ENDPOINT`,
+  `R2_BUCKET`, `R2_ACCESS_KEY_ID` and `R2_SECRET_ACCESS_KEY` are all present,
+  rather than silently losing files. 23 unit tests.
 - `storage.module.ts` — global; picks the backend from `STORAGE_DRIVER`
   (default `local`).
 
-The **read/serve path is fully wired through the seam** and verified: the
-authenticated `/uploads` controller serves via `localPath` (→ `sendFile`) or a
-stream, so an S3 backend needs no controller change. The **write path (multer)
-still targets local disk** — consistent for the default backend; the S3 stub
-documents that it must move to `save()` when the adapter lands.
+**Both paths now run through the seam.** The authenticated `/uploads` controller
+serves via `localPath` (→ `sendFile`) or a stream, so the S3 backend needs no
+controller change; and the write path uses `memoryStorage()` + `UploadService`
+→ `save()`, so uploads land in whatever backend `STORAGE_DRIVER` selects. (An
+earlier version of this section described the write path as still targeting
+local disk and the S3 provider as a stub — both were true then and are not now.)
 
 **Verified on the live server:** an order created with a real PNG upload was
 retrieved byte-for-byte through the authenticated route (via the provider),

@@ -49,6 +49,27 @@ services:
       # nothing is initialised and nothing is sent. See src/common/sentry.ts.
       - key: SENTRY_DSN
         sync: false
+      # 🗄️ Object storage (CP6-G). Production refuses local disk outright —
+      # the container filesystem is wiped on every deploy, which would lose
+      # approved drivers' identity documents — so this must be s3.
+      - key: STORAGE_DRIVER
+        value: s3
+      # Cloudflare R2 credentials. sync:false means the values live in the
+      # Render dashboard and never in this repository. The endpoint embeds the
+      # account id, so it is withheld here too.
+      #
+      # ⚠️ The bucket must be PRIVATE: no Public Development URL (r2.dev), no
+      # custom domain. Every file is served through GET /uploads, which runs
+      # the ownership checks in FilesService before sending a byte. A publicly
+      # reachable object URL bypasses all of them at once.
+      - key: R2_ENDPOINT
+        sync: false
+      - key: R2_BUCKET
+        sync: false
+      - key: R2_ACCESS_KEY_ID
+        sync: false
+      - key: R2_SECRET_ACCESS_KEY
+        sync: false
       - key: ADMIN_PHONE
         sync: false
       - key: ADMIN_PASSWORD

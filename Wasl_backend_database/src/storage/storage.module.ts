@@ -26,8 +26,10 @@ import { UploadService } from './upload.service';
         }
 
         if (driver === 's3' || driver === 'cloudinary') {
-          // Throws until the adapter is implemented — fail fast rather than
-          // silently write to a disk the next deploy wipes.
+          // The R2 adapter. Its constructor throws unless all four credentials
+          // are present, so a misconfigured deploy fails at boot rather than
+          // silently writing to a disk the next deploy wipes.
+          logger.log('🗄️  Storage backend: S3-compatible object storage (R2).');
           return new S3StorageProvider();
         }
 
