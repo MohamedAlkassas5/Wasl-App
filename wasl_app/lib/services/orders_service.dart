@@ -409,12 +409,11 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:wasl_app/core/config/api_config.dart';
+import 'package:wasl_app/core/network/authed_http.dart';
 import 'package:http/http.dart' as http;
 
 class FlutterOrdersService {
   static String get baseUrl => WaslApiConfig.baseUrl;
-
-  Future<Map<String, String>> _headers() => WaslApiConfig.authHeaders();
 
   // 🎯 1️⃣ إنشاء طلب جديد (نصوص وبدونات صور)
   Future<Map<String, dynamic>> createOrder({
@@ -442,9 +441,8 @@ class FlutterOrdersService {
   }) async {
     final url = Uri.parse('$baseUrl/orders/create');
     try {
-      final response = await http.post(
+      final response = await WaslAuthedHttp.instance.post(
         url,
-        headers: await _headers(),
         body: jsonEncode({
           'customerId': customerId,
           'customerName': customerName,
@@ -495,8 +493,8 @@ class FlutterOrdersService {
   Future<Map<String, dynamic>> cancelOrder(int orderId) async {
     final url = Uri.parse('$baseUrl/orders/$orderId/cancel');
     try {
-      final response = await http
-          .patch(url, headers: await _headers())
+      final response = await WaslAuthedHttp.instance
+          .patch(url)
           .timeout(const Duration(seconds: 15));
 
       final decoded = response.body.isEmpty ? {} : jsonDecode(response.body);
@@ -536,42 +534,43 @@ class FlutterOrdersService {
   }) async {
     final url = Uri.parse('$baseUrl/orders/create');
     try {
-      final request = http.MultipartRequest('POST', url);
-      request.fields['customerId'] = customerId.toString();
-      request.fields['customerName'] = customerName;
-      request.fields['customerPhone'] = customerPhone;
-      request.fields['categoryType'] = categoryType;
-      request.fields['storeName'] = storeName ?? 'غير محدد';
-      request.fields['itemsDescription'] = itemsDescription;
-      request.fields['deliveryAddressText'] = deliveryAddressText;
-      request.fields['itemsPrice'] = itemsPrice.toString();
-      request.fields['latitude'] = latitude.toString();
-      request.fields['longitude'] = longitude.toString();
-      if (orderType != null) request.fields['orderType'] = orderType;
-      if (pharmacyName != null) request.fields['pharmacyName'] = pharmacyName;
-      if (pickupZoneId != null) {
-        request.fields['pickupZoneId'] = pickupZoneId.toString();
-      }
-      if (dropoffZoneId != null) {
-        request.fields['dropoffZoneId'] = dropoffZoneId.toString();
-      }
-      if (recipientPhone != null) {
-        request.fields['recipientPhone'] = recipientPhone;
-      }
-      if (recipientName != null) {
-        request.fields['recipientName'] = recipientName;
-      }
+      // Built inside a closure because a multipart request is single-use: its
+      // file streams are consumed on send, so a retry after a refresh needs a
+      // freshly built one rather than the spent original.
+      final response = await WaslAuthedHttp.instance.sendMultipart(() async {
+        final request = http.MultipartRequest('POST', url);
+        request.fields['customerId'] = customerId.toString();
+        request.fields['customerName'] = customerName;
+        request.fields['customerPhone'] = customerPhone;
+        request.fields['categoryType'] = categoryType;
+        request.fields['storeName'] = storeName ?? 'غير محدد';
+        request.fields['itemsDescription'] = itemsDescription;
+        request.fields['deliveryAddressText'] = deliveryAddressText;
+        request.fields['itemsPrice'] = itemsPrice.toString();
+        request.fields['latitude'] = latitude.toString();
+        request.fields['longitude'] = longitude.toString();
+        if (orderType != null) request.fields['orderType'] = orderType;
+        if (pharmacyName != null) request.fields['pharmacyName'] = pharmacyName;
+        if (pickupZoneId != null) {
+          request.fields['pickupZoneId'] = pickupZoneId.toString();
+        }
+        if (dropoffZoneId != null) {
+          request.fields['dropoffZoneId'] = dropoffZoneId.toString();
+        }
+        if (recipientPhone != null) {
+          request.fields['recipientPhone'] = recipientPhone;
+        }
+        if (recipientName != null) {
+          request.fields['recipientName'] = recipientName;
+        }
 
-      final headers = await _headers();
-      headers.remove('Content-Type');
-      request.headers.addAll(headers);
+        if (itemsImage != null && await itemsImage.exists()) {
+          request.files.add(await http.MultipartFile.fromPath('itemsImage', itemsImage.path));
+        }
 
-      if (itemsImage != null && await itemsImage.exists()) {
-        request.files.add(await http.MultipartFile.fromPath('itemsImage', itemsImage.path));
-      }
+        return request;
+      }, timeout: const Duration(seconds: 30));
 
-      final streamedResponse = await request.send().timeout(const Duration(seconds: 30));
-      final response = await http.Response.fromStream(streamedResponse);
       final decodedData = jsonDecode(response.body);
 
       if (response.statusCode >= 200 && response.statusCode < 300) {
@@ -595,7 +594,7 @@ class FlutterOrdersService {
   Future<Map<String, dynamic>> acceptAvailableOrder(int orderId) async {
     final url = Uri.parse('$baseUrl/orders/$orderId/accept');
     try {
-      final response = await http.post(url, headers: await _headers()).timeout(const Duration(seconds: 15));
+      final response = await WaslAuthedHttp.instance.post(url, timeout: const Duration(seconds: 15));
       final decoded = jsonDecode(response.body);
       if (response.statusCode >= 200 && response.statusCode < 300) return {'success': true, 'data': decoded};
       return {'success': false, 'message': decoded is Map ? decoded['message'] : 'تعذر قبول الطلب'};
@@ -610,7 +609,7 @@ class FlutterOrdersService {
   Future<Map<String, dynamic>> getDriverOrders(int driverId) async {
     final url = Uri.parse('$baseUrl/orders/driver/$driverId');
     try {
-      final response = await http.get(url, headers: await _headers()).timeout(const Duration(seconds: 12));
+      final response = await WaslAuthedHttp.instance.get(url, timeout: const Duration(seconds: 12));
       final decodedData = jsonDecode(response.body);
 
       if (response.statusCode == 200) {
@@ -639,9 +638,8 @@ class FlutterOrdersService {
   }) async {
     final url = Uri.parse('$baseUrl/orders/$orderId/status?status=$status');
     try {
-      final response = await http.patch(
+      final response = await WaslAuthedHttp.instance.patch(
         url,
-        headers: await _headers(),
         body: jsonEncode({
           if (itemsPrice != null) 'itemsPrice': itemsPrice,
           if (invoiceImageUrl != null) 'invoiceImageUrl': invoiceImageUrl,
@@ -670,8 +668,8 @@ class FlutterOrdersService {
   Future<Map<String, dynamic>> completeOrder(int orderId) async {
     final url = Uri.parse('$baseUrl/orders/$orderId/complete');
     try {
-      final response = await http
-          .post(url, headers: await _headers())
+      final response = await WaslAuthedHttp.instance
+          .post(url)
           .timeout(const Duration(seconds: 20));
 
       final decoded = response.body.isEmpty
@@ -716,7 +714,7 @@ class FlutterOrdersService {
   Future<Map<String, dynamic>> getAvailableOrders({int? driverId}) async {
     final url = Uri.parse('$baseUrl/orders/available${driverId != null ? '?driverId=$driverId' : ''}');
     try {
-      final response = await http.get(url, headers: await _headers()).timeout(const Duration(seconds: 15));
+      final response = await WaslAuthedHttp.instance.get(url, timeout: const Duration(seconds: 15));
       if (response.statusCode == 200) {
         return {'success': true, 'data': jsonDecode(response.body)};
       }
@@ -732,7 +730,7 @@ class FlutterOrdersService {
   Future<Map<String, dynamic>> getCustomerOrders(int customerId) async {
     final url = Uri.parse('$baseUrl/orders/customer/$customerId');
     try {
-      final response = await http.get(url, headers: await _headers()).timeout(const Duration(seconds: 15));
+      final response = await WaslAuthedHttp.instance.get(url, timeout: const Duration(seconds: 15));
       if (response.statusCode == 200) {
         return {'success': true, 'data': jsonDecode(response.body)};
       }
@@ -748,7 +746,7 @@ class FlutterOrdersService {
   Future<Map<String, dynamic>> getDriverOnlineStatus(int driverId) async {
     final url = Uri.parse('$baseUrl/orders/driver/$driverId/online-status');
     try {
-      final response = await http.get(url, headers: await _headers()).timeout(const Duration(seconds: 10));
+      final response = await WaslAuthedHttp.instance.get(url, timeout: const Duration(seconds: 10));
       if (response.statusCode == 200) {
         return {'success': true, ...jsonDecode(response.body)};
       }
@@ -765,9 +763,8 @@ class FlutterOrdersService {
   }) async {
     final url = Uri.parse('$baseUrl/orders/driver/$driverId/online-status');
     try {
-      final response = await http.patch(
+      final response = await WaslAuthedHttp.instance.patch(
         url,
-        headers: await _headers(),
         body: jsonEncode({'isOnline': isOnline}),
       ).timeout(const Duration(seconds: 10));
 
@@ -785,7 +782,7 @@ class FlutterOrdersService {
   Future<Map<String, dynamic>> getDriverDashboardStats(int driverId) async {
     final url = Uri.parse('$baseUrl/orders/driver/$driverId/dashboard-stats');
     try {
-      final response = await http.get(url, headers: await _headers()).timeout(const Duration(seconds: 10));
+      final response = await WaslAuthedHttp.instance.get(url, timeout: const Duration(seconds: 10));
       if (response.statusCode == 200) {
         return {'success': true, ...jsonDecode(response.body)};
       }
@@ -799,7 +796,7 @@ class FlutterOrdersService {
   Future<Map<String, dynamic>> getOrderCustomerDetails(int orderId) async {
     final url = Uri.parse('$baseUrl/orders/$orderId/customer-details');
     try {
-      final response = await http.get(url, headers: await _headers()).timeout(const Duration(seconds: 12));
+      final response = await WaslAuthedHttp.instance.get(url, timeout: const Duration(seconds: 12));
       if (response.statusCode == 200) {
         return {'success': true, 'data': jsonDecode(response.body)};
       }
@@ -816,9 +813,8 @@ class FlutterOrdersService {
   }) async {
     final url = Uri.parse('$baseUrl/orders/driver/$driverId/rate');
     try {
-      final response = await http.post(
+      final response = await WaslAuthedHttp.instance.post(
         url,
-        headers: await _headers(),
         body: jsonEncode({'rating': rating}),
       ).timeout(const Duration(seconds: 10));
       if (response.statusCode >= 200 && response.statusCode < 300) {
@@ -837,9 +833,8 @@ class FlutterOrdersService {
   }) async {
     final url = Uri.parse('$baseUrl/wallet/topup-requests');
     try {
-      final response = await http.post(
+      final response = await WaslAuthedHttp.instance.post(
         url,
-        headers: await _headers(),
         body: jsonEncode({'amount': amount, 'method': 'instapay'}),
       ).timeout(const Duration(seconds: 15));
       if (response.statusCode >= 200 && response.statusCode < 300) {
@@ -858,9 +853,8 @@ class FlutterOrdersService {
   }) async {
     final url = Uri.parse('$baseUrl/orders/payment/webhook');
     try {
-      final response = await http.post(
+      final response = await WaslAuthedHttp.instance.post(
         url,
-        headers: await _headers(),
         body: jsonEncode({
           'driverId': driverId,
           'amount': amount,
@@ -880,7 +874,7 @@ class FlutterOrdersService {
   Future<Map<String, dynamic>> getUserNotifications(int userId) async {
     final url = Uri.parse('$baseUrl/orders/user/$userId/notifications');
     try {
-      final response = await http.get(url, headers: await _headers()).timeout(const Duration(seconds: 10));
+      final response = await WaslAuthedHttp.instance.get(url, timeout: const Duration(seconds: 10));
       if (response.statusCode == 200) {
         return {'success': true, 'data': jsonDecode(response.body)};
       }
@@ -894,7 +888,7 @@ class FlutterOrdersService {
   Future<bool> deleteNotification(int id) async {
     final url = Uri.parse('$baseUrl/orders/notifications/$id');
     try {
-      final response = await http.delete(url, headers: await _headers()).timeout(const Duration(seconds: 10));
+      final response = await WaslAuthedHttp.instance.delete(url, timeout: const Duration(seconds: 10));
       return response.statusCode >= 200 && response.statusCode < 300;
     } catch (_) {
       return false;
@@ -905,7 +899,7 @@ class FlutterOrdersService {
   Future<bool> clearAllNotifications(int userId) async {
     final url = Uri.parse('$baseUrl/orders/user/$userId/notifications/clear-all');
     try {
-      final response = await http.delete(url, headers: await _headers()).timeout(const Duration(seconds: 10));
+      final response = await WaslAuthedHttp.instance.delete(url, timeout: const Duration(seconds: 10));
       return response.statusCode >= 200 && response.statusCode < 300;
     } catch (_) {
       return false;
@@ -916,7 +910,7 @@ class FlutterOrdersService {
   Future<bool> deleteDriverAccount(int driverId) async {
     final url = Uri.parse('$baseUrl/orders/driver/$driverId');
     try {
-      final response = await http.delete(url, headers: await _headers()).timeout(const Duration(seconds: 15));
+      final response = await WaslAuthedHttp.instance.delete(url, timeout: const Duration(seconds: 15));
       return response.statusCode >= 200 && response.statusCode < 300;
     } catch (_) {
       return false;

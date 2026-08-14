@@ -19,6 +19,7 @@ import { AuthUser, CurrentUser } from './current-user';
 import { UserRole } from '../users/entities/user.entity';
 import { RegisterDto } from './register.dto';
 import { LoginDto } from './login.dto';
+import { RefreshSessionDto } from './dto/refresh-session.dto';
 import { imageUploadPolicy } from '../common/upload-policy';
 
 @Controller('auth')
@@ -106,6 +107,31 @@ export class AuthController {
     throw new GoneException(
       'الدخول عبر الحسابات الاجتماعية غير متاح حالياً، يرجى الدخول برقم الهاتف',
     );
+  }
+
+  /**
+   * Trades a refresh token for a fresh access token.
+   *
+   * Deliberately unauthenticated: the caller's access token has just expired,
+   * which is the entire reason they are here. The refresh token *is* the
+   * credential, and it is checked against a stored hash rather than a
+   * signature, so possession is proven rather than asserted.
+   *
+   * Rate-limited harder than login. A refresh token is a bearer credential and
+   * this is the one route that will accept an unlimited stream of guesses at
+   * one, even though the token has 384 bits of entropy behind it.
+   */
+  @Throttle({ default: { limit: 30, ttl: 300_000 } })
+  @Post('refresh')
+  refresh(@Body() dto: RefreshSessionDto) {
+    return this.authService.refreshSession(dto.refreshToken);
+  }
+
+  /** Ends this session. Other devices the user is signed in on are untouched. */
+  @Throttle({ default: { limit: 20, ttl: 300_000 } })
+  @Post('logout')
+  logout(@Body() dto: RefreshSessionDto) {
+    return this.authService.logout(dto.refreshToken);
   }
 
   /**

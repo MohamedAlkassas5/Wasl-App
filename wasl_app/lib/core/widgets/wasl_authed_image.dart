@@ -1,7 +1,7 @@
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
+import 'package:wasl_app/core/network/authed_http.dart';
 
 import 'package:wasl_app/core/config/api_config.dart';
 import 'package:wasl_app/core/theme/app_colors.dart';
@@ -70,17 +70,13 @@ class _WaslAuthedImageState extends State<WaslAuthedImage> {
     });
 
     try {
-      final headers = await WaslApiConfig.authHeaders();
-      // مش JSON — بنشيل الهيدرز اللي متعلقة بالـ JSON ونسيب التوكن بس.
-      headers.remove('Content-Type');
-      headers['Accept'] = 'image/*';
-
-      final response = await http
-          .get(
-            Uri.parse('${WaslApiConfig.baseUrl}/${widget.path}'),
-            headers: headers,
-          )
-          .timeout(const Duration(seconds: 20));
+      // مش JSON — بنغيّر الـ Accept بس، والتوكن بيتحط لوحده. ولو التوكن خلص،
+      // الـ client بيجدّده ويعيد الطلب من غير ما الصورة تفشل.
+      final response = await WaslAuthedHttp.instance.get(
+        Uri.parse('${WaslApiConfig.baseUrl}/${widget.path}'),
+        headers: const {'Accept': 'image/*'},
+        timeout: const Duration(seconds: 20),
+      );
 
       if (!mounted) return;
 

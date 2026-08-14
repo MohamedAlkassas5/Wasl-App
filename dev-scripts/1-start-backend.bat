@@ -43,7 +43,10 @@ set "DB_PASSWORD=x"
 set "DB_NAME=postgres"
 set "DB_POOL_MAX=1"
 set "JWT_SECRET=local_dev_secret_change_before_deploy_9f3a2b7c1e"
-set "JWT_EXPIRES_IN=30d"
+REM Same fifteen minutes production uses. It was 30d here, which meant local
+REM testing never once crossed an expiry and so never exercised the refresh
+REM path — the first place a broken refresh would have shown up.
+set "JWT_EXPIRES_IN=15m"
 set "ADMIN_PHONE=01555000111"
 set "ADMIN_PASSWORD=LocalReviewAdmin#2026"
 node dist/main.js

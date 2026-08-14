@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:wasl_app/core/network/authed_http.dart';
 import 'package:http/http.dart' as http;
 
 import 'package:wasl_app/core/config/api_config.dart';
@@ -17,8 +18,6 @@ import 'package:wasl_app/customer_screen/chat/chat_models.dart';
 class WaslChatService {
   static String get baseUrl => WaslApiConfig.baseUrl;
 
-  Future<Map<String, String>> _headers() => WaslApiConfig.authHeaders();
-
   String _chatUrl(int orderId) => '$baseUrl/orders/$orderId/chat';
 
   static const _timeout = Duration(seconds: 15);
@@ -27,10 +26,9 @@ class WaslChatService {
   Future<Map<String, dynamic>> getMessages(int orderId, {int? after}) async {
     final query = after != null && after > 0 ? '?after=$after' : '';
     try {
-      final response = await http
+      final response = await WaslAuthedHttp.instance
           .get(
             Uri.parse('${_chatUrl(orderId)}/messages$query'),
-            headers: await _headers(),
           )
           .timeout(_timeout);
 
@@ -56,10 +54,9 @@ class WaslChatService {
 
   Future<Map<String, dynamic>> sendText(int orderId, String body) async {
     try {
-      final response = await http
+      final response = await WaslAuthedHttp.instance
           .post(
             Uri.parse('${_chatUrl(orderId)}/messages'),
-            headers: await _headers(),
             body: jsonEncode({'body': body}),
           )
           .timeout(_timeout);
@@ -82,23 +79,24 @@ class WaslChatService {
     String? caption,
   }) async {
     try {
-      final request = http.MultipartRequest(
-        'POST',
-        Uri.parse('${_chatUrl(orderId)}/messages/image'),
+      // مبنيّة جوه closure عشان الـ multipart بيتبعت مرة واحدة بس؛ لو التوكن
+      // خلص و اتجدد، الإعادة محتاجة request جديد من الأول.
+      final response = await WaslAuthedHttp.instance.sendMultipart(
+        () async {
+          final request = http.MultipartRequest(
+            'POST',
+            Uri.parse('${_chatUrl(orderId)}/messages/image'),
+          );
+
+          if (caption != null && caption.trim().isNotEmpty) {
+            request.fields['body'] = caption.trim();
+          }
+          request.files
+              .add(await http.MultipartFile.fromPath('attachment', image.path));
+          return request;
+        },
+        timeout: const Duration(seconds: 30),
       );
-
-      final headers = await _headers();
-      headers.remove('Content-Type'); // multipart بيحدد الـ boundary بنفسه
-      request.headers.addAll(headers);
-
-      if (caption != null && caption.trim().isNotEmpty) {
-        request.fields['body'] = caption.trim();
-      }
-      request.files
-          .add(await http.MultipartFile.fromPath('attachment', image.path));
-
-      final streamed = await request.send().timeout(const Duration(seconds: 30));
-      final response = await http.Response.fromStream(streamed);
 
       final decoded = _decode(response);
       if (_ok(response)) return {'success': true, 'data': decoded};
@@ -112,8 +110,8 @@ class WaslChatService {
 
   Future<Map<String, dynamic>> markRead(int orderId) async {
     try {
-      final response = await http
-          .post(Uri.parse('${_chatUrl(orderId)}/read'), headers: await _headers())
+      final response = await WaslAuthedHttp.instance
+          .post(Uri.parse('${_chatUrl(orderId)}/read'))
           .timeout(_timeout);
       return {'success': _ok(response)};
     } catch (_) {
@@ -123,10 +121,9 @@ class WaslChatService {
 
   Future<int> unreadCount(int orderId) async {
     try {
-      final response = await http
+      final response = await WaslAuthedHttp.instance
           .get(
             Uri.parse('${_chatUrl(orderId)}/unread-count'),
-            headers: await _headers(),
           )
           .timeout(_timeout);
       if (!_ok(response)) return 0;
@@ -140,10 +137,9 @@ class WaslChatService {
 
   Future<Map<String, dynamic>> getPriceProposals(int orderId) async {
     try {
-      final response = await http
+      final response = await WaslAuthedHttp.instance
           .get(
             Uri.parse('${_chatUrl(orderId)}/price-proposals'),
-            headers: await _headers(),
           )
           .timeout(_timeout);
 
@@ -171,10 +167,9 @@ class WaslChatService {
     String? reason,
   }) async {
     try {
-      final response = await http
+      final response = await WaslAuthedHttp.instance
           .post(
             Uri.parse('${_chatUrl(orderId)}/price-proposals'),
-            headers: await _headers(),
             body: jsonEncode({
               'newItemsPrice': newItemsPrice,
               if (reason != null && reason.trim().isNotEmpty)
@@ -199,10 +194,9 @@ class WaslChatService {
   }) async {
     final action = approve ? 'approve' : 'reject';
     try {
-      final response = await http
+      final response = await WaslAuthedHttp.instance
           .post(
             Uri.parse('${_chatUrl(orderId)}/price-proposals/$proposalId/$action'),
-            headers: await _headers(),
           )
           .timeout(_timeout);
 

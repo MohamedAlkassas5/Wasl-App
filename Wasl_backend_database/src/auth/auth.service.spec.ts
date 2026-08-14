@@ -1,4 +1,8 @@
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  NotFoundException,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
@@ -13,6 +17,7 @@ import { DeliveryPartner } from '../delivery/entities/delivery-partner.entity';
 import { Merchant } from '../merchant/entities/merchant.entity';
 import { ZonesService } from '../zones/zones.service';
 import { DeliveryZone } from '../zones/entities/delivery-zone.entity';
+import { RefreshTokenService } from './refresh-token.service';
 
 /**
  * Registration used to accept any phone number the client typed — the OTP
@@ -104,6 +109,34 @@ describe('AuthService (phone-verified registration)', () => {
     },
   };
 
+  /**
+   * Stands in for RefreshTokenService. The rotation rules themselves are pinned
+   * in refresh-token.service.spec.ts; what matters here is only what AuthService
+   * asks it to do — issue on sign-in, rotate on refresh, and revoke everything
+   * when an account is closed.
+   */
+  const refreshTokens = {
+    issuedFor: [] as number[],
+    revokedAllFor: [] as number[],
+    revokedTokens: [] as string[],
+    /** Set per-test to control what the presented token rotates into. */
+    rotatesTo: { userId: 0, refreshToken: 'rotated-token' },
+
+    issue: (userId: number) => {
+      refreshTokens.issuedFor.push(userId);
+      return Promise.resolve(`refresh-for-${userId}`);
+    },
+    rotate: (_presented: string) => Promise.resolve(refreshTokens.rotatesTo),
+    revoke: (presented: string) => {
+      refreshTokens.revokedTokens.push(presented);
+      return Promise.resolve();
+    },
+    revokeAllForUser: (userId: number) => {
+      refreshTokens.revokedAllFor.push(userId);
+      return Promise.resolve();
+    },
+  };
+
   const registerDto = (overrides: Partial<RegisterDto> = {}): RegisterDto => ({
     name: 'أحمد',
     phone: PHONE,
@@ -116,6 +149,10 @@ describe('AuthService (phone-verified registration)', () => {
     users = [];
     verifiedPhones = new Set();
     deletedFrom = [];
+    refreshTokens.issuedFor = [];
+    refreshTokens.revokedAllFor = [];
+    refreshTokens.revokedTokens = [];
+    refreshTokens.rotatesTo = { userId: 0, refreshToken: 'rotated-token' };
 
     const moduleRef: TestingModule = await Test.createTestingModule({
       imports: [JwtModule.register({ secret: JWT_SECRET })],
@@ -129,6 +166,7 @@ describe('AuthService (phone-verified registration)', () => {
         { provide: getRepositoryToken(Merchant), useValue: emptyRepository },
         { provide: OtpService, useValue: otpService },
         { provide: ZonesService, useValue: zonesService },
+        { provide: RefreshTokenService, useValue: refreshTokens },
       ],
     }).compile();
 
@@ -309,6 +347,97 @@ describe('AuthService (phone-verified registration)', () => {
         service.deleteAccountByPhone('+20 100 123 4567'),
       ).resolves.toMatchObject({ success: true });
       expect(users[0].deletedAt).toBeInstanceOf(Date);
+    });
+
+    it('ends every session the account had', async () => {
+      seedCustomer();
+      await service.deleteAccountById(1);
+
+      // Without this, a closed account keeps a refresh token that mints fresh
+      // access tokens for thirty days — the scrub would be cosmetic.
+      expect(refreshTokens.revokedAllFor).toContain(1);
+    });
+  });
+
+  /**
+   * The access token is fifteen minutes long, so every signed-in user hits the
+   * refresh path several times an hour. These pin the two things that must not
+   * drift: a refresh is a full re-check of the account, not a rubber stamp on
+   * whatever was true at sign-in, and signing out ends one session rather than
+   * all of them.
+   */
+  describe('session refresh', () => {
+    const seedUser = (overrides: Partial<User> = {}) => {
+      users.push({
+        id: 1,
+        name: 'أحمد',
+        phone: PHONE,
+        passwordHash: 'realhash',
+        role: UserRole.CUSTOMER,
+        status: AccountStatus.ACTIVE,
+        ...overrides,
+      } as User);
+    };
+
+    it('hands back a new access token and a rotated refresh token', async () => {
+      seedUser();
+      refreshTokens.rotatesTo = { userId: 1, refreshToken: 'the-next-one' };
+
+      const result = await service.refreshSession('the-current-one');
+
+      expect(result.token).toBeTruthy();
+      expect(result.refreshToken).toBe('the-next-one');
+      // The client needs to know how long it has before doing this again.
+      expect(result.expiresIn).toBe('15m');
+    });
+
+    it('refuses a closed account and revokes what it still holds', async () => {
+      seedUser({ deletedAt: new Date() } as Partial<User>);
+      refreshTokens.rotatesTo = { userId: 1, refreshToken: 'the-next-one' };
+
+      await expect(
+        service.refreshSession('the-current-one'),
+      ).rejects.toBeInstanceOf(UnauthorizedException);
+
+      // Closure already revoked these; re-checking here is what stops a token
+      // issued seconds before closure from outliving it.
+      expect(refreshTokens.revokedAllFor).toContain(1);
+    });
+
+    it('refuses a suspended account', async () => {
+      seedUser({ status: AccountStatus.SUSPENDED });
+      refreshTokens.rotatesTo = { userId: 1, refreshToken: 'the-next-one' };
+
+      await expect(
+        service.refreshSession('the-current-one'),
+      ).rejects.toBeInstanceOf(UnauthorizedException);
+    });
+
+    it('refuses a user that no longer exists', async () => {
+      refreshTokens.rotatesTo = { userId: 404, refreshToken: 'the-next-one' };
+
+      await expect(
+        service.refreshSession('the-current-one'),
+      ).rejects.toBeInstanceOf(UnauthorizedException);
+    });
+
+    it('issues a refresh token alongside the access token at sign-in', async () => {
+      verifiedPhones.add(PHONE);
+
+      const result = await service.register(registerDto());
+
+      expect(result.refreshToken).toBeTruthy();
+      expect(refreshTokens.issuedFor).toHaveLength(1);
+    });
+
+    it('signs out of this session only', async () => {
+      await expect(service.logout('this-device')).resolves.toMatchObject({
+        success: true,
+      });
+
+      expect(refreshTokens.revokedTokens).toEqual(['this-device']);
+      // Signing out on the phone must not sign the tablet out too.
+      expect(refreshTokens.revokedAllFor).toHaveLength(0);
     });
   });
 });

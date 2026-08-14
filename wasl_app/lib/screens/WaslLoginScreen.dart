@@ -447,6 +447,7 @@ import 'package:wasl_app/screens/WaslForgotPasswordScreen.dart';
 import 'package:wasl_app/screens/WaslPendingScreen.dart';
 import 'package:wasl_app/delivery_screen/WaslDriverHomeScreen.dart';
 import 'package:wasl_app/services/auth_service.dart';
+import 'package:wasl_app/core/session/wasl_session.dart';
 import 'package:wasl_app/customer_screen/screens/home/WaslCustomerHomeScreen.dart';
 
 class WaslLoginScreen extends StatefulWidget {
@@ -536,7 +537,13 @@ class _WaslLoginScreenState extends State<WaslLoginScreen> {
       await prefs.setString('user_name', name);
       await prefs.setString('user_phone', phone);
       await prefs.setString('user_role', role);
-      await prefs.setString('access_token', token);
+      // The access token is only fifteen minutes long now, so the refresh token
+      // is what actually keeps this session alive. Storing one without the
+      // other signs the user out a quarter of an hour from here.
+      await const WaslSession().save(
+        accessToken: token,
+        refreshToken: data['refreshToken']?.toString(),
+      );
 
       if (role == 'delivery') {
         if (status == 'pending' || status == 'rejected') {

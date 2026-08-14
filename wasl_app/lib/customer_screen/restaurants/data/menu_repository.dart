@@ -1,5 +1,5 @@
 import 'dart:convert';
-import 'package:http/http.dart' as http;
+import 'package:wasl_app/core/network/authed_http.dart';
 import '../../../core/config/api_config.dart';
 import 'restaurant_models.dart';
 
@@ -152,10 +152,10 @@ class HttpMenuRepository implements MenuRepository {
   /// separate table with its own id sequence, so the menu resolved to an
   /// unrelated row or, in practice, to nothing at all.
   Future<Map<String, dynamic>> _get(int merchantId) async {
-    final response = await http
-        .get(Uri.parse('${WaslApiConfig.baseUrl}/merchants/$merchantId/menu'),
-            headers: await WaslApiConfig.authHeaders())
-        .timeout(const Duration(seconds: 15));
+    final response = await WaslAuthedHttp.instance.get(
+      Uri.parse('${WaslApiConfig.baseUrl}/merchants/$merchantId/menu'),
+      timeout: const Duration(seconds: 15),
+    );
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw Exception('تعذر تحميل قائمة المتجر (${response.statusCode})');
     }

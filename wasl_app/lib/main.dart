@@ -5,12 +5,17 @@ import 'package:firebase_core/firebase_core.dart'; // 🎯 2. استيراد ا�
 
 // استيراد الـ Provider الخاص بإدارة جلسة المستخدم
 import 'package:wasl_app/core/providers/user_provider.dart';
+import 'package:wasl_app/core/network/authed_http.dart';
 import 'package:wasl_app/core/theme/wasl_theme.dart';
 
 // استيراد الشاشات الخاصة بالتطبيق
 import 'screens/WaslOnboardingScreen.dart';
 import 'screens/WaslLoginScreen.dart';
 import 'package:wasl_app/screens/WaslSplashScreen.dart';
+
+/// Lets code outside the widget tree — a failed token refresh, for one — send
+/// the user back to the login screen.
+final GlobalKey<NavigatorState> appNavigatorKey = GlobalKey<NavigatorState>();
 
 void main() async {
   // 🎯 3. تأمين اتصال الـ Widgets بنظام الـ Native لضمان عمل الخدمات قبل سطر الـ runApp
@@ -27,6 +32,18 @@ void main() async {
 
   // 🎯 [جديد]: قراءة حالة شاشة السبلش (لو مش موجودة سيعتبرها false يعني أول مرة يفتح)
   final bool seenSplash = prefs.getBool('seen_splash') ?? false;
+
+  // 🔐 لو التوكن خلص وفشل التجديد، الجلسة بتبقى خلصت فعلاً — التطبيق لازم
+  // يرجّع المستخدم لتسجيل الدخول بدل ما يفضل شغال بجلسة ميتة. الـ navigator key
+  // بيخلي ده ممكن حتى لو الفشل حصل في طلب خلفي مالوش شاشة.
+  WaslAuthedHttp.onSignedOut = () {
+    final navigator = appNavigatorKey.currentState;
+    if (navigator == null) return;
+    navigator.pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => const WaslLoginScreen()),
+      (route) => false,
+    );
+  };
 
   // 🎯 5. تشغيل التطبيق وحقن الـ UserProvider ليكون متاحاً في جميع الشاشات ديناميكياً
   runApp(
@@ -54,6 +71,7 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'wasl',
+      navigatorKey: appNavigatorKey,
       theme: WaslTheme.light,
       debugShowCheckedModeBanner: false,
 

@@ -248,6 +248,7 @@ import 'package:wasl_app/screens/WaslMerchantRegisterScreen.dart';
 import 'package:wasl_app/customer_screen/screens/auth/WaslResetPasswordScreen.dart';
 import 'package:wasl_app/services/auth_service.dart';
 import 'package:wasl_app/services/whatsapp_otp_service.dart';
+import 'package:wasl_app/core/session/wasl_session.dart';
 import 'package:wasl_app/core/theme/app_colors.dart';
 
 /// Phone verification step. The code is generated, delivered and checked by the
@@ -444,7 +445,13 @@ class _WaslOtpScreenState extends State<WaslOtpScreen> {
     await prefs.setString('user_name', userData['name'] ?? widget.name ?? '');
     await prefs.setString('user_phone', userData['phone'] ?? widget.phone ?? '');
     await prefs.setString('user_role', userData['role'] ?? 'customer');
-    await prefs.setString('access_token', token);
+    // Both tokens, together — the fifteen-minute access token is useless on its
+    // own once it expires, and this is a fresh signup that should not have to
+    // sign in again before the user has placed an order.
+    await const WaslSession().save(
+      accessToken: token,
+      refreshToken: data['refreshToken']?.toString(),
+    );
     // The server echoes back the area it actually stored, which may be null if
     // it rejected what we sent — trust its answer, not our own input.
     final int? savedZoneId = (userData['customerZoneId'] as num?)?.toInt();

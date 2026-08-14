@@ -22,6 +22,8 @@ import { OtpVerification } from '../otp/entities/otp-verification.entity';
 import { RegisterDto } from './register.dto';
 import { LoginDto } from './login.dto';
 import { ZonesService } from '../zones/zones.service';
+import { RefreshTokenService } from './refresh-token.service';
+import { JWT_EXPIRES_IN } from './jwt.constants';
 
 @Injectable()
 export class AuthService {
@@ -38,6 +40,7 @@ export class AuthService {
     @Inject(forwardRef(() => OtpService))
     private readonly otpService: OtpService,
     private readonly zonesService: ZonesService,
+    private readonly refreshTokens: RefreshTokenService,
   ) {}
 
   // 🎯 1️⃣ دالة تسجيل الحسابات الشاملة (تستقبل طلب الـ Multipart المباشر من الفلاتر)
@@ -132,10 +135,10 @@ export class AuthService {
     // replayed for anything else inside its window.
     await this.otpService.consumeVerification(cleanPhone);
 
-    const token = this.generateToken(savedUser);
+    const session = await this.issueSession(savedUser);
     return {
       message: 'تم التحقق من رقم الهاتف وإنشاء الحساب في النظام بنجاح 🎉',
-      token,
+      ...session,
       user: {
         id: savedUser.id,
         name: savedUser.name,
@@ -174,11 +177,11 @@ export class AuthService {
       );
     }
 
-    const token = this.generateToken(user);
+    const session = await this.issueSession(user);
 
     return {
       message: 'تم تسجيل الدخول بنجاح 🚀',
-      token,
+      ...session,
       user: {
         id: user.id,
         name: user.name,
@@ -272,6 +275,12 @@ export class AuthService {
       await manager.delete(InAppNotification, { userId: user.id });
       await manager.delete(OtpVerification, { phone: user.phone });
 
+      // 🔐 Every session this account had, ended inside the same transaction.
+      // The access token they are holding dies on its own within fifteen
+      // minutes and `JwtAuthGuard` refuses it sooner than that; this is what
+      // stops the refresh token quietly minting replacements for a month.
+      await this.refreshTokens.revokeAllForUser(user.id, manager);
+
       // Unique, obviously-not-a-number, and short enough for varchar(20).
       const releasedPhone =
         `deleted_${user.id}_${Date.now().toString(36)}`.slice(0, 20);
@@ -321,7 +330,7 @@ export class AuthService {
     }
 
     return {
-      token: this.generateToken(user),
+      ...(await this.issueSession(user)),
       user: {
         id: user.id,
         name: user.name,
@@ -361,6 +370,62 @@ export class AuthService {
       success: true,
       message: 'تم تحديث كلمة المرور بنجاح، يمكنك تسجيل الدخول الآن',
     };
+  }
+
+  /**
+   * A signed-in session: a short access token plus the refresh token that
+   * renews it.
+   *
+   * The access token is unchanged in shape — `{ sub, role }`, verified
+   * statelessly by `JwtAuthGuard` — only its lifetime moved, from thirty days
+   * to fifteen minutes. Everything that made a thirty-day token uncomfortable
+   * (no revocation short of closing the account, a stolen one good for a month)
+   * is answered by the refresh token being revocable rather than by making the
+   * access token itself stateful, which would put a database read in front of
+   * every request.
+   */
+  private async issueSession(user: User) {
+    return {
+      token: this.generateToken(user),
+      refreshToken: await this.refreshTokens.issue(user.id),
+      expiresIn: JWT_EXPIRES_IN,
+    };
+  }
+
+  /**
+   * Trades a refresh token for a new access token and a new refresh token.
+   *
+   * `deletedAt` is re-checked here rather than trusted from sign-in time: an
+   * account closed five minutes ago still holds a refresh token that has not
+   * expired, and this is the moment it must stop working. Closure also revokes
+   * every token the account had, so this is belt and braces — deliberately, as
+   * failing open here would undo the whole `deletedAt` model.
+   */
+  async refreshSession(presented: string) {
+    const { userId, refreshToken } = await this.refreshTokens.rotate(presented);
+
+    const user = await this.userRepository.findOne({ where: { id: userId } });
+    if (!user || user.deletedAt) {
+      await this.refreshTokens.revokeAllForUser(userId);
+      throw new UnauthorizedException('تم حذف هذا الحساب');
+    }
+    if (user.status === AccountStatus.SUSPENDED) {
+      throw new UnauthorizedException(
+        'عفواً، الحساب محظور حالياً، يرجى مراجعة الإدارة',
+      );
+    }
+
+    return {
+      token: this.generateToken(user),
+      refreshToken,
+      expiresIn: JWT_EXPIRES_IN,
+    };
+  }
+
+  /** Sign-out: ends this one session, leaving any others alone. */
+  async logout(presented: string) {
+    await this.refreshTokens.revoke(presented);
+    return { success: true, message: 'تم تسجيل الخروج' };
   }
 
   private generateToken(user: User): string {

@@ -60,4 +60,16 @@ function resolveSecret(): string {
 
 export const JWT_SECRET = resolveSecret();
 
-export const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '30d';
+/**
+ * How long an access token is good for.
+ *
+ * Fifteen minutes, not the thirty days this used to default to. A stateless
+ * token cannot be withdrawn once signed, so its lifetime *is* the revocation
+ * window: a stolen thirty-day token was a stolen month. Sessions survive across
+ * it through refresh tokens, which are stored, rotated and revocable — see
+ * `RefreshTokenService`.
+ *
+ * The env var still wins so an operator can shorten it further; lengthening it
+ * back out would quietly widen that window again.
+ */
+export const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '15m';

@@ -1,8 +1,9 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:http/http.dart' as http;
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:wasl_app/core/config/api_config.dart';
+import 'package:wasl_app/core/network/authed_http.dart';
+import 'package:wasl_app/core/session/wasl_session.dart';
 
 /// Calls against the NestJS backend for everything account-related.
 ///
@@ -76,8 +77,10 @@ class FlutterAuthService {
         // (المندوب/المتجر) بتسأل /users/status وده مسار محمي بالتوكن.
         final String token = decodedData['token']?.toString() ?? '';
         if (token.isNotEmpty) {
-          final prefs = await SharedPreferences.getInstance();
-          await prefs.setString('access_token', token);
+          await const WaslSession().save(
+            accessToken: token,
+            refreshToken: decodedData['refreshToken']?.toString(),
+          );
         }
         return {'success': true, 'data': decodedData};
       } else {
@@ -161,10 +164,10 @@ class FlutterAuthService {
   Future<Map<String, dynamic>> getNearbyStores({required double lat, required double lng}) async {
     final url = Uri.parse('$baseUrl/stores/nearby?lat=$lat&lng=$lng');
     try {
-      final response = await http.get(
+      final response = await WaslAuthedHttp.instance.get(
         url,
-        headers: await WaslApiConfig.authHeaders(),
-      ).timeout(const Duration(seconds: 12));
+        timeout: const Duration(seconds: 12),
+      );
 
       final decodedData = jsonDecode(response.body);
       if (response.statusCode == 200) {
@@ -185,10 +188,10 @@ class FlutterAuthService {
     final url = Uri.parse('$baseUrl/users/status');
 
     try {
-      final response = await http.get(
+      final response = await WaslAuthedHttp.instance.get(
         url,
-        headers: await WaslApiConfig.authHeaders(),
-      ).timeout(const Duration(seconds: 15));
+        timeout: const Duration(seconds: 15),
+      );
 
       final decodedData = jsonDecode(response.body);
 
@@ -216,10 +219,10 @@ class FlutterAuthService {
 
     try {
       // 🔐 السيرفر بيحذف صاحب التوكن نفسه؛ الرقم في الرابط بقى للتوافق بس.
-      final response = await http.delete(
+      final response = await WaslAuthedHttp.instance.delete(
         url,
-        headers: await WaslApiConfig.authHeaders(),
-      ).timeout(const Duration(seconds: 15));
+        timeout: const Duration(seconds: 15),
+      );
 
       if (response.statusCode == 200 || response.statusCode == 204) {
         return {

@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
-import 'package:http/http.dart' as http;
+import 'package:wasl_app/core/network/authed_http.dart';
 import 'package:wasl_app/core/config/api_config.dart';
 
 /// Backend calls for the Phase-1 location + pricing engine:
@@ -9,8 +9,6 @@ import 'package:wasl_app/core/config/api_config.dart';
 /// - driver live-location push
 class LocationApiService {
   static String get baseUrl => WaslApiConfig.baseUrl;
-
-  Future<Map<String, String>> _headers() => WaslApiConfig.authHeaders();
 
   /// Estimated delivery fee for a pickup → destination trip.
   /// Returns the full quote (fee, tier, commission, driver earnings).
@@ -22,10 +20,9 @@ class LocationApiService {
   }) async {
     final url = Uri.parse('$baseUrl/pricing/quote');
     try {
-      final response = await http
+      final response = await WaslAuthedHttp.instance
           .post(
             url,
-            headers: await _headers(),
             body: jsonEncode({
               'pickupLatitude': pickupLat,
               'pickupLongitude': pickupLng,
@@ -51,10 +48,9 @@ class LocationApiService {
   Future<Map<String, dynamic>> getQuoteByDistance(double distanceKm) async {
     final url = Uri.parse('$baseUrl/pricing/quote');
     try {
-      final response = await http
+      final response = await WaslAuthedHttp.instance
           .post(
             url,
-            headers: await _headers(),
             body: jsonEncode({'distanceKm': distanceKm}),
           )
           .timeout(const Duration(seconds: 12));
@@ -80,8 +76,8 @@ class LocationApiService {
         : '?lat=$lat&lng=$lng';
     final url = Uri.parse('$baseUrl/drivers/nearby$query');
     try {
-      final response = await http
-          .get(url, headers: await _headers())
+      final response = await WaslAuthedHttp.instance
+          .get(url)
           .timeout(const Duration(seconds: 12));
 
       if (response.statusCode == 200) {
@@ -104,10 +100,9 @@ class LocationApiService {
   }) async {
     final url = Uri.parse('$baseUrl/drivers/$driverId/location');
     try {
-      final response = await http
+      final response = await WaslAuthedHttp.instance
           .patch(
             url,
-            headers: await _headers(),
             body: jsonEncode({
               'latitude': latitude,
               'longitude': longitude,

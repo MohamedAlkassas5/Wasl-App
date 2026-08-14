@@ -94,6 +94,7 @@ import { OrderPriceProposal } from '../orders/entities/order-price-proposal.enti
 import { OrderCancellationRequest } from '../orders/entities/order-cancellation-request.entity';
 import { OrderAssignment } from '../orders/entities/order-assignment.entity';
 import { DeviceToken } from '../notifications/entities/device-token.entity';
+import { RefreshToken } from '../auth/entities/refresh-token.entity';
 
 /**
  * Every entity that maps to a table.
@@ -120,6 +121,7 @@ export const ENTITIES = [
   OrderCancellationRequest,
   OrderAssignment,
   DeviceToken,
+  RefreshToken,
 ];
 
 export function buildDataSourceOptions(): DataSourceOptions {

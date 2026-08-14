@@ -1,4 +1,3 @@
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/foundation.dart';
 
 class WaslApiConfig {
@@ -28,15 +27,9 @@ class WaslApiConfig {
     'Accept': 'application/json',
   };
 
-  static Future<Map<String, String>> authHeaders() async {
-    final prefs = await SharedPreferences.getInstance();
-    final token = prefs.getString('access_token');
-    final headers = Map<String, String>.from(jsonHeaders);
-
-    if (token != null && token.isNotEmpty) {
-      headers['Authorization'] = 'Bearer $token';
-    }
-
-    return headers;
-  }
+  // 🔐 `authHeaders()` اتشالت. كانت بتقرا التوكن وتحطه في الهيدر، وكل شاشة
+  // بتناديها لوحدها — وده كان ماشي وقت ما التوكن كان بيعيش ٣٠ يوم وما بيتغيرش.
+  // دلوقتي التوكن ١٥ دقيقة وبيتجدد لوحده، فالمكان الوحيد اللي بيركّب الهيدر
+  // بقى `WaslAuthedHttp`، عشان أي طلب يقابل 401 يعرف يجدّد ويعيد المحاولة.
+  // لو رجّعناها هنا تاني، هتبقى طريق تاني للمصادقة من غير تجديد.
 }

@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
-import 'package:http/http.dart' as http;
+import 'package:wasl_app/core/network/authed_http.dart';
 import 'package:wasl_app/core/config/api_config.dart';
 
 /// The caller's own account.
@@ -10,13 +10,11 @@ import 'package:wasl_app/core/config/api_config.dart';
 class ProfileService {
   static String get baseUrl => WaslApiConfig.baseUrl;
 
-  Future<Map<String, String>> _headers() => WaslApiConfig.authHeaders();
-
   /// Profile including the saved delivery area.
   Future<Map<String, dynamic>> getMe() async {
     try {
-      final response = await http
-          .get(Uri.parse('$baseUrl/users/me'), headers: await _headers())
+      final response = await WaslAuthedHttp.instance
+          .get(Uri.parse('$baseUrl/users/me'))
           .timeout(const Duration(seconds: 12));
 
       if (response.statusCode >= 200 && response.statusCode < 300) {
@@ -60,10 +58,9 @@ class ProfileService {
     String fallbackError,
   ) async {
     try {
-      final response = await http
+      final response = await WaslAuthedHttp.instance
           .patch(
             Uri.parse('$baseUrl$path'),
-            headers: await _headers(),
             body: jsonEncode(body),
           )
           .timeout(const Duration(seconds: 12));

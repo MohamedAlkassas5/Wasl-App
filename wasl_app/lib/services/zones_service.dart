@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'package:wasl_app/core/network/authed_http.dart';
 import 'package:http/http.dart' as http;
 import 'package:wasl_app/core/config/api_config.dart';
 
@@ -41,8 +42,6 @@ class WaslZone {
 /// number the server did not agree to.
 class ZonesService {
   static String get baseUrl => WaslApiConfig.baseUrl;
-
-  Future<Map<String, String>> _headers() => WaslApiConfig.authHeaders();
 
   /// Cached because the three areas do not change during a session and this is
   /// read on registration, on checkout, and on every Waslly screen.
@@ -93,10 +92,9 @@ class ZonesService {
     Map<String, dynamic> body,
   ) async {
     try {
-      final response = await http
+      final response = await WaslAuthedHttp.instance
           .post(
             Uri.parse('$baseUrl/pricing/$path'),
-            headers: await _headers(),
             body: jsonEncode(body),
           )
           .timeout(const Duration(seconds: 12));

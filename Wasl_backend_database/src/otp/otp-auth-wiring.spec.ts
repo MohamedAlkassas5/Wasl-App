@@ -12,6 +12,7 @@ import { DeliveryPartner } from '../delivery/entities/delivery-partner.entity';
 import { Merchant } from '../merchant/entities/merchant.entity';
 import { DeliveryZone } from '../zones/entities/delivery-zone.entity';
 import { DeliveryZoneRate } from '../zones/entities/delivery-zone-rate.entity';
+import { RefreshToken } from '../auth/entities/refresh-token.entity';
 import { AccountAccessModule } from '../auth/account-access.module';
 
 /**
@@ -54,6 +55,8 @@ describe('Auth ↔ Otp module wiring', () => {
       OtpVerification,
       DeliveryZone,
       DeliveryZoneRate,
+      // Sessions are stored now, so AuthModule needs this one too.
+      RefreshToken,
     ]) {
       builder
         .overrideProvider(getRepositoryToken(entity))

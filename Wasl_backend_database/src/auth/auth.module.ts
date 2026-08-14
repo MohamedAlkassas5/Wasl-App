@@ -9,13 +9,15 @@ import { AuthController } from './auth.controller';
 import { User } from '../users/entities/user.entity';
 import { DeliveryPartner } from '../delivery/entities/delivery-partner.entity';
 import { Merchant } from '../merchant/entities/merchant.entity';
+import { RefreshToken } from './entities/refresh-token.entity';
+import { RefreshTokenService } from './refresh-token.service';
 import { ZonesModule } from '../zones/zones.module';
 import { StorageModule } from '../storage/storage.module';
 
 @Module({
   imports: [
     // 🎯 حقن الكيانات الثلاثة معاً لكي يراهم الـ AuthService
-    TypeOrmModule.forFeature([User, DeliveryPartner, Merchant]),
+    TypeOrmModule.forFeature([User, DeliveryPartner, Merchant, RefreshToken]),
     // Registration documents go through the configured storage backend.
     StorageModule,
     JwtModule.register({
@@ -34,7 +36,7 @@ import { StorageModule } from '../storage/storage.module';
     ZonesModule,
   ],
   controllers: [AuthController],
-  providers: [AuthService],
-  exports: [AuthService],
+  providers: [AuthService, RefreshTokenService],
+  exports: [AuthService, RefreshTokenService],
 })
 export class AuthModule {}
