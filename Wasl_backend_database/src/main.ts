@@ -43,10 +43,28 @@ import { NestFactory } from '@nestjs/core';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { AppModule } from './app.module';
 import type { Request, Response, NextFunction } from 'express';
+import { StructuredLogger } from './common/structured-logger';
+import { initSentry } from './common/sentry';
 
 async function bootstrap() {
+  // 🔭 JSON lines in production, the usual coloured output in development.
+  // Every existing `new Logger(...)` call site routes through this without
+  // being changed.
+  //
+  // Installed before anything else logs — including Sentry's own startup
+  // line — so a log aggregator never has to cope with one stray non-JSON
+  // line at the top of every boot.
+  const appLogger = new StructuredLogger();
+  Logger.overrideLogger(appLogger);
+
+  // 🔭 Early, so an error thrown while the modules are being constructed is
+  // still reported. A no-op unless SENTRY_DSN is set.
+  initSentry();
+
   // 🎯 تحديد نوع التطبيق كـ NestExpressApplication لإزالة أخطاء Unsafe Member Access
-  const app = await NestFactory.create<NestExpressApplication>(AppModule);
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
+    logger: appLogger,
+  });
   const logger = new Logger('Bootstrap');
 
   const allowedOrigins = (process.env.CORS_ORIGINS || '')

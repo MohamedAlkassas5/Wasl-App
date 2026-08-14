@@ -1,5 +1,5 @@
-import { Module } from '@nestjs/common';
-import { APP_GUARD } from '@nestjs/core';
+import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
+import { APP_FILTER, APP_GUARD } from '@nestjs/core';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ScheduleModule } from '@nestjs/schedule'; // 🎯 استيراد موديل الجدولة الزمني الحركي
 import { ConfigModule } from '@nestjs/config'; // 🎯 استيراد موديل الإعدادات للبيئة السحابية لاحقاً
@@ -7,6 +7,11 @@ import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 
 // الـ Entities وإعدادات الاتصال مصدرها ملف واحد يشاركه الـ migration CLI
 import { buildDataSourceOptions } from './database/data-source';
+
+// 🔭 Observability — request correlation and error reporting.
+import { AllExceptionsFilter } from './common/all-exceptions.filter';
+import { RequestContextMiddleware } from './common/request-context.middleware';
+import { HealthModule } from './health/health.module';
 
 // استيراد الموديلات (Modules)
 import { AuthModule } from './auth/auth.module';
@@ -76,14 +81,28 @@ import { NotificationsModule } from './notifications/notifications.module';
     StoresModule,
     UsersModule,
     FilesModule,
+    // 🔭 `GET /health`. Registered last because it depends on nothing but the
+    // DataSource the root TypeOrmModule already provides.
+    HealthModule,
   ],
   providers: [
     // Applies the rate limiter globally; individual routes opt out with
     // @SkipThrottle() or tighten it with @Throttle().
     { provide: APP_GUARD, useClass: ThrottlerGuard },
+    // Reports 5xx to Sentry and keeps the framework's existing response shapes.
+    { provide: APP_FILTER, useClass: AllExceptionsFilter },
   ],
 })
-export class AppModule {}
+export class AppModule implements NestModule {
+  /**
+   * Every route gets a request id, including the ones that fail. Applied here
+   * rather than in `main.ts` so it runs inside Nest's pipeline, where the
+   * exception filter and the logger can both see the context it establishes.
+   */
+  configure(consumer: MiddlewareConsumer): void {
+    consumer.apply(RequestContextMiddleware).forRoutes('*');
+  }
+}
 
 // =========================================================================================
 // 🌐 [نسخة الاحتياط السحابية]: عند الانتقال إلى Neon Cloud، يمكنك إغلاق الاتصال بالأعلى وتفعيل هذا:

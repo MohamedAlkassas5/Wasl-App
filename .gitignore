@@ -52,3 +52,9 @@ Code and accounts.txt
 # ملفات تطوير محلية
 dev-scripts/node_modules/
 dev-scripts/pgdata/
+
+# Database dumps (CP6-F). `npm run db:backup` writes here by default, and a
+# dump contains every user record — phone numbers, password hashes, orders.
+# Committing one would leak the entire database into git history permanently.
+backups/
+*.dump

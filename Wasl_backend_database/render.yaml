@@ -1,6 +1,21 @@
 # Render.com blueprint — free-tier web service + Postgres.
 # Deploy: push repo to GitHub → Render → "New Blueprint" → pick this repo.
-# Render injects DATABASE_URL automatically from the linked database.
+#
+# ⚠️ Which database is production?
+#
+# DEPLOYMENT.md §1 states production runs on **Neon**, and that is the intent.
+# This blueprint also declares a Render Postgres (`wasl-db`) below and wires
+# DATABASE_URL to it, which means a blueprint deploy points the app at Render's
+# database, not Neon.
+#
+# That contradiction is deliberate to leave visible rather than silently
+# resolve. To deploy against Neon, override DATABASE_URL in the Render dashboard
+# with the Neon connection string — a dashboard value wins over the one derived
+# here. The `wasl-db` resource is kept because deleting a database resource from
+# a live blueprint destroys the data in it.
+#
+# It matters for backups: Render's free Postgres has **no automatic backups and
+# is deleted after 90 days**. See RUNBOOK.md §1.
 services:
   - type: web
     name: wasl-backend
@@ -8,7 +23,10 @@ services:
     rootDir: Wasl_backend_database
     dockerfilePath: ./Dockerfile
     plan: free
-    healthCheckPath: /
+    # Real readiness: this queries the database, unlike the previous value ("/"),
+    # which pointed at a route that is not even registered — every health check
+    # was a 404. See src/health/health.controller.ts.
+    healthCheckPath: /health
     envVars:
       - key: DATABASE_URL
         fromDatabase:
@@ -16,6 +34,21 @@ services:
           property: connectionString
       - key: JWT_SECRET
         generateValue: true
+      # 🔴 Required in production — main.ts refuses to boot without it. It was
+      # missing here, so a blueprint deploy crashed on startup. Set to the
+      # comma-separated origins allowed to call the API (the admin panel's URL);
+      # sync:false keeps the value in the dashboard rather than in the repo.
+      - key: CORS_ORIGINS
+        sync: false
+      # 🛡️ Render terminates TLS at its proxy, so without this every request
+      # appears to come from the proxy's IP and the rate limiter treats the
+      # entire internet as one client.
+      - key: TRUST_PROXY
+        value: 'true'
+      # 🔭 Error monitoring. Leave unset and Sentry stays completely inert —
+      # nothing is initialised and nothing is sent. See src/common/sentry.ts.
+      - key: SENTRY_DSN
+        sync: false
       - key: ADMIN_PHONE
         sync: false
       - key: ADMIN_PASSWORD

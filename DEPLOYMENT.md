@@ -16,7 +16,16 @@ long as the instance is active in the Neon dashboard. (If it was paused, resume
 it; if you want a fresh one, create a free project at neon.tech and copy its
 connection string.)
 
-The backend auto-creates all tables on boot (`synchronize: true`).
+The schema is owned by **migrations**, not by `synchronize`. TypeORM's
+`synchronize` is off (it silently ALTERs and DROPs production columns); the app
+runs any pending migrations automatically on boot, so a deploy brings the
+database up to date before it starts serving. Check what is applied with
+`npm run migration:show`.
+
+> ⚠️ `render.yaml` also provisions a Render Postgres (`wasl-db`) and wires
+> `DATABASE_URL` to it, which contradicts using Neon. Override `DATABASE_URL` in
+> the Render dashboard with the Neon string to keep Neon authoritative. This
+> matters for backups — see [RUNBOOK.md](RUNBOOK.md) §1.
 
 ## 2. Backend → Render (free)
 The repo includes `Wasl_backend_database/Dockerfile` and `render.yaml`.
@@ -51,8 +60,16 @@ Endpoints: `POST /auth/otp/send` `{ phone }` and `POST /auth/otp/verify`
 `{ phone, code }` (issues a JWT on success).
 
 ## 4. Flutter app
-Edit `wasl_app/lib/core/config/api_config.dart` → set `baseUrl` to your deployed
-backend URL (e.g. `https://<service>.onrender.com`). Rebuild the APK.
+The API base URL is a **build-time flag**, not a source edit — so the same
+checkout builds for local, staging and production without a diff:
+
+```bash
+flutter build apk --dart-define=API_BASE_URL=https://<service>.onrender.com
+```
+
+Without the flag the app uses `http://localhost:3000` in debug builds. Release
+builds have no usable default on purpose, so an APK can never ship silently
+pointing at a developer's machine.
 
 ## 5. Admin panel
 Static — host `wasl_admin_panel/` free on Netlify/Vercel/GitHub Pages, or open
@@ -69,3 +86,17 @@ npm run start:dev
 ```
 Local DB config comes from `DB_HOST/DB_PORT/DB_USERNAME/DB_PASSWORD/DB_NAME`
 (defaults to localhost / wasl_delivery_db). See `.env.example`.
+
+---
+
+## 6. Operations
+
+Health checks, log correlation, error monitoring, database backup/restore and
+rollback procedure are documented separately in **[RUNBOOK.md](RUNBOOK.md)**.
+
+Two things worth knowing before the first production deploy:
+
+- `CORS_ORIGINS` and `JWT_SECRET` are **required** in production — the app
+  refuses to boot without them.
+- Uploaded files are not durable on Render and are not covered by database
+  backups (RUNBOOK.md §5).
