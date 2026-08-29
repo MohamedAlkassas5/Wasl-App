@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:wasl_app/core/network/authed_http.dart';
+import 'package:wasl_app/core/ui/wasl_failure.dart';
 import 'package:wasl_app/core/config/api_config.dart';
 
 /// Backend calls for the Phase-1 location + pricing engine:
@@ -39,7 +40,7 @@ class LocationApiService {
     } on TimeoutException {
       return {'success': false, 'message': 'انتهى وقت الاتصال بالسيرفر.'};
     } catch (e) {
-      return {'success': false, 'message': 'خطأ في الاتصال: $e'};
+      return WaslFailure.from(e).toResult();
     }
   }
 
@@ -61,7 +62,7 @@ class LocationApiService {
     } on TimeoutException {
       return {'success': false, 'message': 'انتهى وقت الاتصال بالسيرفر.'};
     } catch (e) {
-      return {'success': false, 'message': 'خطأ في الاتصال: $e'};
+      return WaslFailure.from(e).toResult();
     }
   }
 
@@ -87,7 +88,7 @@ class LocationApiService {
     } on TimeoutException {
       return {'success': false, 'message': 'انتهى وقت الاتصال بالسيرفر.'};
     } catch (e) {
-      return {'success': false, 'message': 'خطأ في الاتصال: $e'};
+      return WaslFailure.from(e).toResult();
     }
   }
 

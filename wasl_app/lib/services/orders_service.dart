@@ -409,6 +409,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:wasl_app/core/config/api_config.dart';
+import 'package:wasl_app/core/ui/wasl_failure.dart';
 import 'package:wasl_app/core/network/authed_http.dart';
 import 'package:http/http.dart' as http;
 
@@ -484,7 +485,7 @@ class FlutterOrdersService {
     } on TimeoutException {
       return {'success': false, 'message': 'انتهى وقت الاتصال، السيرفر بطيء.'};
     } catch (e) {
-      return {'success': false, 'message': 'خطأ في الاتصال: $e'};
+      return WaslFailure.from(e).toResult();
     }
   }
 
@@ -508,7 +509,7 @@ class FlutterOrdersService {
     } on TimeoutException {
       return {'success': false, 'message': 'انتهى وقت الاتصال، حاول مرة أخرى'};
     } catch (e) {
-      return {'success': false, 'message': 'خطأ في الاتصال: $e'};
+      return WaslFailure.from(e).toResult();
     }
   }
 
@@ -580,7 +581,7 @@ class FlutterOrdersService {
     } on TimeoutException {
       return {'success': false, 'message': 'انتهى وقت الاتصال، السيرفر بطيء.'};
     } catch (e) {
-      return {'success': false, 'message': 'خطأ في الاتصال: $e'};
+      return WaslFailure.from(e).toResult();
     }
   }
 
@@ -601,7 +602,7 @@ class FlutterOrdersService {
     } on TimeoutException {
       return {'success': false, 'message': 'انتهى وقت الاتصال.'};
     } catch (e) {
-      return {'success': false, 'message': 'خطأ في الاتصال: $e'};
+      return WaslFailure.from(e).toResult();
     }
   }
 
@@ -625,7 +626,7 @@ class FlutterOrdersService {
     } on TimeoutException {
       return {'success': false, 'message': 'انتهى وقت الاتصال بالسيرفر.'};
     } catch (e) {
-      return {'success': false, 'message': 'خطأ في الاتصال: $e'};
+      return WaslFailure.from(e).toResult();
     }
   }
 
@@ -653,7 +654,7 @@ class FlutterOrdersService {
     } on TimeoutException {
       return {'success': false, 'message': 'انتهى وقت الاتصال.'};
     } catch (e) {
-      return {'success': false, 'message': 'خطأ: $e'};
+      return WaslFailure.from(e).toResult();
     }
   }
 
@@ -697,7 +698,7 @@ class FlutterOrdersService {
         'message': 'انتهى وقت الاتصال. راجع حالة الطلب قبل المحاولة مرة أخرى.',
       };
     } catch (e) {
-      return {'success': false, 'message': 'خطأ في الاتصال: $e'};
+      return WaslFailure.from(e).toResult();
     }
   }
 
@@ -722,7 +723,7 @@ class FlutterOrdersService {
     } on TimeoutException {
       return {'success': false, 'message': 'انتهى وقت الاتصال.'};
     } catch (e) {
-      return {'success': false, 'message': 'خطأ: $e'};
+      return WaslFailure.from(e).toResult();
     }
   }
 
@@ -738,7 +739,7 @@ class FlutterOrdersService {
     } on TimeoutException {
       return {'success': false, 'message': 'انتهى وقت الاتصال.'};
     } catch (e) {
-      return {'success': false, 'message': 'خطأ: $e'};
+      return WaslFailure.from(e).toResult();
     }
   }
 
@@ -752,7 +753,7 @@ class FlutterOrdersService {
       }
       return {'success': false, 'message': 'فشل جلب حالة الاتصال'};
     } catch (e) {
-      return {'success': false, 'message': 'خطأ: $e'};
+      return WaslFailure.from(e).toResult();
     }
   }
 
@@ -774,7 +775,7 @@ class FlutterOrdersService {
       }
       return {'success': false, 'message': decoded['message'] ?? 'فشل تحديث الحالة'};
     } catch (e) {
-      return {'success': false, 'message': 'خطأ: $e'};
+      return WaslFailure.from(e).toResult();
     }
   }
 
@@ -788,7 +789,7 @@ class FlutterOrdersService {
       }
       return {'success': false, 'message': 'فشل جلب إحصائيات اللوحة'};
     } catch (e) {
-      return {'success': false, 'message': 'خطأ: $e'};
+      return WaslFailure.from(e).toResult();
     }
   }
 
@@ -802,7 +803,7 @@ class FlutterOrdersService {
       }
       return {'success': false, 'message': 'فشل جلب تفاصيل الطلب'};
     } catch (e) {
-      return {'success': false, 'message': 'خطأ: $e'};
+      return WaslFailure.from(e).toResult();
     }
   }
 
@@ -822,7 +823,7 @@ class FlutterOrdersService {
       }
       return {'success': false, 'message': 'فشل إرسال التقييم'};
     } catch (e) {
-      return {'success': false, 'message': 'خطأ: $e'};
+      return WaslFailure.from(e).toResult();
     }
   }
 
@@ -842,7 +843,7 @@ class FlutterOrdersService {
       }
       return {'success': false, 'message': 'فشل طلب الشحن'};
     } catch (e) {
-      return {'success': false, 'message': 'خطأ: $e'};
+      return WaslFailure.from(e).toResult();
     }
   }
 
@@ -866,7 +867,7 @@ class FlutterOrdersService {
       }
       return {'success': false, 'message': 'فشل تأكيد الشحن'};
     } catch (e) {
-      return {'success': false, 'message': 'خطأ: $e'};
+      return WaslFailure.from(e).toResult();
     }
   }
 
@@ -880,7 +881,7 @@ class FlutterOrdersService {
       }
       return {'success': false, 'message': 'فشل جلب الإشعارات'};
     } catch (e) {
-      return {'success': false, 'message': 'خطأ: $e'};
+      return WaslFailure.from(e).toResult();
     }
   }
 

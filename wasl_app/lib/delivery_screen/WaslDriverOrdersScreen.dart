@@ -298,6 +298,9 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:wasl_app/core/ui/wasl_async.dart';
+import 'package:wasl_app/core/ui/wasl_failure.dart';
+import 'package:wasl_app/core/widgets/wasl_async_view.dart';
 import 'package:wasl_app/core/theme/app_colors.dart';
 import 'package:wasl_app/delivery_screen/WaslDriverJobExecutionScreen.dart';
 import 'package:wasl_app/services/orders_service.dart';
@@ -314,7 +317,10 @@ class _WaslDriverOrdersScreenState extends State<WaslDriverOrdersScreen> with Si
   int? _driverId;
   List<dynamic> _activeTrips = [];
   List<dynamic> _completedTrips = [];
-  bool _isLoading = true;
+
+  /// حالة تحميل الرحلات. زي شاشة العميل بالظبط: فشل الشبكة كان بيتعرض على
+  /// إنه «مفيش رحلات»، والكابتن ممكن يبقى عنده رحلة شغالة فعلاً.
+  WaslAsync<List<dynamic>> _trips = const WaslAsync.loading();
 
   @override
   void initState() {
@@ -338,33 +344,33 @@ class _WaslDriverOrdersScreenState extends State<WaslDriverOrdersScreen> with Si
   // 🎯 دالة جلب الرحلات المحدثة والمربوطة بالسيرفر السحابي مع كود التشخيص
   Future<void> _fetchDriverTripsFromServer() async {
     if (_driverId == null) return;
-    setState(() => _isLoading = true);
+    setState(() => _trips = const WaslAsync.loading());
 
     final result = await FlutterOrdersService().getAvailableOrders(driverId: _driverId);
 
     if (!mounted) return;
 
-    if (result['success'] == true) {
-      final List<dynamic> allOrders = result['data'] ?? [];
-
-      setState(() {
-        _activeTrips = allOrders.where((o) {
-          final isDriver = o['acceptedDriverId']?.toString() == _driverId.toString();
-          final status = o['status']?.toString().toLowerCase();
-          return isDriver && ['accepted', 'at_store', 'items_bought', 'delivering'].contains(status);
-        }).toList();
-
-        _completedTrips = allOrders.where((o) {
-          final isDriver = o['acceptedDriverId']?.toString() == _driverId.toString();
-          return isDriver && o['status']?.toString().toLowerCase() == 'completed';
-        }).toList();
-
-        _isLoading = false;
-      });
+    if (result['success'] != true) {
+      setState(() => _trips = WaslAsync.failure(WaslFailure.fromResult(result)));
       return;
     }
 
-    setState(() => _isLoading = false);
+    final List<dynamic> allOrders = result['data'] ?? [];
+
+    setState(() {
+      _activeTrips = allOrders.where((o) {
+        final isDriver = o['acceptedDriverId']?.toString() == _driverId.toString();
+        final status = o['status']?.toString().toLowerCase();
+        return isDriver && ['accepted', 'at_store', 'items_bought', 'delivering'].contains(status);
+      }).toList();
+
+      _completedTrips = allOrders.where((o) {
+        final isDriver = o['acceptedDriverId']?.toString() == _driverId.toString();
+        return isDriver && o['status']?.toString().toLowerCase() == 'completed';
+      }).toList();
+
+      _trips = WaslAsync.data(allOrders);
+    });
   }
 
   Future<void> _openJob(Map<String, dynamic> trip) async {
@@ -391,11 +397,23 @@ class _WaslDriverOrdersScreenState extends State<WaslDriverOrdersScreen> with Si
           tabs: const [Tab(text: 'رحلات نشطة'), Tab(text: 'رحلات منتهية')],
         ),
       ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator(color: AppColors.primary))
-          : TabBarView(
-        controller: _tabController,
-        children: [_buildActiveTripsList(), _buildCompletedTripsList()],
+      body: Column(
+        children: [
+          WaslOfflineBanner(
+            visible: _trips.failureOrNull?.isOffline ?? false,
+            onRetry: _fetchDriverTripsFromServer,
+          ),
+          Expanded(
+            child: WaslAsyncView<List<dynamic>>(
+              state: _trips,
+              onRetry: _fetchDriverTripsFromServer,
+              builder: (context, _) => TabBarView(
+                controller: _tabController,
+                children: [_buildActiveTripsList(), _buildCompletedTripsList()],
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

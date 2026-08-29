@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:wasl_app/core/network/authed_http.dart';
 import 'package:http/http.dart' as http;
 
+import 'package:wasl_app/core/ui/wasl_failure.dart';
 import 'package:wasl_app/core/config/api_config.dart';
 import 'package:wasl_app/customer_screen/chat/chat_models.dart';
 
@@ -48,7 +49,7 @@ class WaslChatService {
     } on TimeoutException {
       return {'success': false, 'message': 'انتهى وقت الاتصال، حاول مرة أخرى'};
     } catch (e) {
-      return {'success': false, 'message': 'خطأ في الاتصال: $e'};
+      return WaslFailure.from(e).toResult();
     }
   }
 
@@ -67,7 +68,7 @@ class WaslChatService {
     } on TimeoutException {
       return {'success': false, 'message': 'انتهى وقت الاتصال، حاول مرة أخرى'};
     } catch (e) {
-      return {'success': false, 'message': 'خطأ في الاتصال: $e'};
+      return WaslFailure.from(e).toResult();
     }
   }
 
@@ -104,7 +105,7 @@ class WaslChatService {
     } on TimeoutException {
       return {'success': false, 'message': 'انتهى وقت الاتصال، حاول مرة أخرى'};
     } catch (e) {
-      return {'success': false, 'message': 'خطأ في الاتصال: $e'};
+      return WaslFailure.from(e).toResult();
     }
   }
 
@@ -156,7 +157,7 @@ class WaslChatService {
       }
       return _failure(decoded, 'تعذّر تحميل طلبات تعديل السعر');
     } catch (e) {
-      return {'success': false, 'message': 'خطأ في الاتصال: $e'};
+      return WaslFailure.from(e).toResult();
     }
   }
 
@@ -182,7 +183,7 @@ class WaslChatService {
       if (_ok(response)) return {'success': true, 'data': decoded};
       return _failure(decoded, 'تعذّر إرسال طلب تعديل السعر');
     } catch (e) {
-      return {'success': false, 'message': 'خطأ في الاتصال: $e'};
+      return WaslFailure.from(e).toResult();
     }
   }
 
@@ -204,7 +205,7 @@ class WaslChatService {
       if (_ok(response)) return {'success': true, 'data': decoded};
       return _failure(decoded, 'تعذّر إرسال ردك');
     } catch (e) {
-      return {'success': false, 'message': 'خطأ في الاتصال: $e'};
+      return WaslFailure.from(e).toResult();
     }
   }
 

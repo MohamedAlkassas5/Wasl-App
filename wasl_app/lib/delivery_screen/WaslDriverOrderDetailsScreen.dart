@@ -326,6 +326,7 @@
 
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:wasl_app/core/ui/wasl_submit_guard.dart';
 import 'package:wasl_app/core/theme/app_colors.dart';
 import 'package:wasl_app/core/utils/phone_format.dart';
 import 'package:wasl_app/services/orders_service.dart';
@@ -339,7 +340,9 @@ class WaslDriverOrderDetailsScreen extends StatefulWidget {
   State<WaslDriverOrderDetailsScreen> createState() => _WaslDriverOrderDetailsScreenState();
 }
 
-class _WaslDriverOrderDetailsScreenState extends State<WaslDriverOrderDetailsScreen> {
+class _WaslDriverOrderDetailsScreenState
+    extends State<WaslDriverOrderDetailsScreen>
+    with WaslSubmitGuard<WaslDriverOrderDetailsScreen> {
   late Map<String, dynamic> _liveOrderData;
   Timer? _refreshTimer;
   bool _isFirstLoading = true;
@@ -508,11 +511,16 @@ class _WaslDriverOrderDetailsScreenState extends State<WaslDriverOrderDetailsScr
   ///
   /// مفيش تقديم عرض سعر بعد كده: رسوم التوصيل بتيجي من جدول المناطق،
   /// والكابتن بيقبل الطلب زي ما هو أو يسيبه.
-  Future<void> _acceptOrder() async {
+  Future<void> _acceptOrder() => guardedSubmit(_sendAcceptRequest);
+
+  Future<void> _sendAcceptRequest() async {
     final parsedId = int.tryParse(_liveOrderData['id']?.toString() ?? '');
     if (parsedId == null) return;
 
-    // 🔒 منع الضغط المزدوج: أول ضغطة تقفل الزرار لحد ما السيرفر يرد.
+    // 🔒 منع الضغط المزدوج على مستويين:
+    //  * `_isAccepting` بيقفل الزرار — بس ده بيحصل في الفريم اللي بعده، فلمستين
+    //    في نفس الفريم كانوا لسه يعدّوا الاتنين ويبعتوا قبولين.
+    //  * الحارس بيمنع الاستدعاء التاني فوراً، من غير انتظار إعادة الرسم.
     setState(() => _isAccepting = true);
 
     final result = await FlutterOrdersService().acceptAvailableOrder(parsedId);

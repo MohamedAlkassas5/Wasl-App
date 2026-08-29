@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:wasl_app/core/ui/wasl_submit_guard.dart';
 // 🎯 استيراد كلاس الألوان الموحد الخاص بهوية وصل الجديدة
 import 'package:wasl_app/core/theme/app_colors.dart';
 // 🎯 استيراد الـ Service الخاصة بالطلبات
@@ -20,7 +21,9 @@ class WaslDriverJobExecutionScreen extends StatefulWidget {
   State<WaslDriverJobExecutionScreen> createState() => _WaslDriverJobExecutionScreenState();
 }
 
-class _WaslDriverJobExecutionScreenState extends State<WaslDriverJobExecutionScreen> {
+class _WaslDriverJobExecutionScreenState
+    extends State<WaslDriverJobExecutionScreen>
+    with WaslSubmitGuard<WaslDriverJobExecutionScreen> {
   final FlutterOrdersService _ordersService = FlutterOrdersService();
 
   // تتبع حالة التنفيذ الحالية (من 0 إلى 3)
@@ -52,7 +55,19 @@ class _WaslDriverJobExecutionScreenState extends State<WaslDriverJobExecutionScr
     {'btnText': 'تم تسليم الطلب وتحصيل الكاش 🎉', 'statusText': 'في الطريق للعميل', 'backendStatus': null},
   ];
 
-  Future<void> _moveToNextStep() async {
+  /// كل خطوات الرحلة بتعدي من هنا: تحديث الحالة، طلب تعديل السعر، وإنهاء
+  /// الطلب (اللي بيخصم العمولة).
+  ///
+  /// `if (_isLoading) return` كان موجود، لكنه مش كفاية: في خطوة الفاتورة فيه
+  /// `await` على موافقة العميل **قبل** ما `_isLoading` يتحط، فضغطتين سريعتين
+  /// كانوا يعدّوا الاتنين. الحارس بيتحط على الدالة كلها.
+  ///
+  /// الحارس واحد للدالة بالكامل عن قصد — `proposePriceChange` بتتنادى من جوه
+  /// عن طريق `_ensurePriceApproved`، ولو كان عليها حارس تاني كان هيتمنع
+  /// بالحارس الخارجي وميتبعتش أصلاً.
+  Future<void> _moveToNextStep() => guardedSubmit(_advanceOrderStep);
+
+  Future<void> _advanceOrderStep() async {
     if (_isLoading) return;
 
     final dynamic rawId = widget.orderData['id'];

@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:wasl_app/core/theme/app_colors.dart';
+import 'package:wasl_app/core/ui/wasl_async.dart';
+import 'package:wasl_app/core/ui/wasl_failure.dart';
+import 'package:wasl_app/core/ui/wasl_submit_guard.dart';
+import 'package:wasl_app/core/widgets/wasl_async_view.dart';
 import 'package:wasl_app/customer_screen/cart_orders/WaslOrderTrackingScreen.dart';
 import 'package:wasl_app/services/orders_service.dart';
 
@@ -21,14 +25,22 @@ class WaslMyOrdersScreen extends StatefulWidget {
   State<WaslMyOrdersScreen> createState() => _WaslMyOrdersScreenState();
 }
 
-class _WaslMyOrdersScreenState extends State<WaslMyOrdersScreen> with SingleTickerProviderStateMixin {
+class _WaslMyOrdersScreenState extends State<WaslMyOrdersScreen>
+    with SingleTickerProviderStateMixin, WaslSubmitGuard<WaslMyOrdersScreen> {
   final FlutterOrdersService _ordersService = FlutterOrdersService();
   TabController? _tabController;
   int? _customerId;
 
   List<dynamic> _activeOrders = [];
   List<dynamic> _completedOrders = [];
-  bool _isLoading = true;
+
+  /// حالة تحميل الطلبات.
+  ///
+  /// قبل كده كان فيه `_isLoading` بس: لو الطلب فشل، الشاشة كانت بتوقف التحميل
+  /// وتسيب القوايم فاضية، فالعميل يشوف «لا توجد طلبات» وهو عنده طلب شغال —
+  /// فشل الشبكة كان بيتقرا كأنه مفيش بيانات. دلوقتي الفشل حالة قائمة بذاتها
+  /// وليها رسالة وزرار إعادة محاولة.
+  WaslAsync<List<dynamic>> _orders = const WaslAsync.loading();
 
   @override
   void initState() {
@@ -48,38 +60,38 @@ class _WaslMyOrdersScreenState extends State<WaslMyOrdersScreen> with SingleTick
   Future<void> _fetchCustomerOrdersFromServer() async {
     if (_customerId == null) return;
 
-    setState(() => _isLoading = true);
+    setState(() => _orders = const WaslAsync.loading());
 
     final result = await _ordersService.getCustomerOrders(_customerId!);
 
     if (!mounted) return;
 
-    if (result['success'] == true) {
-      final List<dynamic> allOrders = result['data'] ?? [];
-
-      setState(() {
-        _activeOrders = allOrders.where((order) {
-          final status = order['status']?.toString().toLowerCase();
-          return status == 'pending_offers' ||
-              status == 'accepted' ||
-              status == 'at_store' ||
-              status == 'items_bought' ||
-              status == 'delivering';
-        }).toList();
-
-        // 🐞 كان بيفلتر 'completed' بس، فالطلبات الملغية كانت بتختفي من الشاشتين
-        // خالص — العميل ميعرفش إن طلبه اتلغى أصلاً. دلوقتي بتظهر في السجل.
-        _completedOrders = allOrders.where((order) {
-          final status = order['status']?.toString().toLowerCase();
-          return status == 'completed' || status == 'cancelled';
-        }).toList();
-
-        _isLoading = false;
-      });
+    if (result['success'] != true) {
+      setState(() => _orders = WaslAsync.failure(WaslFailure.fromResult(result)));
       return;
     }
 
-    setState(() => _isLoading = false);
+    final List<dynamic> allOrders = result['data'] ?? [];
+
+    setState(() {
+      _activeOrders = allOrders.where((order) {
+        final status = order['status']?.toString().toLowerCase();
+        return status == 'pending_offers' ||
+            status == 'accepted' ||
+            status == 'at_store' ||
+            status == 'items_bought' ||
+            status == 'delivering';
+      }).toList();
+
+      // 🐞 كان بيفلتر 'completed' بس، فالطلبات الملغية كانت بتختفي من الشاشتين
+      // خالص — العميل ميعرفش إن طلبه اتلغى أصلاً. دلوقتي بتظهر في السجل.
+      _completedOrders = allOrders.where((order) {
+        final status = order['status']?.toString().toLowerCase();
+        return status == 'completed' || status == 'cancelled';
+      }).toList();
+
+      _orders = WaslAsync.data(allOrders);
+    });
   }
 
   String _getStatusText(String? status) {
@@ -145,15 +157,30 @@ class _WaslMyOrdersScreenState extends State<WaslMyOrdersScreen> with SingleTick
       body: Directionality(
         textDirection: TextDirection.rtl,
         child: SafeArea(
-          child: _isLoading
-              ? const Center(child: CircularProgressIndicator(color: AppColors.primary))
-              : TabBarView(
-                  controller: _tabController,
-                  children: [
-                    _buildActiveOrdersList(),
-                    _buildCompletedOrdersList(),
-                  ],
+          child: Column(
+            children: [
+              // شريط بيظهر بس لما يكون الفشل سببه الشبكة.
+              WaslOfflineBanner(
+                visible: _orders.failureOrNull?.isOffline ?? false,
+                onRetry: _fetchCustomerOrdersFromServer,
+              ),
+              Expanded(
+                child: WaslAsyncView<List<dynamic>>(
+                  state: _orders,
+                  onRetry: _fetchCustomerOrdersFromServer,
+                  // الفراغ بيتقرر جوه كل تبويب لأن لكل واحد نص مختلف؛ هنا
+                  // بنهتم بالتحميل والفشل بس.
+                  builder: (context, _) => TabBarView(
+                    controller: _tabController,
+                    children: [
+                      _buildActiveOrdersList(),
+                      _buildCompletedOrdersList(),
+                    ],
+                  ),
                 ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -322,23 +349,28 @@ class _WaslMyOrdersScreenState extends State<WaslMyOrdersScreen> with SingleTick
 
     if (confirmed != true || !mounted) return;
 
-    final result = await _ordersService.cancelOrder(parsedId);
-    if (!mounted) return;
+    // ضغطتين سريعتين على «إلغاء الطلب» كانت بتبعت طلبين للسيرفر. الحارس هنا
+    // بيمنع التاني من أصله بدل ما نستنى السيرفر يرفضه ويطلع للعميل رسالة
+    // خطأ على ضغطة شرعية تماماً.
+    await guardedSubmit(() async {
+      final result = await _ordersService.cancelOrder(parsedId);
+      if (!mounted) return;
 
-    final ok = result['success'] == true;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        backgroundColor: ok ? AppColors.success : AppColors.danger,
-        content: Text(
-          ok
-              ? 'تم إلغاء الطلب'
-              : (result['message'] ?? 'تعذّر إلغاء الطلب').toString(),
-          style: const TextStyle(fontFamily: 'Cairo'),
+      final ok = result['success'] == true;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: ok ? AppColors.success : AppColors.danger,
+          content: Text(
+            ok
+                ? 'تم إلغاء الطلب'
+                : WaslFailure.fromResult(result).message,
+            style: const TextStyle(fontFamily: 'Cairo'),
+          ),
         ),
-      ),
-    );
+      );
 
-    await _fetchCustomerOrdersFromServer();
+      await _fetchCustomerOrdersFromServer();
+    });
   }
 
   Widget _buildCompletedOrdersList() {

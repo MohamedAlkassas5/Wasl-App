@@ -42,9 +42,21 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:wasl_app/main.dart';
 
+/// اختبارات التوجيه عند فتح التطبيق.
+///
+/// كانت التلاتة بتفشل: واحد بسبب عيب حقيقي في الرسم (الأونبوردينج كان بيفيض
+/// ٣٠٣ بكسل)، والاتنين التانيين بسبب توقعات قديمة اتكتبت قبل ما اسم التطبيق
+/// يتغيّر من «وصل» لـ «فلاش توصيل» وقبل ما شاشة السبلش تستبدل مؤشر التحميل
+/// بصورة. التوقعات دلوقتي بتطابق اللي الشاشات بترسمه فعلاً.
 void main() {
+  // السبلش بتقرا التوكن من التخزين المحلي لما التايمر يخلص؛ من غير ده بيرمي
+  // MissingPluginException بدل ما ينقلنا لشاشة الدخول.
+  TestWidgetsFlutterBinding.ensureInitialized();
+  setUp(() => SharedPreferences.setMockInitialValues({}));
+
   testWidgets('Wasl app onboarding initial route test', (WidgetTester tester) async {
     // 🎯 محاكاة فتح التطبيق لأول مرة في التاريخ (لم يشاهد التعريف ولم يشاهد السبلش)
     await tester.pumpWidget(const MyApp(
@@ -53,12 +65,13 @@ void main() {
     ));
 
     // التحقق من أن التطبيق يعرض شاشة الأونبوردينج بنجاح
-    expect(find.text('وصل'), findsOneWidget);
+    expect(find.text('فلاش توصيل'), findsOneWidget);
     expect(find.text('تخطي'), findsOneWidget);
-    expect(find.text('مدينتك بين يديك'), findsOneWidget);
+    // النص الكامل زي ما هو مكتوب في الشاشة — find.text بيطابق النص بالكامل.
+    expect(find.text('كل مدينتك بين يديك'), findsOneWidget);
 
-    // التحقق من عدم وجود نصوص شاشات السبلش أو تسجيل الدخول
-    expect(find.text('فلاش توصيل • FLASH'), findsNothing);
+    // مفيش أي أثر لشاشة تسجيل الدخول في المرحلة دي
+    expect(find.text('أهلاً بك في فلاش توصيل (Flash Tawseel)'), findsNothing);
   });
 
   testWidgets('Wasl app splash initial route test', (WidgetTester tester) async {
@@ -68,9 +81,19 @@ void main() {
       seenSplash: false,
     ));
 
-    // 🎯 [تم الإصلاح]: تغيير الماتشر لـ findsOneWidget للتأكد من وجود مؤشر التحميل في شاشة الـ Splash
-    expect(find.byType(CircularProgressIndicator), findsOneWidget);
-    expect(find.text('فلاش توصيل • FLASH'), findsNothing); // لسه ملمسش الـ Login
+    // شاشة السبلش بتعرض شعار التطبيق كصورة — مؤشر التحميل اتشال من زمان،
+    // والاختبار كان لسه بيدوّر عليه.
+    expect(find.byType(Image), findsWidgets);
+    expect(
+      find.text('أهلاً بك في فلاش توصيل (Flash Tawseel)'),
+      findsNothing,
+    ); // لسه ملمسش الـ Login
+
+    // السبلش بيشغّل تايمرين (١.٢ث و ٣.٢ث) قبل ما ينقل المستخدم. لازم نستنّاهم
+    // يخلصوا، وإلا الاختبار بينتهي والتايمر لسه شغال فـ flutter_test بيعتبرها
+    // تسريب ويفشّل الاختبار. الشاشة نفسها بتتأكد من `mounted` قبل أي setState،
+    // فمفيش مشكلة حقيقية هنا — دي حاجة تخص الاختبار وحده.
+    await tester.pumpAndSettle(const Duration(seconds: 4));
   });
 
   testWidgets('Wasl app direct login route test (Second Open)', (WidgetTester tester) async {
@@ -83,11 +106,11 @@ void main() {
     // عمل pump لإتمام عملية الـ Render لشاشة الدخول مباشرة بدون سبلش
     await tester.pumpAndSettle();
 
-    // التحقق من أن التطبيق يتوجه فوراً ودون أي تأخير لشاشة تسجيل الدخول بالتسمية الجديدة لـ FLASH
-    expect(find.text('فلاش توصيل • FLASH'), findsOneWidget);
-    expect(find.text('تسجيل الدخول'), findsOneWidget);
+    // النص زي ما هو مكتوب في شاشة الدخول بالظبط
+    expect(find.text('أهلاً بك في فلاش توصيل (Flash Tawseel)'), findsOneWidget);
+    expect(find.text('تسجيل الدخول'), findsWidgets);
 
-    // التأكد التام من اختفاء نصوص الأونبوردينج القديمة
-    expect(find.text('مدينتك بين يديك'), findsNothing);
+    // التأكد التام من اختفاء نصوص الأونبوردينج
+    expect(find.text('كل مدينتك بين يديك'), findsNothing);
   });
 }

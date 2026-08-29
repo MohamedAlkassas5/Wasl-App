@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:http/http.dart' as http;
+import 'package:wasl_app/core/ui/wasl_failure.dart';
 import 'package:wasl_app/core/config/api_config.dart';
 import 'package:wasl_app/core/network/authed_http.dart';
 import 'package:wasl_app/core/session/wasl_session.dart';
@@ -88,7 +89,7 @@ class FlutterAuthService {
       }
     } catch (e) {
       print("💥 [WASL DEBUG] عطل أثناء رفع المستندات: $e");
-      return {'success': false, 'message': 'فشل الاتصال بالسيرفر الرئيسي: $e'};
+      return WaslFailure.from(e).toResult();
     }
   }
 
@@ -121,7 +122,7 @@ class FlutterAuthService {
         return {'success': false, 'message': _firstMessage(decodedData) ?? 'بيانات الدخول غير صحيحة'};
       }
     } catch (e) {
-      return {'success': false, 'message': 'فشل الاتصال بالسيرفر: $e'};
+      return WaslFailure.from(e).toResult();
     }
   }
 
@@ -155,7 +156,7 @@ class FlutterAuthService {
       }
       return {'success': false, 'message': 'فشل جلب التصنيفات'};
     } catch (e) {
-      return {'success': false, 'message': 'عطل في الاتصال: $e'};
+      return WaslFailure.from(e).toResult();
     }
   }
 
@@ -177,7 +178,7 @@ class FlutterAuthService {
       }
       return {'success': false, 'message': 'فشل جلب المتاجر القريبة'};
     } catch (e) {
-      return {'success': false, 'message': 'عطل في الاتصال بالشبكة: $e'};
+      return WaslFailure.from(e).toResult();
     }
   }
 
@@ -208,7 +209,7 @@ class FlutterAuthService {
         return {'success': false, 'message': decodedData['message'] ?? 'فشل تحديث الحالة'};
       }
     } catch (e) {
-      return {'success': false, 'message': 'عطل في الشبكة: $e'};
+      return WaslFailure.from(e).toResult();
     }
   }
 
@@ -237,10 +238,7 @@ class FlutterAuthService {
         };
       }
     } catch (e) {
-      return {
-        'success': false,
-        'message': 'حدث خطأ أثناء الاتصال بالشبكة: $e'
-      };
+      return WaslFailure.from(e).toResult();
     }
   }
 }

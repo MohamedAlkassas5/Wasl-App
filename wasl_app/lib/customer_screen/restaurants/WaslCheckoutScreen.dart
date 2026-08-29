@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:wasl_app/core/ui/wasl_submit_guard.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -27,7 +28,8 @@ class WaslCheckoutScreen extends StatefulWidget {
   State<WaslCheckoutScreen> createState() => _WaslCheckoutScreenState();
 }
 
-class _WaslCheckoutScreenState extends State<WaslCheckoutScreen> {
+class _WaslCheckoutScreenState extends State<WaslCheckoutScreen>
+    with WaslSubmitGuard<WaslCheckoutScreen> {
   final _cart = CartController.instance;
   final _zones = ZonesService();
   final _orders = FlutterOrdersService();
@@ -782,7 +784,12 @@ class _WaslCheckoutScreenState extends State<WaslCheckoutScreen> {
   /// itemised rows, so the cart is serialised into `itemsDescription`. The line
   /// detail (size, addons, per-line note and total) is all preserved in that
   /// text, which is what the driver reads.
-  Future<void> _submit() async {
+  /// الشاشة عندها `_isSubmitting` بيتحكم في شكل الزرار، لكنه مكانش بيمنع
+  /// استدعاء تاني — لمستين سريعتين كانوا يبعتوا أوردرين. الحارس بيمنع التاني
+  /// من أصله، و`_isSubmitting` فضل زي ما هو عشان الواجهة متتغيرش.
+  Future<void> _submit() => guardedSubmit(_placeOrder);
+
+  Future<void> _placeOrder() async {
     setState(() => _isSubmitting = true);
 
     final prefs = await SharedPreferences.getInstance();

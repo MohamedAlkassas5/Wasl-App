@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import 'package:wasl_app/core/ui/wasl_failure.dart';
 import 'package:wasl_app/core/config/api_config.dart';
 
 /// Client for the server-side WhatsApp OTP flow.
@@ -35,7 +36,7 @@ class WhatsappOtpService {
     } on TimeoutException {
       return {'success': false, 'message': 'انتهى وقت الاتصال بالسيرفر.'};
     } catch (e) {
-      return {'success': false, 'message': 'خطأ في الاتصال: $e'};
+      return WaslFailure.from(e).toResult();
     }
   }
 
@@ -65,7 +66,7 @@ class WhatsappOtpService {
     } on TimeoutException {
       return {'success': false, 'message': 'انتهى وقت الاتصال بالسيرفر.'};
     } catch (e) {
-      return {'success': false, 'message': 'خطأ في الاتصال: $e'};
+      return WaslFailure.from(e).toResult();
     }
   }
 
@@ -101,7 +102,7 @@ class WhatsappOtpService {
     } on TimeoutException {
       return {'success': false, 'message': 'انتهى وقت الاتصال بالسيرفر.'};
     } catch (e) {
-      return {'success': false, 'message': 'خطأ في الاتصال: $e'};
+      return WaslFailure.from(e).toResult();
     }
   }
 

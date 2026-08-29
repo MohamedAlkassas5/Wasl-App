@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:wasl_app/core/network/authed_http.dart';
 import 'package:http/http.dart' as http;
+import 'package:wasl_app/core/ui/wasl_failure.dart';
 import 'package:wasl_app/core/config/api_config.dart';
 
 /// One of the approved delivery areas (كوم حمادة / بيبان / بريم).
@@ -115,7 +116,7 @@ class ZonesService {
     } on TimeoutException {
       return {'success': false, 'message': 'انتهى وقت الاتصال بالسيرفر.'};
     } catch (e) {
-      return {'success': false, 'message': 'خطأ في الاتصال: $e'};
+      return WaslFailure.from(e).toResult();
     }
   }
 

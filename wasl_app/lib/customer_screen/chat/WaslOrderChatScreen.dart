@@ -2,6 +2,8 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:wasl_app/core/ui/wasl_submit_guard.dart';
+import 'package:wasl_app/core/ui/wasl_failure.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -31,7 +33,8 @@ class WaslOrderChatScreen extends StatefulWidget {
   State<WaslOrderChatScreen> createState() => _WaslOrderChatScreenState();
 }
 
-class _WaslOrderChatScreenState extends State<WaslOrderChatScreen> {
+class _WaslOrderChatScreenState extends State<WaslOrderChatScreen>
+    with WaslSubmitGuard<WaslOrderChatScreen> {
   final WaslChatService _chat = WaslChatService();
   final TextEditingController _composer = TextEditingController();
   final ScrollController _scroll = ScrollController();
@@ -188,6 +191,18 @@ class _WaslOrderChatScreenState extends State<WaslOrderChatScreen> {
     }
   }
 
+  /// الفرق بين السعر القديم والجديد، مكتوب بالعربي.
+  ///
+  /// «زيادة ١٥ جنيه» أوضح من رقمين المستخدم لازم يطرحهم في دماغه وهو واقف
+  /// على الباب.
+  String _priceDeltaLabel(WaslPriceProposal proposal) {
+    final delta = proposal.newItemsPrice - proposal.oldItemsPrice;
+    final amount = delta.abs().toStringAsFixed(2);
+    if (delta > 0) return 'الفرق: زيادة $amount جنيه هتدفعها عند الاستلام.';
+    if (delta < 0) return 'الفرق: تخفيض $amount جنيه.';
+    return 'مفيش فرق في المبلغ.';
+  }
+
   Future<void> _decide(WaslPriceProposal proposal, bool approve) async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -197,7 +212,13 @@ class _WaslOrderChatScreenState extends State<WaslOrderChatScreen> {
         title: Text(approve ? 'تأكيد الموافقة' : 'تأكيد الرفض'),
         content: Text(
           approve
-              ? 'هتوافق على تعديل سعر المشتريات إلى ${proposal.newItemsPrice.toStringAsFixed(2)} جنيه.'
+              // السعر القديم والجديد والفرق بينهم — مش الرقم الجديد لوحده.
+              // العميل بيدفع الفرق ده كاش عند الباب، فلازم يشوفه صريح قبل ما
+              // يوافق بدل ما يكتشفه وقت التسليم.
+              ? 'سعر المشتريات هيتغيّر من '
+                  '${proposal.oldItemsPrice.toStringAsFixed(2)} جنيه إلى '
+                  '${proposal.newItemsPrice.toStringAsFixed(2)} جنيه.\n\n'
+                  '${_priceDeltaLabel(proposal)}'
               : 'هترفض تعديل السعر. الطلب هيفضل بسعره الحالي، والكابتن هو اللي هيقرر خطوته الجاية.',
         ),
         actions: [
@@ -217,20 +238,24 @@ class _WaslOrderChatScreenState extends State<WaslOrderChatScreen> {
     );
     if (confirmed != true || !mounted) return;
 
-    final result = await _chat.decidePriceProposal(
-      widget.orderId,
-      proposal.id,
-      approve: approve,
-    );
-    if (!mounted) return;
+    // الموافقة بتغيّر السعر اللي العميل هيدفعه عند الباب. ضغطتين سريعتين
+    // كانوا يبعتوا قرارين على نفس الاقتراح.
+    await guardedSubmit(() async {
+      final result = await _chat.decidePriceProposal(
+        widget.orderId,
+        proposal.id,
+        approve: approve,
+      );
+      if (!mounted) return;
 
-    if (result['success'] == true) {
-      _toast(approve ? 'تمت الموافقة على السعر' : 'تم رفض تعديل السعر');
-      await _loadProposals();
-      await _refresh();
-    } else {
-      _toast(result['message']?.toString() ?? 'تعذّر إرسال ردك', error: true);
-    }
+      if (result['success'] == true) {
+        _toast(approve ? 'تمت الموافقة على السعر' : 'تم رفض تعديل السعر');
+        await _loadProposals();
+        await _refresh();
+      } else {
+        _toast(WaslFailure.fromResult(result).message, error: true);
+      }
+    });
   }
 
   Future<void> _openPriceChangeSheet() async {
@@ -307,20 +332,22 @@ class _WaslOrderChatScreenState extends State<WaslOrderChatScreen> {
       return;
     }
 
-    final result = await _chat.proposePriceChange(
-      widget.orderId,
-      newItemsPrice: newPrice,
-      reason: reasonController.text.trim(),
-    );
-    if (!mounted) return;
+    await guardedSubmit(() async {
+      final result = await _chat.proposePriceChange(
+        widget.orderId,
+        newItemsPrice: newPrice,
+        reason: reasonController.text.trim(),
+      );
+      if (!mounted) return;
 
-    if (result['success'] == true) {
-      _toast('تم إرسال طلب تعديل السعر');
-      await _loadProposals();
-      await _refresh();
-    } else {
-      _toast(result['message']?.toString() ?? 'تعذّر إرسال الطلب', error: true);
-    }
+      if (result['success'] == true) {
+        _toast('تم إرسال طلب تعديل السعر');
+        await _loadProposals();
+        await _refresh();
+      } else {
+        _toast(WaslFailure.fromResult(result).message, error: true);
+      }
+    });
   }
 
   // ─── الواجهة ─────────────────────────────────────────────────────────────

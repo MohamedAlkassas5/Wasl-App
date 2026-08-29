@@ -371,6 +371,7 @@
 
 
 import 'dart:io';
+import 'package:wasl_app/core/ui/wasl_submit_guard.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -395,7 +396,9 @@ class WaslOrderAnyplaceDetailsScreen extends StatefulWidget {
   State<WaslOrderAnyplaceDetailsScreen> createState() => _WaslOrderAnyplaceDetailsScreenState();
 }
 
-class _WaslOrderAnyplaceDetailsScreenState extends State<WaslOrderAnyplaceDetailsScreen> {
+class _WaslOrderAnyplaceDetailsScreenState
+    extends State<WaslOrderAnyplaceDetailsScreen>
+    with WaslSubmitGuard<WaslOrderAnyplaceDetailsScreen> {
   final FlutterOrdersService _ordersService = FlutterOrdersService();
   final _formKey = GlobalKey<FormState>();
 
@@ -517,7 +520,9 @@ class _WaslOrderAnyplaceDetailsScreenState extends State<WaslOrderAnyplaceDetail
     );
   }
 
-  Future<void> _submitOrder() async {
+  Future<void> _submitOrder() => guardedSubmit(_createOrderWithImage);
+
+  Future<void> _createOrderWithImage() async {
     if (!_formKey.currentState!.validate()) return;
 
     // 📍 A real delivery location is mandatory — no hardcoded fallback.

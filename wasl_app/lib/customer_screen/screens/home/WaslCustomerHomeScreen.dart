@@ -539,7 +539,7 @@ import 'package:wasl_app/customer_screen/order_anywhere/WaslOrderCategoryScreen.
 import 'package:wasl_app/customer_screen/pharmacy/WaslPharmacyRequestScreen.dart';
 import 'package:wasl_app/customer_screen/profile/WaslSettingsScreen.dart';
 import 'package:wasl_app/customer_screen/cart_orders/WaslMyOrdersScreen.dart';
-import 'package:wasl_app/customer_screen/profile/WaslCustomerWalletScreen.dart';
+import 'package:wasl_app/customer_screen/profile/WaslOrdersSummaryScreen.dart';
 import 'package:wasl_app/customer_screen/profile/WaslCustomerOffersScreen.dart';
 import 'package:wasl_app/services/auth_service.dart';
 import 'package:wasl_app/screens/WaslNotificationBell.dart';
@@ -1111,7 +1111,7 @@ class _WaslCustomerHomeScreenState extends State<WaslCustomerHomeScreen> {
     final List<Widget> _pages = [
       const WaslSettingsScreen(),
       const WaslMyOrdersScreen(),
-      const WaslCustomerWalletScreen(),
+      const WaslOrdersSummaryScreen(),
       const WaslCustomerOffersScreen(),
       _buildHomeBody(),
     ];
@@ -1188,7 +1188,9 @@ class _WaslCustomerHomeScreenState extends State<WaslCustomerHomeScreen> {
         items: const [
           BottomNavigationBarItem(icon: Icon(Icons.person_outline_rounded), activeIcon: Icon(Icons.person_rounded), label: 'الحساب'),
           BottomNavigationBarItem(icon: Icon(Icons.assignment_outlined), activeIcon: Icon(Icons.assignment_rounded), label: 'الطلبات'),
-          BottomNavigationBarItem(icon: Icon(Icons.account_balance_wallet_outlined), activeIcon: Icon(Icons.account_balance_wallet_rounded), label: 'المحفظة'),
+          // مش محفظة — ملخّص مصاريف الطلبات. الأيقونة والاسم اتغيروا مع بعض
+          // عشان التبويب مايوعدش العميل برصيد مش موجود.
+          BottomNavigationBarItem(icon: Icon(Icons.receipt_long_outlined), activeIcon: Icon(Icons.receipt_long_rounded), label: 'ملخص طلباتي'),
           BottomNavigationBarItem(icon: Icon(Icons.local_offer_outlined), activeIcon: Icon(Icons.local_offer_rounded), label: 'العروض'),
           BottomNavigationBarItem(icon: Icon(Icons.home_outlined), activeIcon: Icon(Icons.home_rounded), label: 'الرئيسية'),
         ],

@@ -235,6 +235,8 @@
 // }
 
 
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:wasl_app/core/theme/app_colors.dart';
@@ -389,10 +391,19 @@ class _WaslOnboardingScreenState extends State<WaslOnboardingScreen> {
   }
 
   Widget _buildPage(_OnbData d) {
-    final size = MediaQuery.of(context).size.width * 0.78;
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: WaslSpacing.lg),
-      child: Column(
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          // 🎯 الصورة مربعة، لكن مقاسها كان محسوب من العرض وحده — على أي شاشة
+          // قصيرة (أو شاشة أفقية) كان العمود بيطلع أطول من المساحة المتاحة
+          // ويعمل RenderFlex overflow. دلوقتي بناخد الأصغر من الاتنين، فالصورة
+          // تفضل كبيرة على الموبايل العادي ومحدش بيفيض على الشاشات القصيرة.
+          final size = math.min(
+            constraints.maxWidth * 0.78,
+            constraints.maxHeight * 0.45,
+          );
+          return Column(
         children: [
           const Spacer(),
           // 🎯 كارت أنيق يُظهر الصورة كاملة بكافة تفاصيلها
@@ -445,7 +456,9 @@ class _WaslOnboardingScreenState extends State<WaslOnboardingScreen> {
                   color: AppColors.textSecondary,
                   height: 1.7)),
           const Spacer(),
-        ],
+            ],
+          );
+        },
       ),
     );
   }

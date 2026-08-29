@@ -502,6 +502,7 @@
 
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:wasl_app/core/ui/wasl_submit_guard.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:wasl_app/core/theme/app_colors.dart';
 import 'package:wasl_app/delivery_screen/WaslDriverMarketplaceScreen.dart';
@@ -520,7 +521,8 @@ class WaslDriverHomeScreen extends StatefulWidget {
   State<WaslDriverHomeScreen> createState() => _WaslDriverHomeScreenState();
 }
 
-class _WaslDriverHomeScreenState extends State<WaslDriverHomeScreen> with WidgetsBindingObserver {
+class _WaslDriverHomeScreenState extends State<WaslDriverHomeScreen>
+    with WidgetsBindingObserver, WaslSubmitGuard<WaslDriverHomeScreen> {
   final FlutterOrdersService _ordersService = FlutterOrdersService();
   final LocationApiService _locationApi = LocationApiService();
   Timer? _locationTimer;
@@ -630,6 +632,49 @@ class _WaslDriverHomeScreenState extends State<WaslDriverHomeScreen> with Widget
     } catch (_) {}
   }
 
+  /// يتأكد قبل ما الكابتن يقفل الاتصال وهو ماسك رحلة.
+  ///
+  /// الخروج من الاتصال **مابيلغيش** الرحلة — الطلب بيفضل مكلّف بيه والعميل
+  /// مستنيه. الرسالة بتقول ده بصريح العبارة عشان محدش يفتكر إن قفل السويتش
+  /// معناه إنه سلّم الطلب لحد تاني.
+  Future<bool?> _confirmGoOfflineWithActiveTrips() {
+    return showDialog<bool>(
+      context: context,
+      builder: (ctx) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: const Text(
+            'عندك رحلة شغالة',
+            style: TextStyle(
+                fontFamily: 'Cairo', fontWeight: FontWeight.bold, fontSize: 17),
+          ),
+          content: const Text(
+            'لو قفلت الاتصال دلوقتي مش هتستقبل طلبات جديدة، لكن الرحلة اللي '
+            'معاك دلوقتي هتفضل مكلّف بيها والعميل مستنيك.',
+            style: TextStyle(fontFamily: 'Cairo', fontSize: 13, height: 1.6),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('تراجع',
+                  style: TextStyle(
+                      fontFamily: 'Cairo', color: AppColors.textSecondary)),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('اقفل الاتصال',
+                  style: TextStyle(
+                      fontFamily: 'Cairo',
+                      color: AppColors.danger,
+                      fontWeight: FontWeight.bold)),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Future<void> _pushLocationOnce() async {
     final pos = await LocationService.instance.getCurrentPosition();
     if (pos == null) return;
@@ -703,6 +748,21 @@ class _WaslDriverHomeScreenState extends State<WaslDriverHomeScreen> with Widget
       return;
     }
 
+    // 🛑 الخروج من الاتصال والكابتن عنده رحلة شغالة مش قرار عابر: الطلب
+    // مابيتلغيش لوحده، والعميل مستني. بنتأكد الأول بدل ما يحصل بالغلط من
+    // لمسة على السويتش.
+    if (!value && _activeOrder != null) {
+      final confirmed = await _confirmGoOfflineWithActiveTrips();
+      if (confirmed != true || !mounted) return;
+    }
+
+    // السويتش بيقبل لمسات متتالية والحالة الحقيقية بتيجي من السيرفر، فضغط
+    // سريع كان بيبعت طلبات متعارضة (اتصال/قطع/اتصال) والنتيجة الأخيرة
+    // مش بالضرورة اللي الكابتن قصدها.
+    await guardedSubmit(() => _applyOnlineStatus(value));
+  }
+
+  Future<void> _applyOnlineStatus(bool value) async {
     final result = await _ordersService.setDriverOnlineStatus(
       driverId: _driverId,
       isOnline: value,

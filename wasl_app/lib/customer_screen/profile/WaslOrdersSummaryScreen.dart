@@ -3,14 +3,14 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:wasl_app/core/theme/app_colors.dart';
 import 'package:wasl_app/services/orders_service.dart';
 
-class WaslCustomerWalletScreen extends StatefulWidget {
-  const WaslCustomerWalletScreen({Key? key}) : super(key: key);
+class WaslOrdersSummaryScreen extends StatefulWidget {
+  const WaslOrdersSummaryScreen({Key? key}) : super(key: key);
 
   @override
-  State<WaslCustomerWalletScreen> createState() => _WaslCustomerWalletScreenState();
+  State<WaslOrdersSummaryScreen> createState() => _WaslOrdersSummaryScreenState();
 }
 
-class _WaslCustomerWalletScreenState extends State<WaslCustomerWalletScreen> {
+class _WaslOrdersSummaryScreenState extends State<WaslOrdersSummaryScreen> {
   final FlutterOrdersService _ordersService = FlutterOrdersService();
   int? _customerId;
   bool _isLoading = true;
@@ -65,7 +65,11 @@ class _WaslCustomerWalletScreenState extends State<WaslCustomerWalletScreen> {
         automaticallyImplyLeading: false,
         centerTitle: true,
         title: const Text(
-          'المحفظة والدفع',
+          // ⚠️ مش محفظة. العميل مالوش رصيد ولا محفظة في النظام أصلاً — الشاشة
+          // دي ملخّص لمصاريف طلباته + طرق الدفع المتاحة. الاسم القديم
+          // («المحفظة والدفع» وكلاس WaslCustomerWalletScreen) كان بيوحي بحاجة
+          // مش موجودة، وده بالظبط اللي ممكن يخلي حد يبني عليها بعدين.
+          'ملخص طلباتي',
           style: TextStyle(
             color: AppColors.textPrimary,
             fontWeight: FontWeight.bold,

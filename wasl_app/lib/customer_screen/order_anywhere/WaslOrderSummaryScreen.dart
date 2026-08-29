@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:wasl_app/core/ui/wasl_submit_guard.dart';
 import 'package:wasl_app/core/theme/app_colors.dart';
 import 'package:wasl_app/core/providers/user_provider.dart';
 import 'package:wasl_app/services/orders_service.dart';
@@ -28,6 +29,13 @@ class WaslOrderSummaryScreen extends StatelessWidget {
   final FlutterOrdersService _ordersService = FlutterOrdersService();
   final LocationApiService _locationApi = LocationApiService();
 
+  /// يمنع إنشاء الطلب مرتين لو المستخدم ضغط «تأكيد» أكتر من مرة.
+  ///
+  /// الشاشة بتفتح دايالوج تحميل بيغطي الزرار، وده بيقلّل الاحتمال بس
+  /// مابيلغيهوش — لمستين سريعتين قبل ما الدايالوج يترسم كانوا ينفعوا يبعتوا
+  /// طلبين. وطلب متكرر هنا معناه أوردر مكرر على السيرفر، مش رسالة خطأ بس.
+  final WaslSubmitLatch _submitLatch = WaslSubmitLatch();
+
   WaslOrderSummaryScreen({
     Key? key,
     required this.category,
@@ -45,6 +53,10 @@ class WaslOrderSummaryScreen extends StatelessWidget {
   }) : super(key: key);
 
   Future<void> _submitOrderToMarketplace(BuildContext context) async {
+    await _submitLatch.run(() => _createOrder(context));
+  }
+
+  Future<void> _createOrder(BuildContext context) async {
     showDialog(
         context: context,
         barrierDismissible: false,
