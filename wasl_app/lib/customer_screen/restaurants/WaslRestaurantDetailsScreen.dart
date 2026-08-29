@@ -27,6 +27,14 @@ class WaslRestaurantDetailsScreen extends StatefulWidget {
   final double? latitude;
   final double? longitude;
 
+  /// هل المتجر بيستقبل طلبات دلوقتي؟ بييجي مع `/stores/nearby`.
+  ///
+  /// الافتراضي `true` عن قصد: لو الحقل ناقص من الرد (نسخة سيرفر أقدم) بنسيب
+  /// العميل يطلب والسيرفر هو اللي يرفض، بدل ما نقفل متجر شغال بالغلط.
+  /// السيرفر هو البوابة الحقيقية — `assertMerchantCanTakeOrders` بترفض
+  /// الطلب مهما كان اللي الشاشة عرضته.
+  final bool isAcceptingOrders;
+
   const WaslRestaurantDetailsScreen({
     super.key,
     required this.merchantId,
@@ -36,6 +44,7 @@ class WaslRestaurantDetailsScreen extends StatefulWidget {
     this.distanceKm,
     this.latitude,
     this.longitude,
+    this.isAcceptingOrders = true,
   });
 
   @override
@@ -133,6 +142,7 @@ class _WaslRestaurantDetailsScreenState
           child: Column(
             children: [
               _buildHeader(),
+              if (!widget.isAcceptingOrders) _buildClosedBanner(),
               if (_repository.isPlaceholderData) const WaslDemoDataBanner(),
               if (!_isLoading && _error == null) _buildMenuSearch(),
               // Tabs are meaningless while a search is active — results span
@@ -210,6 +220,46 @@ class _WaslRestaurantDetailsScreenState
           ],
           const SizedBox(height: 12),
           _buildFactsRow(),
+        ],
+      ),
+    );
+  }
+
+  /// شريط بيقول إن المتجر مقفول، فوق القائمة مباشرة.
+  ///
+  /// المتجر المقفول بيفضل ظاهر وبيتصفّح — القائمة والأسعار كلها باينة. اللي
+  /// بيتمنع هو الطلب بس. متجر بيختفي وقت ما يقفل بيتقري «قفل خالص» ويخلي
+  /// الناس تدوّر عليه؛ متجر باهت ومكتوب عليه إنه مقفول بيتقري «تعالى بعدين»،
+  /// وده الصح.
+  Widget _buildClosedBanner() {
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        // `withValues` مش `withOpacity`: الأخيرة اتشالت من الـ API الجديد،
+        // وباقي الملف لسه بيستخدمها من زمان. مابنزوّدش استخدام جديد لحاجة
+        // مهجورة حتى لو الموجود كتير.
+        color: AppColors.danger.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(WaslSpacing.radiusMd),
+      ),
+      child: const Row(
+        children: [
+          Icon(Icons.lock_clock_outlined, size: 18, color: AppColors.danger),
+          SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              'المتجر مقفول دلوقتي ومش بيستقبل طلبات. تقدر تتصفّح القائمة '
+              'والأسعار، وترجع تطلب لما يفتح.',
+              style: TextStyle(
+                fontSize: 12,
+                height: 1.5,
+                fontWeight: FontWeight.w600,
+                color: AppColors.danger,
+                fontFamily: 'Cairo',
+              ),
+            ),
+          ),
         ],
       ),
     );
@@ -620,6 +670,24 @@ class _WaslRestaurantDetailsScreenState
   }
 
   Future<void> _openProduct(Product product) async {
+    // 🔒 المتجر المقفول: القائمة بتتقري بس الطلب متمنوع. بنرد برسالة بدل ما
+    // اللمسة تروح في الفراغ — لمسة مابتعملش حاجة بتتقري كأن التطبيق باظ.
+    // السيرفر بيرفض الطلب برضه (`assertMerchantCanTakeOrders`)، فده تحسين
+    // للتجربة مش اعتماد أمني.
+    if (!widget.isAcceptingOrders) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          backgroundColor: AppColors.danger,
+          content: Text(
+            'المتجر مقفول دلوقتي ومش بيستقبل طلبات',
+            style: TextStyle(fontFamily: 'Cairo'),
+          ),
+        ),
+      );
+      return;
+    }
+
     await showWaslProductSheet(
       context: context,
       product: product,

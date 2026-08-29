@@ -88,8 +88,8 @@ body { background: var(--bg); color: var(--text); }
 .row .sub { color: var(--muted); font-size: 13px; margin-top: 2px; }
 .badge { font-size: 12px; font-weight: 700; padding: 4px 10px; border-radius: 999px; }
 .badge.pending { background: #fef3c7; color: var(--amber); }
-.badge.active, .badge.approved { background: #dcfce7; color: var(--green); }
-.badge.rejected, .badge.suspended { background: #fee2e2; color: var(--red); }
+.badge.active, .badge.approved, .badge.open { background: #dcfce7; color: var(--green); }
+.badge.rejected, .badge.suspended, .badge.closed { background: #fee2e2; color: var(--red); }
 .docs { display: flex; gap: 8px; flex-wrap: wrap; }
 .doc-thumb { width: 54px; height: 54px; border-radius: 8px; object-fit: cover; border: 1px solid var(--border); cursor: pointer; }
 .actions { display: flex; gap: 8px; flex-wrap: wrap; }

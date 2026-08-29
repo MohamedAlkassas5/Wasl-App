@@ -132,7 +132,7 @@ document.querySelectorAll('.nav-item').forEach((el) =>
 );
 
 const TITLES = { dashboard: 'لوحة المعلومات', registrations: 'طلبات التسجيل',
-  topups: 'طلبات شحن المحفظة', settings: 'إعدادات النظام' };
+  merchants: 'المتاجر', topups: 'طلبات شحن المحفظة', settings: 'إعدادات النظام' };
 
 function route(name) {
   document.querySelectorAll('.nav-item').forEach((el) =>
@@ -140,7 +140,8 @@ function route(name) {
   $('pageTitle').textContent = TITLES[name];
   $('pageBody').innerHTML = '<div class="empty">جاري التحميل...</div>';
   ({ dashboard: renderDashboard, registrations: renderRegistrations,
-     topups: renderTopups, settings: renderSettings }[name])();
+     merchants: renderMerchants, topups: renderTopups,
+     settings: renderSettings }[name])();
 }
 
 /* ---------- dashboard ---------- */
@@ -218,6 +219,95 @@ async function reviewReg(userId, status, askNote) {
     toast('تم تحديث حالة الطلب');
     loadRegs();
   } catch (e) { toast(e.message, 'bad'); }
+}
+
+/* ---------- merchants: open / closed (CP-D) ----------
+   The daily "the kitchen is closed" switch, deliberately separate from the
+   approval workflow above: closing a shop is not a judgement on whether it
+   belongs on the platform, and the backend keeps the two apart too. */
+
+/* Merchant ids with an availability change in flight.
+   Two fast clicks would send two PATCHes, and the shop ends up in whichever
+   state the *last response* carried — not necessarily the one the admin
+   clicked last. The check is synchronous, so the second click never becomes a
+   request at all rather than racing the first. */
+const availabilityInFlight = new Set();
+
+function renderMerchants() {
+  $('pageBody').innerHTML = '<div id="merchantList"></div>';
+  loadMerchants();
+}
+
+async function loadMerchants() {
+  try {
+    // Approved merchants only — the endpoint filters by status, and an
+    // unapproved store has nothing to open or close yet.
+    const list = await api('/merchants');
+    if (!list.length) {
+      $('merchantList').innerHTML = '<div class="empty">لا توجد متاجر مقبولة</div>';
+      return;
+    }
+    $('merchantList').innerHTML = list.map(merchantRow).join('');
+  } catch (e) {
+    $('merchantList').innerHTML = `<div class="empty">${escapeHtml(e.message)}</div>`;
+  }
+}
+
+function merchantRow(m) {
+  const safe = (v) => escapeHtml(v == null ? '' : String(v));
+  // Numeric, because this value is interpolated into an onclick attribute.
+  const id = Number(m.id);
+  // `!== false` so a store from a response without the field reads as open,
+  // matching the app: the server is what actually refuses a closed store.
+  const open = m.isAcceptingOrders !== false;
+
+  const badge = open
+    ? '<span class="badge open">مفتوح — بيستقبل طلبات</span>'
+    : '<span class="badge closed">مقفول — مش بيستقبل طلبات</span>';
+
+  // The button says what pressing it will do; the badge says what is true now.
+  // A button labelled with the current state is the classic way to get an
+  // admin to close a shop they meant to open.
+  const action = open
+    ? `<button class="btn btn-sm btn-red" id="avail_${id}" onclick="setMerchantAvailability(${id}, false)">اقفل المتجر</button>`
+    : `<button class="btn btn-sm btn-green" id="avail_${id}" onclick="setMerchantAvailability(${id}, true)">افتح المتجر</button>`;
+
+  return `
+    <div class="row">
+      <div class="grow">
+        <div class="name">${safe(m.storeName)} ${m.storeType ? '<span class="muted">(' + safe(m.storeType) + ')</span>' : ''}</div>
+        <div class="sub">#${safe(id)}${m.addressDetails ? ' • ' + safe(m.addressDetails) : ''}</div>
+        <div class="sub" style="margin-top:6px">${badge}</div>
+      </div>
+      <div class="actions">${action}</div>
+    </div>`;
+}
+
+async function setMerchantAvailability(id, isAcceptingOrders) {
+  if (availabilityInFlight.has(id)) return;
+  availabilityInFlight.add(id);
+
+  const btn = $(`avail_${id}`);
+  if (btn) btn.disabled = true;
+
+  try {
+    const r = await api(`/admin/catalog/merchants/${id}/availability`, {
+      method: 'PATCH',
+      body: { isAcceptingOrders },
+    });
+    // Report what the server stored, not what we asked for.
+    toast(r?.isAcceptingOrders ? 'تم فتح المتجر' : 'تم قفل المتجر');
+    // Re-reading replaces the whole list, button included — so nothing
+    // re-enables the old node, and the badge reflects the stored state.
+    await loadMerchants();
+  } catch (e) {
+    toast(e.message, 'bad');
+    // Only on failure: the row is still on screen and the admin should be
+    // able to try again.
+    if (btn) btn.disabled = false;
+  } finally {
+    availabilityInFlight.delete(id);
+  }
 }
 
 /* ---------- top-up requests ---------- */

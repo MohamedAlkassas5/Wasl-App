@@ -331,7 +331,15 @@ class _WaslCategoryDetailsScreenState extends State<WaslCategoryDetailsScreen> {
     final distance = _distanceOf(store);
     final logo = store['logo']?.toString();
 
-    return GestureDetector(
+    // المتجر المقفول بيفضل في القائمة، باهت ومكتوب عليه إنه مقفول. الاختفاء
+    // بيتقري «المتجر مابقاش موجود» ويخلي الناس تدوّر عليه.
+    // `!= false` مش `== true`: لو الحقل ناقص من الرد بنعتبره مفتوح ونسيب
+    // السيرفر يرفض، بدل ما نقفل متجر شغال بالغلط.
+    final accepting = store['isAcceptingOrders'] != false;
+
+    return Opacity(
+      opacity: accepting ? 1 : 0.55,
+      child: GestureDetector(
       onTap: () => Navigator.push(
         context,
         MaterialPageRoute(
@@ -343,6 +351,7 @@ class _WaslCategoryDetailsScreenState extends State<WaslCategoryDetailsScreen> {
             distanceKm: distance.isFinite ? distance : null,
             latitude: double.tryParse(store['latitude']?.toString() ?? ''),
             longitude: double.tryParse(store['longitude']?.toString() ?? ''),
+            isAcceptingOrders: accepting,
           ),
         ),
       ),
@@ -422,6 +431,10 @@ class _WaslCategoryDetailsScreenState extends State<WaslCategoryDetailsScreen> {
                         fontFamily: 'Cairo',
                       ),
                     ),
+                    if (!accepting) ...[
+                      const SizedBox(width: 8),
+                      const WaslStatusBadge('مقفول دلوقتي', AppColors.danger),
+                    ],
                   ],
                 ),
               ],
@@ -431,6 +444,7 @@ class _WaslCategoryDetailsScreenState extends State<WaslCategoryDetailsScreen> {
                 color: AppColors.textSecondary, size: 22),
           ],
         ),
+      ),
       ),
     );
   }

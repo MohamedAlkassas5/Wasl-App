@@ -529,6 +529,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:wasl_app/core/theme/app_colors.dart';
 import 'package:wasl_app/core/theme/wasl_assets.dart';
+import 'package:wasl_app/core/widgets/wasl_ui.dart';
 import 'package:wasl_app/customer_screen/screens/home/WaslCategoryDetailsScreen.dart';
 import 'package:wasl_app/customer_screen/restaurants/WaslRestaurantDetailsScreen.dart';
 import 'package:wasl_app/customer_screen/restaurants/WaslFloatingCartBar.dart';
@@ -1010,6 +1011,10 @@ class _WaslCustomerHomeScreenState extends State<WaslCustomerHomeScreen> {
                   final distance = double.tryParse(store['distance']?.toString() ?? '');
                   final storeName = (store['merchant_store_name'] ?? 'متجر شريك').toString();
                   final storeType = (store['merchant_store_type'] ?? '').toString();
+                  // المتجر المقفول بيفضل في القائمة باهت — الاختفاء بيتقري
+                  // «مابقاش موجود». `!= false` عشان لو الحقل ناقص نعتبره مفتوح
+                  // ونسيب السيرفر يرفض.
+                  final accepting = store['isAcceptingOrders'] != false;
                   // 🎯 الكارت بقى بيفتح المتجر بدل ما يكون مجرد عرض ساكن.
                   return GestureDetector(
                     onTap: () => Navigator.push(
@@ -1021,6 +1026,7 @@ class _WaslCustomerHomeScreenState extends State<WaslCustomerHomeScreen> {
                           merchantType: storeType.isEmpty ? null : storeType,
                           addressDetails: store['addressDetails']?.toString(),
                           distanceKm: distance,
+                          isAcceptingOrders: accepting,
                         ),
                       ),
                     ),
@@ -1029,6 +1035,7 @@ class _WaslCustomerHomeScreenState extends State<WaslCustomerHomeScreen> {
                       tags: storeType,
                       dist: distance == null ? '' : '${distance.toStringAsFixed(1)} كم',
                       merchantId: (store['id'] as num?)?.toInt() ?? index,
+                      isAcceptingOrders: accepting,
                     ),
                   );
                 },
@@ -1042,8 +1049,10 @@ class _WaslCustomerHomeScreenState extends State<WaslCustomerHomeScreen> {
   // ⚠️ التقييم ووقت التوصيل ورسوم التوصيل كانت بتتحسب هنا بأرقام مخترعة
   // (4.7 ثابت، والمسافة×10+5 دقيقة، والمسافة×5+10 جنيه) — ورقم الرسوم ده كان
   // بيخالف محرك التسعير الحقيقي في السيرفر. اتشالوا لحد ما يبقى ليهم مصدر حقيقي.
-  Widget _buildLiveStoreCard({required String name, required String tags, required String dist, int merchantId = 0}) {
-    return Container(
+  Widget _buildLiveStoreCard({required String name, required String tags, required String dist, int merchantId = 0, bool isAcceptingOrders = true}) {
+    return Opacity(
+      opacity: isAcceptingOrders ? 1 : 0.55,
+      child: Container(
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
@@ -1088,10 +1097,17 @@ class _WaslCustomerHomeScreenState extends State<WaslCustomerHomeScreen> {
                     ],
                   ),
                 ],
+                // بره الـ `if` بتاع المسافة عن قصد: المتجر ممكن ميكونش ليه
+                // مسافة معروفة ويفضل لازم يبان إنه مقفول.
+                if (!isAcceptingOrders) ...[
+                  const SizedBox(height: 6),
+                  const WaslStatusBadge('مقفول دلوقتي', AppColors.danger),
+                ],
               ],
             ),
           ),
         ],
+      ),
       ),
     );
   }
