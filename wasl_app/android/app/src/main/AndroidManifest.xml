@@ -1,7 +1,22 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools"> <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
-    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
+    <!--
+      CP-E / S9 — ACCESS_BACKGROUND_LOCATION was removed here.
+
+      Nothing in the app used it. `LocationService` only ever calls
+      Geolocator.checkPermission()/requestPermission() (which grant the
+      foreground "while in use" level) and reads positions through a plain
+      LocationSettings; it never asks for LocationPermission.always and never
+      configures an AndroidSettings foreground-service notification, which is
+      what continuous background tracking would actually require. The driver's
+      position is pushed by a timer that runs while the app is open.
+
+      Declaring it anyway was not free: it triggers a separate Play review with
+      a demo-video and written-justification requirement, for a capability the
+      code cannot exercise. If background tracking is ever genuinely built,
+      this comes back together with that work and its Play justification.
+    -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
     <uses-permission android:name="android.permission.INTERNET" />

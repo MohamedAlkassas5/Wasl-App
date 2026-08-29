@@ -4,6 +4,37 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="wasl-api-base" content="" />
+  <!--
+    S10/CP-E — Content Security Policy.
+
+    `script-src 'self'` carries no 'unsafe-inline', which is the whole point:
+    the panel renders admin-supplied text (store names, admin notes, rejection
+    reasons) into HTML, and while every interpolation goes through escapeHtml,
+    a CSP that still permitted inline script would add nothing on the day that
+    escaping is missed somewhere. Making it real cost the panel its inline
+    onclick handlers — they are delegated from one listener in app.js now.
+
+    `style-src` does keep 'unsafe-inline'. The panel uses style="" attributes
+    in a dozen places, and an injected *style* cannot execute; it is a far
+    weaker vector than script, and removing them buys much less than it costs.
+
+    `img-src` must allow blob: — protected documents (national IDs, payment
+    proofs) are fetched with the Bearer token and handed to <img> as blob URLs,
+    because an <img src> cannot send an Authorization header.
+
+    ⚠️ `connect-src 'self'` assumes the API is same-origin. If you point
+    <meta name="wasl-api-base"> at a different origin, add that exact origin
+    here too or every request will be blocked.
+
+    ⚠️ There is deliberately no `frame-ancestors` here. It is *ignored* when
+    CSP arrives in a <meta> tag, so listing it would log an error on every load
+    and, worse, read as clickjacking protection that is not actually in force.
+    It has to be set as a real HTTP header at the static host:
+
+        Content-Security-Policy: frame-ancestors 'none'
+        X-Frame-Options: DENY
+  -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'self'; object-src 'none'; form-action 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; connect-src 'self'" />
   <title>وصل | لوحة تحكم الإدارة</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="stylesheet" href="./styles.css" />
@@ -52,7 +83,8 @@
   </div>
 
   <!-- Image lightbox -->
-  <div id="lightbox" class="lightbox hidden" onclick="this.classList.add('hidden')">
+  <!-- The close handler moved into app.js; CSP forbids inline script. -->
+  <div id="lightbox" class="lightbox hidden">
     <img id="lightboxImg" alt="مستند" />
   </div>
 

@@ -15,6 +15,7 @@ import { Roles } from '../auth/decorators/roles.decorator';
 import { AuthUser, CurrentUser } from '../auth/current-user';
 import { UserRole } from '../users/entities/user.entity';
 import { OrderCancellationService } from './order-cancellation.service';
+import { AdminAuditLogService } from '../admin/admin-audit-log.service';
 import { CancellationAppealStatus } from './entities/order-cancellation-request.entity';
 import { ReviewCancellationDto } from './dto/cancellation.dto';
 
@@ -30,7 +31,10 @@ import { ReviewCancellationDto } from './dto/cancellation.dto';
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(UserRole.ADMIN)
 export class AdminCancellationsController {
-  constructor(private readonly cancellationService: OrderCancellationService) {}
+  constructor(
+    private readonly cancellationService: OrderCancellationService,
+    private readonly auditLog: AdminAuditLogService,
+  ) {}
 
   /** The queue. `?appealStatus=pending` is the one an admin actually works. */
   @Get()
@@ -46,21 +50,48 @@ export class AdminCancellationsController {
 
   /** Customer was at fault — give the driver their penalty back. */
   @Post(':id/refund')
-  refund(
+  async refund(
     @CurrentUser() admin: AuthUser,
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: ReviewCancellationDto,
   ) {
-    return this.cancellationService.refundPenalty(id, admin, dto ?? {});
+    const result = await this.cancellationService.refundPenalty(
+      id,
+      admin,
+      dto ?? {},
+    );
+    // The decision is already recorded on the request row (reviewedBy,
+    // reviewNote). The audit entry is the *cross-cutting* view — one place
+    // that answers "what did this administrator do today" across every module.
+    await this.auditLog.record({
+      adminId: admin.sub,
+      action: 'cancellation.refund',
+      targetType: 'cancellation_request',
+      targetId: id,
+      payload: dto ?? {},
+    });
+    return result;
   }
 
   /** Driver was at fault — the charge stands. */
   @Post(':id/uphold')
-  uphold(
+  async uphold(
     @CurrentUser() admin: AuthUser,
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: ReviewCancellationDto,
   ) {
-    return this.cancellationService.upholdPenalty(id, admin, dto ?? {});
+    const result = await this.cancellationService.upholdPenalty(
+      id,
+      admin,
+      dto ?? {},
+    );
+    await this.auditLog.record({
+      adminId: admin.sub,
+      action: 'cancellation.uphold',
+      targetType: 'cancellation_request',
+      targetId: id,
+      payload: dto ?? {},
+    });
+    return result;
   }
 }

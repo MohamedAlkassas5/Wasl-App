@@ -184,6 +184,24 @@ export class PaymentsService {
     });
     if (!driver) throw new NotFoundException('حساب الكابتن غير موجود');
 
+    // 💰 CP-E / S5 — a balance is allowed to go negative, by decision (Q-B2,
+    // option A). There is no floor here and that is deliberate, not an
+    // oversight.
+    //
+    // The debits that can cross zero are the completion commission and the
+    // cancellation penalty, and both are charged for work that already
+    // happened. Refusing the debit because the wallet is short would hand the
+    // driver a free delivery and leave the platform with no way to collect;
+    // clamping at zero would silently forgive the difference, which is the
+    // same thing with worse bookkeeping. Letting the balance go negative keeps
+    // the ledger honest about what is owed.
+    //
+    // What stops it becoming free work is the *other* half of the policy: a
+    // driver below `min_wallet_to_go_online` cannot go online or accept, which
+    // a negative balance always is. So the debt is carried until they top up,
+    // and is settled by that top-up rather than written off. Enforcement lives
+    // in `OrdersService.setDriverOnlineStatus`, pinned by
+    // `negative-balance.spec.ts`.
     const newBalance =
       Math.round((Number(driver.balance) + entry.amount) * 100) / 100;
 

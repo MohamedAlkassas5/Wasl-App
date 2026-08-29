@@ -40,7 +40,7 @@ async function docBlobUrl(path) {
 
 /** Placeholder tag; `hydrateDocs` fills in the real image after render. */
 const docThumb = (p) =>
-  `<img class="doc-thumb" data-doc="${String(p).replace(/"/g, '&quot;')}" alt="مستند" onclick="showImage(this.src)" />`;
+  `<img class="doc-thumb" data-doc="${String(p).replace(/"/g, '&quot;')}" alt="مستند" data-act="lightbox" />`;
 
 async function hydrateDocs(root) {
   for (const img of (root || document).querySelectorAll('img[data-doc]')) {
@@ -201,9 +201,9 @@ function regRow(u) {
         <div class="docs" style="margin-top:10px">${docs}</div>
       </div>
       <div class="actions">
-        <button class="btn btn-sm btn-green" onclick="reviewReg(${u.id},'active')">قبول</button>
-        <button class="btn btn-sm btn-amber" onclick="reviewReg(${u.id},'pending',true)">طلب تعديل</button>
-        <button class="btn btn-sm btn-red" onclick="reviewReg(${u.id},'rejected',true)">رفض</button>
+        <button class="btn btn-sm btn-green" data-act="review-reg" data-id="${Number(u.id)}" data-status="active">قبول</button>
+        <button class="btn btn-sm btn-amber" data-act="review-reg" data-id="${Number(u.id)}" data-status="pending" data-ask="1">طلب تعديل</button>
+        <button class="btn btn-sm btn-red" data-act="review-reg" data-id="${Number(u.id)}" data-status="rejected" data-ask="1">رفض</button>
       </div>
     </div>`;
 }
@@ -269,8 +269,8 @@ function merchantRow(m) {
   // A button labelled with the current state is the classic way to get an
   // admin to close a shop they meant to open.
   const action = open
-    ? `<button class="btn btn-sm btn-red" id="avail_${id}" onclick="setMerchantAvailability(${id}, false)">اقفل المتجر</button>`
-    : `<button class="btn btn-sm btn-green" id="avail_${id}" onclick="setMerchantAvailability(${id}, true)">افتح المتجر</button>`;
+    ? `<button class="btn btn-sm btn-red" id="avail_${id}" data-act="merchant-availability" data-id="${id}" data-open="0">اقفل المتجر</button>`
+    : `<button class="btn btn-sm btn-green" id="avail_${id}" data-act="merchant-availability" data-id="${id}" data-open="1">افتح المتجر</button>`;
 
   return `
     <div class="row">
@@ -320,7 +320,7 @@ async function renderTopups() {
       <h3>شحن يدوي لرصيد مندوب</h3>
       <div class="settings-grid" style="margin-top:12px">
         <div class="field"><input id="creditDriver" type="number" placeholder="رقم المندوب (ID)" /><input id="creditAmount" type="number" placeholder="المبلغ" /></div>
-        <button class="btn btn-primary btn-sm" style="justify-self:start" onclick="manualCredit()">إضافة رصيد</button>
+        <button class="btn btn-primary btn-sm" style="justify-self:start" data-act="manual-credit">إضافة رصيد</button>
       </div>
     </div>
     <div id="topupList"></div>`;
@@ -345,8 +345,8 @@ function topupRow(r) {
     ? docThumb(r.proofImageUrl)
     : '<span class="muted">بدون إثبات</span>';
   const actions = r.status === 'pending'
-    ? `<button class="btn btn-sm btn-green" onclick="reviewTopup(${r.id},'approve')">توثيق وإضافة الرصيد</button>
-       <button class="btn btn-sm btn-red" onclick="reviewTopup(${r.id},'reject')">رفض</button>`
+    ? `<button class="btn btn-sm btn-green" data-act="review-topup" data-id="${Number(r.id)}" data-action="approve">توثيق وإضافة الرصيد</button>
+       <button class="btn btn-sm btn-red" data-act="review-topup" data-id="${Number(r.id)}" data-action="reject">رفض</button>`
     : '';
   return `
     <div class="row">
@@ -401,7 +401,7 @@ function settingField(s) {
       <label title="${safe(s.key)}">${safe(s.description || s.key)}</label>
       <span style="display:flex; gap:8px">
         <input id="set_${safe(s.key)}" value="${safe(s.value)}" style="max-width:160px" />
-        <button class="btn btn-sm btn-primary" onclick="saveSetting('${safe(s.key)}')">حفظ</button>
+        <button class="btn btn-sm btn-primary" data-act="save-setting" data-key="${safe(s.key)}">حفظ</button>
       </span>
     </div>`;
 }
@@ -412,5 +412,49 @@ async function saveSetting(key) {
     toast('تم الحفظ');
   } catch (e) { toast(e.message, 'bad'); }
 }
+
+/* ---------- delegated actions (CP-E / S8) ----------
+   Every button used to carry its own `onclick="fn(...)"`. That needs
+   script-src 'unsafe-inline', which would have made the CSP decorative: the
+   panel renders admin-supplied text (store names, admin notes, rejection
+   reasons) into HTML, and permitting inline script means a single missed
+   escapeHtml is executable. One listener, and the attributes become data.
+
+   It also removes a latent hazard of its own — those handlers interpolated
+   values straight into a JavaScript context, where HTML escaping is the wrong
+   escaping. Nothing exploited it because every interpolated value was a
+   number, but that was a property of the callers, not a guarantee. */
+document.addEventListener('click', (e) => {
+  const el = e.target.closest('[data-act]');
+  if (!el) return;
+  const d = el.dataset;
+
+  switch (d.act) {
+    case 'lightbox':
+      showImage(el.src);
+      break;
+    case 'review-reg':
+      reviewReg(Number(d.id), d.status, d.ask === '1');
+      break;
+    case 'review-topup':
+      reviewTopup(Number(d.id), d.action);
+      break;
+    case 'manual-credit':
+      manualCredit();
+      break;
+    case 'save-setting':
+      saveSetting(d.key);
+      break;
+    case 'merchant-availability':
+      setMerchantAvailability(Number(d.id), d.open === '1');
+      break;
+  }
+});
+
+// The lightbox closes on a click anywhere on its backdrop. It is in the static
+// HTML rather than rendered, so it gets its own listener instead of data-act.
+$('lightbox').addEventListener('click', () =>
+  $('lightbox').classList.add('hidden'),
+);
 
 /* ---------- boot ---------- */

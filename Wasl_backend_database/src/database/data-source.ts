@@ -95,6 +95,7 @@ import { OrderCancellationRequest } from '../orders/entities/order-cancellation-
 import { OrderAssignment } from '../orders/entities/order-assignment.entity';
 import { DeviceToken } from '../notifications/entities/device-token.entity';
 import { RefreshToken } from '../auth/entities/refresh-token.entity';
+import { AdminAuditLog } from '../admin/entities/admin-audit-log.entity';
 
 /**
  * Every entity that maps to a table.
@@ -122,6 +123,7 @@ export const ENTITIES = [
   OrderAssignment,
   DeviceToken,
   RefreshToken,
+  AdminAuditLog,
 ];
 
 export function buildDataSourceOptions(): DataSourceOptions {

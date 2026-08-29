@@ -10,17 +10,22 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { CatalogService } from './catalog.service';
+import { AdminAuditLogService } from '../admin/admin-audit-log.service';
 import { CreateMenuCategoryDto } from './dto/create-menu-category.dto';
 import { CreateProductDto } from './dto/create-product.dto';
 import { SetMerchantAvailabilityDto } from './dto/set-merchant-availability.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
+import { CurrentUser, AuthUser } from '../auth/current-user';
 import { UserRole } from '../users/entities/user.entity';
 
 @Controller()
 export class CatalogController {
-  constructor(private readonly service: CatalogService) {}
+  constructor(
+    private readonly service: CatalogService,
+    private readonly auditLog: AdminAuditLogService,
+  ) {}
 
   /** Approved merchants; `?type=مطاعم` narrows to one store type. */
   @Get('merchants')
@@ -52,25 +57,57 @@ export class CatalogController {
   @Post('admin/catalog/categories')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.ADMIN)
-  createCategory(@Body() dto: CreateMenuCategoryDto) {
-    return this.service.createCategory(dto);
+  async createCategory(
+    @Body() dto: CreateMenuCategoryDto,
+    @CurrentUser() admin: AuthUser,
+  ) {
+    const result = await this.service.createCategory(dto);
+    await this.auditLog.record({
+      adminId: admin.sub,
+      action: 'catalog.category.create',
+      targetType: 'menu_category',
+      targetId: (result as { id?: number })?.id ?? '',
+      payload: dto,
+    });
+    return result;
   }
 
   @Post('admin/catalog/products')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.ADMIN)
-  createProduct(@Body() dto: CreateProductDto) {
-    return this.service.createProduct(dto);
+  async createProduct(
+    @Body() dto: CreateProductDto,
+    @CurrentUser() admin: AuthUser,
+  ) {
+    const result = await this.service.createProduct(dto);
+    await this.auditLog.record({
+      adminId: admin.sub,
+      action: 'catalog.product.create',
+      targetType: 'product',
+      targetId: (result as { id?: number })?.id ?? '',
+      payload: dto,
+    });
+    return result;
   }
 
   @Patch('admin/catalog/products/:id')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.ADMIN)
-  updateProduct(
+  async updateProduct(
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: Partial<CreateProductDto>,
+    @CurrentUser() admin: AuthUser,
   ) {
-    return this.service.updateProduct(id, dto);
+    const result = await this.service.updateProduct(id, dto);
+    // Price edits live here — worth attributing.
+    await this.auditLog.record({
+      adminId: admin.sub,
+      action: 'catalog.product.update',
+      targetType: 'product',
+      targetId: id,
+      payload: dto,
+    });
+    return result;
   }
 
   /**
@@ -83,10 +120,22 @@ export class CatalogController {
   @Patch('admin/catalog/merchants/:id/availability')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.ADMIN)
-  setMerchantAvailability(
+  async setMerchantAvailability(
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: SetMerchantAvailabilityDto,
+    @CurrentUser() admin: AuthUser,
   ) {
-    return this.service.setAcceptingOrders(id, dto.isAcceptingOrders);
+    const result = await this.service.setAcceptingOrders(
+      id,
+      dto.isAcceptingOrders,
+    );
+    await this.auditLog.record({
+      adminId: admin.sub,
+      action: 'merchant.availability',
+      targetType: 'merchant',
+      targetId: id,
+      payload: { isAcceptingOrders: dto.isAcceptingOrders },
+    });
+    return result;
   }
 }

@@ -30,6 +30,7 @@ import { StorageModule } from './storage/storage.module';
 import { ZonesModule } from './zones/zones.module';
 import { CatalogModule } from './catalog/catalog.module';
 import { AccountAccessModule } from './auth/account-access.module';
+import { AdminAuditLogModule } from './admin/admin-audit-log.module';
 import { NotificationsModule } from './notifications/notifications.module';
 
 @Module({
@@ -67,6 +68,8 @@ import { NotificationsModule } from './notifications/notifications.module';
     AccountAccessModule,
     // Global: every module that notifies injects the one service.
     NotificationsModule,
+    // Global: admin actions are audited from five different modules.
+    AdminAuditLogModule,
     ZonesModule,
     CatalogModule,
     AuthModule,

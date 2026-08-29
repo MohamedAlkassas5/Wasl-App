@@ -11,6 +11,7 @@ import {
 } from '@nestjs/common';
 import { Request } from 'express';
 import { PaymentsService } from './payments.service';
+import { AdminAuditLogService } from '../admin/admin-audit-log.service';
 import { ReviewTopUpDto, AdminCreditDto } from './dto/topup.dto';
 import { TopUpStatus } from './entities/wallet-topup-request.entity';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
@@ -30,7 +31,10 @@ interface JwtReq extends Request {
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(UserRole.ADMIN)
 export class AdminPaymentsController {
-  constructor(private readonly paymentsService: PaymentsService) {}
+  constructor(
+    private readonly paymentsService: PaymentsService,
+    private readonly auditLog: AdminAuditLogService,
+  ) {}
 
   @Get('topup-requests')
   list(@Query('status') status?: TopUpStatus) {
@@ -38,34 +42,69 @@ export class AdminPaymentsController {
   }
 
   @Patch('topup-requests/:id/approve')
-  approve(
+  async approve(
     @Param('id', ParseIntPipe) id: number,
     @Req() req: JwtReq,
     @Body() dto: ReviewTopUpDto,
   ) {
-    return this.paymentsService.approveRequest(
+    const result = await this.paymentsService.approveRequest(
       id,
       req.user!.sub,
       dto.adminNote,
     );
+    // Money moved. This is the entry someone will come looking for.
+    await this.auditLog.record({
+      adminId: req.user!.sub,
+      action: 'wallet.topup.approve',
+      targetType: 'topup_request',
+      targetId: id,
+      payload: dto,
+    });
+    return result;
   }
 
   @Patch('topup-requests/:id/reject')
-  reject(
+  async reject(
     @Param('id', ParseIntPipe) id: number,
     @Req() req: JwtReq,
     @Body() dto: ReviewTopUpDto,
   ) {
-    return this.paymentsService.rejectRequest(id, req.user!.sub, dto.adminNote);
+    const result = await this.paymentsService.rejectRequest(
+      id,
+      req.user!.sub,
+      dto.adminNote,
+    );
+    await this.auditLog.record({
+      adminId: req.user!.sub,
+      action: 'wallet.topup.reject',
+      targetType: 'topup_request',
+      targetId: id,
+      payload: dto,
+    });
+    return result;
   }
 
   @Patch('drivers/:driverId/credit')
-  credit(
+  async credit(
     @Param('driverId', ParseIntPipe) driverId: number,
     @Req() req: JwtReq,
     @Body() dto: AdminCreditDto,
   ) {
-    return this.paymentsService.adminCredit(driverId, req.user!.sub, dto);
+    const result = await this.paymentsService.adminCredit(
+      driverId,
+      req.user!.sub,
+      dto,
+    );
+    // A manual balance adjustment with no request behind it — the single most
+    // important admin action to be able to attribute afterwards.
+    await this.auditLog.record({
+      adminId: req.user!.sub,
+      action: 'wallet.credit',
+      targetType: 'driver',
+      targetId: driverId,
+      payload: dto,
+    });
+    return result;
   }
 
   @Get('drivers/:driverId/transactions')
