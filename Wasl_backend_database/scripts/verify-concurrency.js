@@ -48,6 +48,7 @@ require('dotenv/config');
 const { DataSource } = require('typeorm');
 
 const DRIVERS = 5;
+const DRIVER_BALANCE = 500; // comfortably over any plausible min_wallet_to_go_online
 const FIXTURE_BASE = 990000; // far above anything a real dataset will reach
 
 const results = [];
@@ -191,10 +192,28 @@ async function main() {
          VALUES ($1, 'Verify Driver', $2, 'x', 'delivery', 'active')`,
         [id, `0199${id}`.slice(0, 15)],
       );
+      // Two things this insert has to get right, both learned from the schema
+      // rather than from the entity's property names:
+      //
+      //  - `verificationStatus` is camelCase. The project has no snake_case
+      //    naming strategy, so a column is snake only where the entity says
+      //    `name:` explicitly — `is_online` and `balance` do, this one does not.
+      //  - the document columns and `vehicleType` are NOT NULL with no
+      //    default. A driver row cannot exist without them, because in
+      //    production no driver is created without having uploaded documents.
+      //    The full required set, read from information_schema on a migrated
+      //    database, is: user_id, national_id_front, national_id_back,
+      //    selfie, vehicle_image, vehicleType.
       await dataSource.query(
-        `INSERT INTO delivery_partners (user_id, verification_status, is_online, balance)
-         VALUES ($1, 'approved', true, 500)`,
-        [id],
+        `INSERT INTO delivery_partners
+           (user_id, "verificationStatus", is_online, balance,
+            national_id_front, national_id_back, selfie, vehicle_image,
+            "vehicleType")
+         VALUES ($1, 'approved', true, $2,
+                 'verify/id-front.jpg', 'verify/id-back.jpg',
+                 'verify/selfie.jpg', 'verify/vehicle.jpg',
+                 'motorcycle')`,
+        [id, DRIVER_BALANCE],
       );
     }
 
@@ -211,7 +230,7 @@ async function main() {
     const expires = new Date(Date.now() + 10 * 60 * 1000);
     for (const id of driverIds) {
       await dataSource.query(
-        `INSERT INTO order_assignments (order_id, driver_id, status, offered_at, expires_at, wave)
+        `INSERT INTO order_assignments (order_id, driver_id, status, offered_at, expires_at, wave_number)
          VALUES ($1, $2, 'offered', now(), $3, 1)`,
         [orderId, id, expires],
       );
@@ -223,20 +242,62 @@ async function main() {
   await seed();
 
   const { OrdersService } = require('../src/orders/orders.service');
-  const { OrderAssignmentService } = require('../src/orders/order-assignment.service');
   const { PaymentsService } = require('../src/payments/payments.service');
+  const { PricingService } = require('../src/pricing/pricing.service');
+  const { SettingKey } = require('../src/settings/settings.service');
   const { Order } = require('../src/orders/entities/order.entity');
 
-  // The accept path only touches the order repository's manager, the
-  // assignment service's static helper and the notification repository, so a
-  // partially-wired service is enough to drive the real code — and anything
-  // it does reach is the real implementation, not a stub.
-  const noopNotifications = { notifyUser: async () => {} };
+  // `acceptAvailableOrder` reaches exactly three things on `this`:
+  // `orderRepository` (whose manager runs the transaction), `pricingService`
+  // (the minimum-balance gate), and `createNotification` after the commit.
+  // Everything else it uses is a static or comes off the manager, so those
+  // three are what the harness has to supply — and two of them are the real
+  // implementations.
+  //
+  // `pricingService` is the REAL PricingService. Stubbing the gate to a
+  // constant would quietly excuse a regression in the one balance check
+  // standing between an unfunded driver and an accepted order.
+  //
+  // SettingsService is a cache in front of `app_settings`, populated at boot
+  // rather than by a migration — so on a database that has never booted the
+  // app the row is simply absent and the real service falls back to its
+  // documented default. Both paths are real production behaviour; the script
+  // prints which one it took so the number is never a mystery.
+  const { SettingsService } = require('../src/settings/settings.service');
+  const settingRows = await dataSource.query(
+    `SELECT value FROM app_settings WHERE key = $1`,
+    [SettingKey.MIN_WALLET_TO_GO_ONLINE],
+  );
+
+  const cache = new Map();
+  const fromDb = settingRows[0]?.value;
+  if (fromDb !== undefined) {
+    cache.set(SettingKey.MIN_WALLET_TO_GO_ONLINE, String(fromDb));
+  }
+  const settingsCache = Object.create(SettingsService.prototype);
+  settingsCache.cache = cache;
+  // Zones are not reachable from the accept path, so that dependency is null.
+  const pricingService = new PricingService(settingsCache, null);
+
+  const minWallet = pricingService.minWalletToGoOnline();
+  console.log(
+    `    min_wallet_to_go_online = ${minWallet} ` +
+      `(${fromDb !== undefined ? 'from app_settings' : 'service default — row not seeded'})`,
+  );
+  if (DRIVER_BALANCE < minWallet) {
+    console.error(
+      `\n❌ Fixture drivers are funded with ${DRIVER_BALANCE} but the minimum is ` +
+        `${minWallet}. Every accept would be refused by the balance gate and the ` +
+        `race would never happen. Raise DRIVER_BALANCE.\n`,
+    );
+    await dataSource.destroy();
+    process.exit(1);
+  }
+
   const service = Object.create(OrdersService.prototype);
   service.orderRepository = dataSource.getRepository(Order);
-  service.notifications = noopNotifications;
+  service.pricingService = pricingService;
   service.createNotification = async () => {};
-  service.assignmentService = { constructor: OrderAssignmentService };
 
   const settled = await Promise.allSettled(
     driverIds.map((id) => service.acceptAvailableOrder(orderId, id)),
