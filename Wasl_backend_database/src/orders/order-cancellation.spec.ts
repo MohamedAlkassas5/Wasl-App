@@ -280,7 +280,8 @@ describe('order cancellation (CP6-C)', () => {
   });
 
   describe('driver approves the request', () => {
-    it('cancels the order and charges 20% of the delivery fee', async () => {
+    // Q-B3, approved: saying yes to the customer is free for the driver.
+    it('cancels the order and charges nothing (Q-B3)', async () => {
       const { service, orderUpdates, ledger } = build({
         existingRequest: {
           id: 55,
@@ -292,15 +293,11 @@ describe('order cancellation (CP6-C)', () => {
       const result = await service.decideCancellation(7, DRIVER, true, {});
 
       expect(result.cancelled).toBe(true);
-      expect(result.penalty).toBe(8); // 40 × 20%, itemsPrice 300 ignored
+      expect(result.penalty).toBe(0);
       expect(orderUpdates[0]).toMatchObject({ status: OrderStatus.CANCELLED });
-      expect(ledger[0]).toMatchObject({
-        driverId: 20,
-        amount: -8,
-        type: WalletTxType.CANCELLATION_PENALTY,
-        reference: 'order-7-cancel-penalty',
-        orderId: 7,
-      });
+      // Not merely "amount 0" — no wallet entry is written at all, so the
+      // driver's ledger shows nothing for having been accommodating.
+      expect(ledger).toEqual([]);
     });
 
     it('closes the customer’s request rather than opening a new record', async () => {
@@ -316,8 +313,10 @@ describe('order cancellation (CP6-C)', () => {
 
       expect(requestUpdates[0]).toMatchObject({
         status: CancellationStatus.APPROVED,
-        penaltyAmount: 8,
-        penaltyReference: 'order-7-cancel-penalty',
+        penaltyAmount: 0,
+        // No charge means no idempotency reference to hang an appeal on —
+        // and nothing to appeal, which is the point.
+        penaltyReference: null,
       });
       expect(savedRequests).toEqual([]);
     });

@@ -300,6 +300,10 @@ import 'package:wasl_app/delivery_screen/WaslDriverRatingScreen.dart';
 import 'package:wasl_app/customer_screen/chat/WaslOrderChatScreen.dart';
 import 'package:wasl_app/customer_screen/order_anywhere/WaslOrderInvoiceScreen.dart';
 import 'package:wasl_app/services/orders_service.dart';
+import 'package:wasl_app/core/ui/wasl_submit_guard.dart';
+import 'package:wasl_app/core/widgets/wasl_cancel_dialogs.dart';
+import 'package:wasl_app/services/cancellation_models.dart';
+import 'package:wasl_app/services/cancellation_service.dart';
 
 class WaslOrderTrackingScreen extends StatefulWidget {
   final Map<String, dynamic> orderData;
@@ -309,17 +313,94 @@ class WaslOrderTrackingScreen extends StatefulWidget {
   State<WaslOrderTrackingScreen> createState() => _WaslOrderTrackingScreenState();
 }
 
-class _WaslOrderTrackingScreenState extends State<WaslOrderTrackingScreen> {
+class _WaslOrderTrackingScreenState extends State<WaslOrderTrackingScreen>
+    with WaslSubmitGuard<WaslOrderTrackingScreen> {
   late Map<String, dynamic> _liveOrder;
   Timer? _pollingTimer;
   final MapController _mapController = MapController();
   bool _invoiceShown = false;
 
+  final WaslCancellationService _cancellationService = WaslCancellationService();
+
+  /// آخر سجل إلغاء على الطلب — مش المفتوح بس.
+  ///
+  /// لازم يبقى الأحدث مش «المعلّق»، عشان لما الكابتن يرفض السجل بيتغيّر من
+  /// `pending` لـ `rejected` وما بيختفيش؛ لو كنا بنمسك المعلّق بس كنا هنقرا
+  /// الرفض كأنه «مفيش طلب إلغاء» ونرجّع الزرار من غير ما نقول للعميل حصل إيه.
+  WaslCancellation? _latestCancellation;
+
   @override
   void initState() {
     super.initState();
     _liveOrder = widget.orderData;
+    _refreshCancellation();
     _startLiveTracking();
+  }
+
+  // ─── الإلغاء ─────────────────────────────────────────────────────────────
+
+  /// الحالات اللي العميل يقدر يطلب فيها الإلغاء.
+  ///
+  /// `delivering` مش منها عن قصد: الكابتن بيبقى ماسك الطلب على الباب، والخطة
+  /// بتقول إن ده قرار دعم مش زرار في التطبيق. والسيرفر بيرفضها برضه.
+  static const _cancellableStatuses = {'accepted', 'at_store', 'items_bought'};
+
+  bool get _canRequestCancellation =>
+      _cancellableStatuses.contains(
+        _liveOrder['status']?.toString().toLowerCase(),
+      ) &&
+      !(_latestCancellation?.isPending ?? false);
+
+  Future<void> _refreshCancellation() async {
+    final orderId = int.tryParse(_liveOrder['id']?.toString() ?? '');
+    if (orderId == null) return;
+
+    final result = await _cancellationService.getForOrder(orderId);
+    if (!mounted || result['success'] != true) return;
+
+    final requests = (result['requests'] as List).cast<WaslCancellation>();
+    setState(
+      () => _latestCancellation = requests.isEmpty ? null : requests.last,
+    );
+  }
+
+  void _requestCancellation() async {
+    final orderId = int.tryParse(_liveOrder['id']?.toString() ?? '');
+    if (orderId == null) return;
+
+    final reason = await showWaslReasonDialog(
+      context,
+      title: 'طلب إلغاء الطلب',
+      message: 'هيوصل الكابتن طلب إلغاء، وهو اللي يوافق أو يرفض.',
+      confirmLabel: 'إرسال الطلب',
+      warning: 'الطلب مش هيتلغي دلوقتي — بيتلغي لما الكابتن يوافق.',
+    );
+    if (reason == null || !mounted) return;
+
+    await guardedSubmit(() async {
+      final result = await _cancellationService.requestCancellation(
+        orderId,
+        reason: reason,
+      );
+      if (!mounted) return;
+
+      if (result['success'] == true) {
+        await _refreshCancellation();
+        if (!mounted) return;
+        _toast('تم إرسال طلب الإلغاء للكابتن', success: true);
+      } else {
+        _toast(result['message']?.toString() ?? 'تعذّر إرسال طلب الإلغاء');
+      }
+    });
+  }
+
+  void _toast(String message, {bool success = false}) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: success ? Colors.green : Colors.red,
+      ),
+    );
   }
 
   void _startLiveTracking() {
@@ -345,6 +426,26 @@ class _WaslOrderTrackingScreenState extends State<WaslOrderTrackingScreen> {
             MaterialPageRoute(builder: (_) => WaslOrderInvoiceScreen(orderData: newData)),
           );
           return;
+        }
+      }
+
+      // الكابتن وافق على الإلغاء: الطلب خلاص اتلغى، فمفيش داعي نفضل نسأل.
+      if (newStatus == 'cancelled' &&
+          _liveOrder['status']?.toString().toLowerCase() != 'cancelled') {
+        setState(() => _liveOrder = newData);
+        _pollingTimer?.cancel();
+        await _refreshCancellation();
+        if (!mounted) return;
+        _toast('تم إلغاء الطلب', success: true);
+        return;
+      }
+
+      // لسه مستنيين رد الكابتن — نسأل على السجل عشان نعرف لو رفض.
+      if (_latestCancellation?.isPending == true) {
+        await _refreshCancellation();
+        if (!mounted) return;
+        if (_latestCancellation?.isRejected == true) {
+          _toast('رفض الكابتن طلب الإلغاء، والطلب مستمر');
         }
       }
 
@@ -462,11 +563,71 @@ class _WaslOrderTrackingScreenState extends State<WaslOrderTrackingScreen> {
                   const SizedBox(height: 20),
                   // الـ Stepper المحدث
                   ...List.generate(5, (i) => _buildStep(i, _getStep(_liveOrder['status']), ['قبول', 'محل', 'شراء', 'توصيل', 'تم'][i])),
+                  const SizedBox(height: 20),
+                  _buildCancellationSection(),
                 ],
               ),
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  /// حالة الإلغاء عند العميل: زرار الطلب، أو انتظار رد الكابتن، أو الرفض.
+  Widget _buildCancellationSection() {
+    final open = _latestCancellation;
+
+    if (open != null && open.isPending) {
+      return Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: Colors.orange.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: Colors.orange.withValues(alpha: 0.35)),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Icon(Icons.hourglass_top, color: Colors.orange, size: 20),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'في انتظار رد الكابتن على طلب الإلغاء',
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'السبب: ${open.reason}',
+                    style: TextStyle(color: Colors.grey[700], fontSize: 13),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (!_canRequestCancellation) return const SizedBox.shrink();
+
+    return OutlinedButton.icon(
+      onPressed: isSubmitting ? null : _requestCancellation,
+      icon: isSubmitting
+          ? const SizedBox(
+              width: 16,
+              height: 16,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
+          : const Icon(Icons.cancel_outlined),
+      label: const Text('طلب إلغاء الطلب'),
+      style: OutlinedButton.styleFrom(
+        foregroundColor: Colors.red,
+        side: const BorderSide(color: Colors.red),
+        padding: const EdgeInsets.symmetric(vertical: 14),
       ),
     );
   }

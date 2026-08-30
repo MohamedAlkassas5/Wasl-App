@@ -36,12 +36,30 @@ describe('cancellation penalty', () => {
     expect(cancellationPenaltyFor(10_000, PERCENT, BY_DRIVER)).toBe(2000);
   });
 
-  it('charges the same whoever asked for the cancellation', () => {
-    // Today both sides pay the same. If that ever changes, it changes here and
-    // this test is the one that should be updated deliberately.
-    expect(cancellationPenaltyFor(40, PERCENT, BY_CUSTOMER)).toBe(
-      cancellationPenaltyFor(40, PERCENT, BY_DRIVER),
-    );
+  // ── Q-B3, approved: approving the customer's request costs the driver
+  // nothing. Only abandoning an order they accepted does.
+  describe('who asked for the cancellation (Q-B3)', () => {
+    it('charges nothing when the driver approves the customer’s request', () => {
+      expect(cancellationPenaltyFor(40, PERCENT, BY_CUSTOMER)).toBe(0);
+    });
+
+    it('still charges the driver who cancels outright', () => {
+      expect(cancellationPenaltyFor(40, PERCENT, BY_DRIVER)).toBe(8);
+    });
+
+    it('is free for the customer-approved case at every fee', () => {
+      // Not a rounding artefact of one number: nothing is charged at all.
+      [1, 5, 20, 40, 500, 10_000].forEach((fee) => {
+        expect(cancellationPenaltyFor(fee, PERCENT, BY_CUSTOMER)).toBe(0);
+      });
+    });
+
+    it('is free even at a percentage that would otherwise bite', () => {
+      expect(cancellationPenaltyFor(40, 100, BY_CUSTOMER)).toBe(0);
+      // …and the driver-initiated case at the same percentage is not free,
+      // so this pair fails if the branch is ever dropped.
+      expect(cancellationPenaltyFor(40, 100, BY_DRIVER)).toBe(40);
+    });
   });
 
   it('ignores the purchase amount entirely — it is not a parameter', () => {

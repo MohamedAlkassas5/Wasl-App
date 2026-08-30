@@ -1,5 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:wasl_app/core/ui/wasl_submit_guard.dart';
+import 'package:wasl_app/core/widgets/wasl_cancel_dialogs.dart';
+import 'package:wasl_app/services/cancellation_models.dart';
+import 'package:wasl_app/services/cancellation_service.dart';
 // 🎯 استيراد كلاس الألوان الموحد الخاص بهوية وصل الجديدة
 import 'package:wasl_app/core/theme/app_colors.dart';
 // 🎯 استيراد الـ Service الخاصة بالطلبات
@@ -36,10 +41,206 @@ class _WaslDriverJobExecutionScreenState
   bool _isReceiptConfirmed = false;
   bool _isLoading = false;
 
+  final WaslCancellationService _cancellationService =
+      WaslCancellationService();
+
+  /// طلب إلغاء مفتوح من العميل، لو فيه واحد.
+  WaslCancellation? _pendingCancellation;
+
+  /// بيسأل السيرفر كل شوية: العميل ممكن يطلب الإلغاء في أي لحظة والكابتن
+  /// لازم يشوفه. (الإشعار الفوري بيجي في CP-C؛ ده الطريق المضمون لحد ساعتها.)
+  Timer? _cancellationPoll;
+
+  @override
+  void initState() {
+    super.initState();
+    _refreshPendingCancellation();
+    _cancellationPoll = Timer.periodic(
+      const Duration(seconds: 10),
+      (_) => _refreshPendingCancellation(),
+    );
+  }
+
   @override
   void dispose() {
+    _cancellationPoll?.cancel();
     _receiptPriceController.dispose();
     super.dispose();
+  }
+
+  // ─── الإلغاء ─────────────────────────────────────────────────────────────
+
+  int? get _orderId => int.tryParse(widget.orderData['id']?.toString() ?? '');
+
+  Future<void> _refreshPendingCancellation() async {
+    final orderId = _orderId;
+    if (orderId == null) return;
+
+    final pending = await _cancellationService.pendingRequestFor(orderId);
+    if (!mounted) return;
+    setState(() => _pendingCancellation = pending);
+  }
+
+  /// الموافقة على طلب العميل. **مفيش غرامة** — قرار Q-B3.
+  void _approveCustomerRequest() async {
+    final orderId = _orderId;
+    if (orderId == null) return;
+
+    final confirmed = await showWaslConfirmDialog(
+      context,
+      title: 'الموافقة على إلغاء الطلب',
+      message: 'العميل طلب إلغاء الطلب. لو وافقت، الطلب هيتلغي فوراً.',
+      highlight: 'مفيش أي غرامة عليك — الموافقة على طلب العميل مجانية.',
+      confirmLabel: 'موافقة وإلغاء الطلب',
+      confirmColor: Colors.green,
+    );
+    if (!confirmed || !mounted) return;
+
+    await guardedSubmit(() async {
+      final result = await _cancellationService.approveCustomerRequest(orderId);
+      if (!mounted) return;
+
+      if (result['success'] == true) {
+        _showSnackBar('تم إلغاء الطلب بدون أي غرامة', Colors.green);
+        Navigator.pop(context, true);
+      } else {
+        _showSnackBar(
+          result['message']?.toString() ?? 'تعذّرت الموافقة',
+          Colors.red,
+        );
+      }
+    });
+  }
+
+  /// الرفض. الطلب بيكمل عادي ومفيش فلوس بتتحرك.
+  void _rejectCustomerRequest() async {
+    final orderId = _orderId;
+    if (orderId == null) return;
+
+    final confirmed = await showWaslConfirmDialog(
+      context,
+      title: 'رفض طلب الإلغاء',
+      message: 'الطلب هيكمل عادي، ومفيش أي فلوس هتتحرك.',
+      confirmLabel: 'رفض الطلب',
+      confirmColor: Colors.orange,
+    );
+    if (!confirmed || !mounted) return;
+
+    await guardedSubmit(() async {
+      final result = await _cancellationService.rejectCustomerRequest(orderId);
+      if (!mounted) return;
+
+      if (result['success'] == true) {
+        await _refreshPendingCancellation();
+        if (!mounted) return;
+        _showSnackBar('تم رفض طلب الإلغاء، والطلب مستمر', Colors.orange);
+      } else {
+        _showSnackBar(
+          result['message']?.toString() ?? 'تعذّر الرفض',
+          Colors.red,
+        );
+      }
+    });
+  }
+
+  /// الكابتن بيلغي من نفسه. **دي الحالة اللي فيها غرامة.**
+  ///
+  /// المبلغ ما بيتحسبش هنا: نسبة الغرامة إعداد على السيرفر والتطبيق ما
+  /// بيقراهاش، فالحوار بيقول إن فيه خصم وبيعرض رسوم التوصيل، والمبلغ الفعلي
+  /// بيتعرض من رد السيرفر بعد الخصم.
+  void _driverCancel(double agreedFee) async {
+    final orderId = _orderId;
+    if (orderId == null) return;
+
+    final reason = await showWaslReasonDialog(
+      context,
+      title: 'إلغاء الطلب',
+      message: 'إلغاء طلب قبلته بيتخصم عليه غرامة من محفظتك.',
+      warning: 'الغرامة نسبة من رسوم التوصيل (${agreedFee.toStringAsFixed(2)} ج.م) '
+          'وبيحسبها السيرفر. المبلغ الفعلي هيظهرلك بعد الإلغاء.',
+      confirmLabel: 'إلغاء الطلب',
+    );
+    if (reason == null || !mounted) return;
+
+    await guardedSubmit(() async {
+      final result = await _cancellationService.driverCancel(
+        orderId,
+        reason: reason,
+      );
+      if (!mounted) return;
+
+      if (result['success'] != true) {
+        _showSnackBar(
+          result['message']?.toString() ?? 'تعذّر إلغاء الطلب',
+          Colors.red,
+        );
+        return;
+      }
+
+      final penalty = (result['penalty'] as double?) ?? 0;
+      await _showCancelledDialog(orderId, penalty);
+    });
+  }
+
+  /// نتيجة الإلغاء بالمبلغ الحقيقي، مع باب الاعتراض من نفس المكان.
+  Future<void> _showCancelledDialog(int orderId, double penalty) async {
+    final wantsAppeal = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text('تم إلغاء الطلب'),
+        content: Text(
+          penalty > 0
+              ? 'اتخصم من محفظتك ${penalty.toStringAsFixed(2)} ج.م غرامة إلغاء.\n\n'
+                  'لو شايف إن الإلغاء كان بسبب خارج عن إرادتك، تقدر تعترض '
+                  'والإدارة هتراجع محادثة الطلب.'
+              : 'مفيش أي غرامة على الإلغاء ده.',
+          style: const TextStyle(fontFamily: 'Cairo', height: 1.5),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('تمام'),
+          ),
+          if (penalty > 0)
+            ElevatedButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text('اعتراض على الغرامة'),
+            ),
+        ],
+      ),
+    );
+
+    if (!mounted) return;
+
+    if (wantsAppeal == true) {
+      await _appeal(orderId);
+      if (!mounted) return;
+    }
+    Navigator.pop(context, true);
+  }
+
+  /// الاعتراض على الغرامة. الدليل هو محادثة الطلب — مفيش رفع ملفات هنا.
+  Future<void> _appeal(int orderId) async {
+    final reason = await showWaslReasonDialog(
+      context,
+      title: 'اعتراض على الغرامة',
+      message: 'اكتب سبب الاعتراض. الإدارة هتراجع محادثة الطلب قبل ما تقرر.',
+      confirmLabel: 'إرسال الاعتراض',
+      confirmColor: AppColors.primary,
+    );
+    if (reason == null || !mounted) return;
+
+    final result = await _cancellationService.appeal(orderId, reason: reason);
+    if (!mounted) return;
+
+    _showSnackBar(
+      result['success'] == true
+          ? 'تم إرسال الاعتراض، والإدارة هتراجعه'
+          : result['message']?.toString() ?? 'تعذّر إرسال الاعتراض',
+      result['success'] == true ? Colors.green : Colors.red,
+    );
   }
 
   /// خطوات الرحلة، مطابقة لمخطط الحالات في السيرفر:
@@ -282,6 +483,9 @@ class _WaslDriverJobExecutionScreenState
                       ),
                       const SizedBox(height: 20),
 
+                      // 1️⃣ب طلب إلغاء من العميل، لو فيه واحد مفتوح.
+                      _buildPendingCancellationCard(),
+
                       // 2️⃣ تفاصيل الوظيفة وموقع الاستلام والتوصيل (Job Metadata الديناميكي المأمن)
                       _buildInfoSection(
                         title: 'بيانات الاستلام والشراء 🛒',
@@ -410,9 +614,105 @@ class _WaslDriverJobExecutionScreenState
                   ),
                 ),
               ),
+
+              // 5️⃣ إلغاء الطلب. تحت الزرار الأساسي وبشكل هادي عن قصد —
+              // ده مخرج مش خطوة في الرحلة، وبيتخصم عليه غرامة.
+              Padding(
+                padding: const EdgeInsets.only(left: 20, right: 20, bottom: 12),
+                child: TextButton.icon(
+                  onPressed: isSubmitting ? null : () => _driverCancel(agreedFee),
+                  icon: const Icon(Icons.cancel_outlined, size: 18),
+                  label: const Text(
+                    'إلغاء الطلب',
+                    style: TextStyle(fontFamily: 'Cairo'),
+                  ),
+                  style: TextButton.styleFrom(foregroundColor: Colors.red),
+                ),
+              ),
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  /// كارت طلب الإلغاء المفتوح: موافقة (من غير غرامة) أو رفض.
+  Widget _buildPendingCancellationCard() {
+    final pending = _pendingCancellation;
+    if (pending == null || !pending.openedByCustomer) {
+      return const SizedBox.shrink();
+    }
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 20),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.orange.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.orange.withValues(alpha: 0.4)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Row(
+            children: [
+              Icon(Icons.report_gmailerrorred_outlined,
+                  color: Colors.orange, size: 22),
+              SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  'العميل طلب إلغاء الطلب',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontFamily: 'Cairo',
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'السبب: ${pending.reason}',
+            style: const TextStyle(
+              fontSize: 13,
+              fontFamily: 'Cairo',
+              color: AppColors.textSecondary,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: ElevatedButton(
+                  onPressed: isSubmitting ? null : _approveCustomerRequest,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.green,
+                    foregroundColor: Colors.white,
+                  ),
+                  child: const Text(
+                    'موافقة (بدون غرامة)',
+                    style: TextStyle(fontFamily: 'Cairo', fontSize: 12),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: isSubmitting ? null : _rejectCustomerRequest,
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Colors.orange.shade900,
+                    side: BorderSide(color: Colors.orange.shade700),
+                  ),
+                  child: const Text(
+                    'رفض',
+                    style: TextStyle(fontFamily: 'Cairo', fontSize: 12),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }

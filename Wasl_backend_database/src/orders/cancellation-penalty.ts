@@ -16,19 +16,25 @@ import { CancellationInitiator } from './entities/order-cancellation-request.ent
  *    reaches for `commissionForFee()` here is a bug.
  *  - **Not capped.**
  *
- * `initiatedBy` is accepted but does not change the figure today: a driver who
- * approves a customer's cancellation request is charged exactly as a driver who
- * cancels outright, per the approved rules. It is a parameter rather than an
- * omission because that is the one thing most likely to change — a driver who
- * approves a request the customer opened has an obvious argument for paying
- * less — and this function is the single place that decision lives.
+ * `initiatedBy` decides **whether** there is a penalty at all (Q-B3):
+ *
+ *  - **Driver cancels outright** (`DRIVER`) — they abandoned an order they had
+ *    accepted, and the penalty applies.
+ *  - **Driver approves a cancellation the customer asked for** (`CUSTOMER`) —
+ *    **no penalty.** They are accommodating the customer, not abandoning the
+ *    job, and charging them for saying yes would teach drivers to refuse every
+ *    request and make the customer's only exit a driver who is paid to say no.
+ *
+ * Rejecting a request never reaches this function: the order simply continues
+ * and no money moves. The two cases above are the only ones that charge.
  */
 export function cancellationPenaltyFor(
   finalDeliveryFee: number,
   penaltyPercent: number,
   initiatedBy: CancellationInitiator,
 ): number {
-  void initiatedBy;
+  // Q-B3, approved: approving the customer's request is free for the driver.
+  if (initiatedBy === CancellationInitiator.CUSTOMER) return 0;
 
   const fee = Math.max(0, Number(finalDeliveryFee) || 0);
   const percent = Math.max(0, Number(penaltyPercent) || 0);
