@@ -41,6 +41,9 @@ dependencies:
   # firebase_core باقي علشان FCM (بند 12). firebase_auth اتشال: التحقق من
   # الهاتف بقى على السيرفر عبر /auth/otp/* — شوف whatsapp_otp_service.dart
   firebase_core: ^4.7.0
+  # CP-C: إشعارات الطلبات. السيرفر بيبعت عبر FCM من زمان (device_tokens +
+  # fcm-push.provider)، وده الطرف اللي كان ناقص في التطبيق.
+  firebase_messaging: ^16.0.4
   url_launcher: ^6.3.1
   flutter_map: ^6.1.0
   latlong2: ^0.9.1

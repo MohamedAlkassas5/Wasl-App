@@ -243,6 +243,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:wasl_app/core/providers/user_provider.dart';
+import 'package:wasl_app/services/push_service.dart';
 import 'package:wasl_app/screens/WaslDeliveryIdentityScreen.dart';
 import 'package:wasl_app/screens/WaslMerchantRegisterScreen.dart';
 import 'package:wasl_app/customer_screen/screens/auth/WaslResetPasswordScreen.dart';
@@ -452,6 +453,8 @@ class _WaslOtpScreenState extends State<WaslOtpScreen> {
       accessToken: token,
       refreshToken: data['refreshToken']?.toString(),
     );
+    // 🔔 الجلسة بقت موجودة، يبقى ينفع نسجّل الجهاز للإشعارات.
+    unawaited(WaslPushService.instance.start());
     // The server echoes back the area it actually stored, which may be null if
     // it rejected what we sent — trust its answer, not our own input.
     final int? savedZoneId = (userData['customerZoneId'] as num?)?.toInt();

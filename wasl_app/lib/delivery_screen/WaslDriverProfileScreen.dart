@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:wasl_app/services/push_service.dart';
 import 'package:wasl_app/core/theme/app_colors.dart';
 import 'package:wasl_app/screens/WaslLoginScreen.dart';
 import 'package:wasl_app/services/orders_service.dart';
@@ -53,6 +54,11 @@ class _WaslDriverProfileScreenState extends State<WaslDriverProfileScreen> {
 
   // 🎯 دالة تسجيل الخروج وتصفير الجلسة محلياً
   void _handleLogout() async {
+    // 🔔 قبل مسح الجلسة: إلغاء تسجيل الجهاز محتاج توكن صالح. الكابتن تحديداً
+    // بيستقبل عروض الطلبات، فجهاز فاضل مسجّل بعد الخروج معناه إن عروض شغل
+    // بتروح لحد تاني ماسك الموبايل.
+    await WaslPushService.instance.stop();
+
     final prefs = await SharedPreferences.getInstance();
     await prefs.clear();
 

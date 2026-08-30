@@ -4,6 +4,7 @@
 // import 'package:shared_preferences/shared_preferences.dart';
 // import 'package:wasl_app/core/theme/app_colors.dart';
 // import 'package:wasl_app/core/providers/user_provider.dart';
+import 'package:wasl_app/services/push_service.dart';
 // import 'package:wasl_app/screens/WaslRegisterScreen.dart';
 // import 'package:wasl_app/screens/WaslForgotPasswordScreen.dart';
 // import 'package:wasl_app/screens/WaslPendingScreen.dart';
@@ -436,6 +437,8 @@
 //   }
 // }
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:country_picker/country_picker.dart';
 import 'package:provider/provider.dart';
@@ -544,6 +547,8 @@ class _WaslLoginScreenState extends State<WaslLoginScreen> {
         accessToken: token,
         refreshToken: data['refreshToken']?.toString(),
       );
+      // 🔔 الجلسة بقت موجودة، يبقى ينفع نسجّل الجهاز للإشعارات.
+      unawaited(WaslPushService.instance.start());
 
       if (role == 'delivery') {
         if (status == 'pending' || status == 'rejected') {

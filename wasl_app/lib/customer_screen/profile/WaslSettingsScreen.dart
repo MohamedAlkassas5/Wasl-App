@@ -367,6 +367,7 @@ import 'package:wasl_app/customer_screen/profile/WaslHelpCenterScreen.dart';
 import 'package:wasl_app/screens/WaslForgotPasswordScreen.dart';
 import 'package:wasl_app/screens/WaslLoginScreen.dart';
 import 'package:wasl_app/services/auth_service.dart';
+import 'package:wasl_app/services/push_service.dart';
 import 'package:wasl_app/core/widgets/wasl_area_picker.dart';
 import 'package:wasl_app/services/profile_service.dart';
 import 'package:wasl_app/services/zones_service.dart';
@@ -712,6 +713,10 @@ class _WaslSettingsScreenState extends State<WaslSettingsScreen> {
   }
 
   Future<void> _handleLogout() async {
+    // 🔔 قبل مسح الجلسة: مسار إلغاء تسجيل الجهاز محمي بالتوكن، ولو مسحناه
+    // الأول الطلب هيترفض والجهاز هيفضل مسجّل على الحساب ده.
+    await WaslPushService.instance.stop();
+
     final prefs = await SharedPreferences.getInstance();
     await prefs.clear();
 

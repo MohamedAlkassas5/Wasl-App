@@ -2,11 +2,15 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart'; // 🎯 1. استيراد حزمة الـ Provider
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:firebase_core/firebase_core.dart'; // 🎯 2. استيراد المكتبة الأساسية لتهيئة Firebase
+import 'package:firebase_messaging/firebase_messaging.dart';
 
 // استيراد الـ Provider الخاص بإدارة جلسة المستخدم
 import 'package:wasl_app/core/providers/user_provider.dart';
 import 'package:wasl_app/core/network/authed_http.dart';
 import 'package:wasl_app/core/theme/wasl_theme.dart';
+import 'package:wasl_app/services/push_service.dart';
+import 'package:wasl_app/customer_screen/cart_orders/WaslMyOrdersScreen.dart';
+import 'package:wasl_app/delivery_screen/WaslDriverOrdersScreen.dart';
 
 // استيراد الشاشات الخاصة بالتطبيق
 import 'screens/WaslOnboardingScreen.dart';
@@ -17,12 +21,54 @@ import 'package:wasl_app/screens/WaslSplashScreen.dart';
 /// the user back to the login screen.
 final GlobalKey<NavigatorState> appNavigatorKey = GlobalKey<NavigatorState>();
 
+/// 🔔 وجهة الدوسة على الإشعار.
+///
+/// بيروح لقايمة الطلبات المناسبة، مش لشاشة طلب واحد. السبب عملي: شاشات الطلب
+/// الواحد بتاخد كائن الطلب كامل، والإشعار فيه رقم الطلب بس (عن قصد — الـ
+/// `data` مالهاش تحمل أي بيانات شخصية). القايمة بتجيب البيانات من السيرفر
+/// وبتوصّل المستخدم لطلبه من غير ما نخترع بيانات ناقصة.
+void _wirePushRouting() {
+  WaslPushService.instance.onTap = (tap) {
+    final navigator = appNavigatorKey.currentState;
+    if (navigator == null) return;
+
+    navigator.push(
+      MaterialPageRoute(
+        builder: (_) => tap.isDriverOffer
+            ? const WaslDriverOrdersScreen()
+            : const WaslMyOrdersScreen(),
+      ),
+    );
+  };
+
+  // إشعار والتطبيق مفتوح: نظام التشغيل ما بيرسمش حاجة، فبنعرضه بنفسنا.
+  WaslPushService.instance.onForeground = (title, body, _) {
+    final messengerContext = appNavigatorKey.currentContext;
+    if (messengerContext == null || title.isEmpty) return;
+
+    ScaffoldMessenger.of(messengerContext).showSnackBar(
+      SnackBar(
+        content: Text(
+          body.isEmpty ? title : '$title\n$body',
+          style: const TextStyle(fontFamily: 'Cairo'),
+        ),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  };
+}
+
 void main() async {
   // 🎯 3. تأمين اتصال الـ Widgets بنظام الـ Native لضمان عمل الخدمات قبل سطر الـ runApp
   WidgetsFlutterBinding.ensureInitialized();
 
   // 🎯 4. التفعيل الإجباري لخدمات Firebase لقراءة الـ google-services.json
   await Firebase.initializeApp();
+
+  // 🔔 CP-C: إشعارات الطلبات. المعالج ده لازم يتسجّل قبل أي حاجة تانية عشان
+  // الرسائل اللي بتوصل والتطبيق مقفول تلاقي حد مستنيها.
+  FirebaseMessaging.onBackgroundMessage(waslPushBackgroundHandler);
+  _wirePushRouting();
 
   // الحصول على نسخة من SharedPreferences لفحص حالة المستخدم الحالي
   final prefs = await SharedPreferences.getInstance();
