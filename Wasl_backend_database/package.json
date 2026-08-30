@@ -25,7 +25,9 @@
     "migration:show": "npm run typeorm -- migration:show",
     "db:backup": "node scripts/backup-database.js",
     "db:restore": "node scripts/restore-database.js",
-    "secrets:gen": "node scripts/generate-secrets.js"
+    "secrets:gen": "node scripts/generate-secrets.js",
+    "verify:r2": "node scripts/verify-r2.js",
+    "verify:concurrency": "node scripts/verify-concurrency.js"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1107.0",
