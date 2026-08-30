@@ -5,10 +5,21 @@ Draft material for the Play Console listing. Nothing here has been submitted.
 `[FILL IN]` marks a real-world fact I cannot invent. Everything else is
 derived from what the app actually does.
 
-**Language:** Arabic only. The Master Plan is explicit that a half-translated
-app should not ship and that Arabic-only is a complete product for this
-market, so there is no English listing here. English localisation is a
-SHOULD-HAVE, not a launch blocker.
+**Languages: Arabic and English — both required.**
+
+These are two different things and an earlier draft of this file conflated
+them:
+
+- **The app's UI** stays Arabic-only. Part 13: *"Do not ship a half-translated
+  app; Arabic-only is a complete product for this market."* English UI
+  localisation is a Part 3 SHOULD-HAVE and is **not** a launch blocker.
+- **The store listing** must be in both. Part 15 lists *"Arabic + English
+  listings"* among the items required before submission. An English listing
+  describes an Arabic app to an English-reading reviewer — which is exactly
+  who reads it first.
+
+So §1 below is the Arabic listing and §1b is the English one. Nothing about
+the app itself changes.
 
 ---
 
@@ -56,6 +67,67 @@ SHOULD-HAVE, not a launch blocker.
 
 **Category:** Food & Drink (or Lifestyle) · **Contact:** `[FILL IN]` ·
 **Website:** `[FILL IN]` · **Privacy policy URL:** `[FILL IN]`
+
+---
+
+## 1b. Listing copy (English)
+
+Required by Part 15. The reviewer reads this one.
+
+**App name (≤30 chars):** `Wasl — وصل`
+
+**Short description (≤80 chars):**
+
+```
+Order anything from anywhere in your city. A Wasl captain brings it to you.
+```
+
+**Full description (≤4000 chars):**
+
+```
+Wasl delivers anything, from anywhere in your city.
+
+⚠️ The app interface is in Arabic.
+
+🛵 ORDER FROM ANYWHERE
+The shop does not have to be registered with us. Describe what you want, set
+the pickup and drop-off areas, and a Wasl captain buys it and brings it to
+your door.
+
+🍽️ FROM PARTNER RESTAURANTS AND SHOPS
+Browse the menu, pick what you want, add it to your basket — at the shop's own
+prices.
+
+💰 THE PRICE IS CLEAR BEFORE YOU CONFIRM
+The delivery fee comes from a fixed, published zone table and is shown to you
+before you place the order. No surprises at the door.
+
+💬 TALK TO YOUR CAPTAIN
+Every order has its own chat. If the actual shop price differs from what was
+expected, the captain asks for your approval — nobody changes the price
+without you agreeing to it.
+
+📍 FOLLOW YOUR ORDER
+See where your captain is and how far away they are, live.
+
+💵 CASH ON DELIVERY
+Pay the captain when your order arrives. The app never asks for card details.
+
+🧑‍🔧 FOR CAPTAINS
+Work on your own schedule, receive orders near you, and track your earnings
+and wallet as you go.
+
+Wasl — your city in your hands.
+```
+
+**Notes for the reviewer** (Play Console "App access" / App Review notes):
+
+```
+The app interface is in Arabic; this listing is in English as required.
+Sign-in normally uses a WhatsApp one-time code. Pre-created test accounts with
+fixed passwords are provided below so no code delivery is needed.
+[FILL IN: anything else the reviewer must know]
+```
 
 ---
 

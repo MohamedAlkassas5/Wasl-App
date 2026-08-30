@@ -18,7 +18,7 @@ Nothing here has been submitted, published or uploaded.
 | Placeholder production API URL removed | ✅ `https://api.wasl.invalid` is gone |
 | Release build without an API host | ✅ Refuses to run — shows a red "Build misconfigured" screen at launch |
 | AAB builds | ✅ `flutter build appbundle --release` produced a 70.4 MB bundle |
-| Background location removed | ✅ Confirmed absent from the *packaged* manifest, not just the source |
+| Background location removed | ✅ Android: absent from the *packaged* manifest. iOS: the `Always` usage string removed too — same capability, and the app only ever requests When-In-Use |
 | FCM wired | ✅ `FirebaseMessagingService`, `MESSAGING_EVENT`, `POST_NOTIFICATIONS` present in the packaged manifest |
 | iOS bundle id | ✅ Already `com.wasl.app` |
 
@@ -132,12 +132,40 @@ vars alone, but an unapproved template means no OTP is delivered, which means
 
 - `PRIVACY.md` — privacy policy, with placeholders marked `[FILL IN]`
 - `ACCOUNT_DELETION.md` — the public deletion instructions Play requires
-- `STORE_LISTING.md` — Arabic listing copy, Data Safety mapping, screenshot
-  checklist, reviewer test-account checklist
+- `STORE_LISTING.md` — **Arabic and English** listing copy, Data Safety
+  mapping, screenshot checklist, reviewer test-account checklist
+- `DEPLOYMENT_CHECKLIST.md` — the CP-K procedure: internal → closed → staged
+  rollout, plus rollback and the iOS path
 
-Those three carry placeholders wherever a real legal or company fact is
-required. **They are deliberately not invented** — a privacy policy naming a
-fictitious company is worse than no policy.
+Those carry placeholders wherever a real legal or company fact is required.
+**They are deliberately not invented** — a privacy policy naming a fictitious
+company is worse than no policy.
+
+> Both listing languages are required by Part 15 ("Arabic + English
+> listings"). That is the *store listing*, not the app: Part 13 is explicit
+> that the UI should stay Arabic-only rather than ship half-translated.
+
+---
+
+## 6b. Items the Master Plan makes SHOULD-HAVE, and why they are not here
+
+Checked against the plan rather than assumed:
+
+| Item | Where the plan puts it | Decision |
+|---|---|---|
+| **CI pipeline** | Part 3 **SHOULD HAVE**; no Part 17 checkpoint owns it | Not built. It is not a release blocker, and a workflow file only proves itself on a push, which is out of scope. |
+| **English app localisation** | Part 3 **SHOULD HAVE**; Part 13 argues against shipping half-translated | Not built. The English *listing* is done, because Part 15 requires that separately. |
+| **`pending_offers` → `searching`** | Named in Part 4's state design; assigned to no checkpoint | Not renamed. It touches an enum, a migration, persisted rows and every client mapping — too invasive to do unassigned. |
+| **`GET /merchants` exposing `adminNotes` / `ownerId`** | No checkpoint owns it | Untouched. `catalog.service.ts` gained an admin-only read this cycle, but the customer response is byte-for-byte unchanged. |
+
+---
+
+## 6c. Open cosmetic inconsistency
+
+The on-device app label differs by platform: Android `Wasl`, iOS
+`Wasl App`, while the store listing name is `وصل`. Harmless, but it is a
+branding decision rather than an engineering one, so it was left alone.
+Decide it before submission and set all three to match.
 
 ---
 
