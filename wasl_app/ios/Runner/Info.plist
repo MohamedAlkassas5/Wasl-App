@@ -47,8 +47,26 @@
 	<true/>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>يستخدم وصل موقعك لتحديد الاستلام والتوصيل وتتبع الطلب النشط.</string>
-	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
-	<string>يستخدم السائق الموقع أثناء تنفيذ طلب نشط فقط لتحديث حالة التوصيل.</string>
+	<!--
+	  NSLocationAlwaysAndWhenInUseUsageDescription was removed here — the iOS
+	  half of CP-E / S9.
+
+	  S9 removed ACCESS_BACKGROUND_LOCATION on Android because foreground
+	  location is all the app actually uses. The "Always" string is the same
+	  capability on iOS, and it was still declared, which left the two
+	  platforms asking for different things for the same feature.
+
+	  It was also unusable as declared: `LocationService` calls
+	  `Geolocator.requestPermission()`, which asks for **When In Use** and
+	  never Always, and there is no UIBackgroundModes entry, so iOS would not
+	  deliver background updates even if a user granted it. Declaring it only
+	  invited an App Store reviewer to ask why the app wants a permission it
+	  never requests and could not act on.
+
+	  If background tracking is ever genuinely needed, this string and a
+	  `UIBackgroundModes` array come back together — and Android's S9 decision
+	  has to be revisited in the same change, not separately.
+	-->
 	<key>NSCameraUsageDescription</key>
 	<string>نحتاج الكاميرا لرفع المستندات وصور الفواتير عند الحاجة.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
