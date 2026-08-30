@@ -4,7 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { In, Repository } from 'typeorm';
+import { FindOptionsSelect, In, Repository } from 'typeorm';
 import { MenuCategory } from './entities/menu-category.entity';
 import { Product } from './entities/product.entity';
 import { ProductAddon, ProductSize } from './entities/product-option.entity';
@@ -16,6 +16,39 @@ import { CreateProductDto } from './dto/create-product.dto';
 function toOption(option: ProductSize | ProductAddon) {
   return { id: option.id, name: option.name, price: Number(option.price) };
 }
+
+/**
+ * The merchant columns a customer is allowed to see.
+ *
+ * `adminNotes` and `ownerId` are absent on purpose. `adminNotes` holds the
+ * free text an admin types when approving or rejecting a store — see
+ * `AdminService.reviewApproval`, which writes it onto the merchant row — and
+ * `ownerId` is the internal user id behind the shop. Neither is the
+ * customer's business, and both were being served to **unauthenticated**
+ * callers, because the reads below returned whole entities.
+ *
+ * Applied as a `select` on the query rather than stripped from the result
+ * afterwards: the columns never leave the database, so a later refactor
+ * cannot leak them again by forgetting to map a field.
+ *
+ * The admin reads are deliberately not routed through this. `getMenuForAdmin`
+ * still returns the whole row, because an admin is exactly who `adminNotes`
+ * was written for.
+ */
+const CUSTOMER_MERCHANT_COLUMNS: FindOptionsSelect<Merchant> = {
+  id: true,
+  storeName: true,
+  storeType: true,
+  logo: true,
+  coverImage: true,
+  latitude: true,
+  longitude: true,
+  addressDetails: true,
+  status: true,
+  isAcceptingOrders: true,
+  createdAt: true,
+  updatedAt: true,
+};
 
 /**
  * A merchant's catalog.
@@ -37,13 +70,20 @@ export class CatalogService {
     private readonly addons: Repository<ProductAddon>,
   ) {}
 
-  /** Approved merchants, optionally narrowed to one store type. */
+  /**
+   * Approved merchants, optionally narrowed to one store type.
+   *
+   * Unauthenticated — it backs the customer store list, and `/restaurants` is
+   * an alias onto this same method, so the projection below is what protects
+   * both routes.
+   */
   listMerchants(storeType?: string) {
     return this.merchants.find({
       where: {
         status: MerchantStatus.APPROVED,
         ...(storeType ? { storeType } : {}),
       },
+      select: CUSTOMER_MERCHANT_COLUMNS,
       order: { storeName: 'ASC' },
     });
   }
@@ -92,6 +132,7 @@ export class CatalogService {
   async getMenu(merchantId: number) {
     const merchant = await this.merchants.findOne({
       where: { id: merchantId, status: MerchantStatus.APPROVED },
+      select: CUSTOMER_MERCHANT_COLUMNS,
     });
     if (!merchant) throw new NotFoundException('المتجر غير متاح حالياً');
 
@@ -129,10 +170,11 @@ export class CatalogService {
     const addonsFor = byProduct(addons);
 
     return {
-      // `restaurant` is kept alongside `merchant` so app builds already
-      // shipped keep rendering the header while they migrate.
+      // One merchant object, once. `restaurant` used to be a second copy of
+      // this same row, kept for app builds that were mid-migration; nothing
+      // reads it now (the client takes `categories` and `products` only), and
+      // a duplicate is a second place for a field to leak from.
       merchant,
-      restaurant: merchant,
       categories,
       products: products.map((product) => ({
         ...product,
