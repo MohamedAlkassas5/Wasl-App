@@ -54,6 +54,20 @@ export class CatalogController {
     return this.service.getMenu(id);
   }
 
+  /**
+   * The catalog as an admin manages it — unavailable products included.
+   *
+   * The customer route (`/merchants/:id/menu`) hides them, which makes it the
+   * wrong source for a management screen: switching a product off would remove
+   * the control that switches it back on.
+   */
+  @Get('admin/catalog/merchants/:id/menu')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  adminMenu(@Param('id', ParseIntPipe) id: number) {
+    return this.service.getMenuForAdmin(id);
+  }
+
   @Post('admin/catalog/categories')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.ADMIN)

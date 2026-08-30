@@ -24,6 +24,9 @@ import { User } from '../users/entities/user.entity';
 import { OrderItem } from './entities/order-item.entity';
 import { CatalogModule } from '../catalog/catalog.module';
 import { StorageModule } from '../storage/storage.module';
+import { AdminOrdersController } from './admin-orders.controller';
+import { AdminOrdersService } from './admin-orders.service';
+import { WalletTransaction } from '../payments/entities/wallet-transaction.entity';
 
 @Module({
   imports: [
@@ -43,6 +46,8 @@ import { StorageModule } from '../storage/storage.module';
       OrderCancellationRequest,
       // 📡 CP6-B: which drivers were offered which order, and for how long.
       OrderAssignment,
+      // 🧾 Admin order inspection reads the ledger rows an order produced.
+      WalletTransaction,
     ]),
     // The cancellation penalty percentage is an admin-editable setting.
     SettingsModule,
@@ -62,12 +67,14 @@ import { StorageModule } from '../storage/storage.module';
     OrderChatController,
     OrderCancellationController,
     AdminCancellationsController,
+    AdminOrdersController,
   ],
   providers: [
     OrdersService,
     OrderChatService,
     OrderCancellationService,
     OrderAssignmentService,
+    AdminOrdersService,
   ],
   exports: [OrdersService, OrderAssignmentService], // 🎯 تم التفعيل لكي تتمكن من استخدام الخدمة في الـ Modules الأخرى لو احتجت مستقبلاً
 })

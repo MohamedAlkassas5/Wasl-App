@@ -132,7 +132,9 @@ document.querySelectorAll('.nav-item').forEach((el) =>
 );
 
 const TITLES = { dashboard: 'لوحة المعلومات', registrations: 'طلبات التسجيل',
-  merchants: 'المتاجر', topups: 'طلبات شحن المحفظة', settings: 'إعدادات النظام' };
+  merchants: 'المتاجر', catalog: 'الكتالوج', orders: 'الطلبات',
+  cancellations: 'مراجعة الإلغاءات', zones: 'المناطق والأسعار',
+  topups: 'طلبات شحن المحفظة', settings: 'إعدادات النظام' };
 
 function route(name) {
   document.querySelectorAll('.nav-item').forEach((el) =>
@@ -140,8 +142,9 @@ function route(name) {
   $('pageTitle').textContent = TITLES[name];
   $('pageBody').innerHTML = '<div class="empty">جاري التحميل...</div>';
   ({ dashboard: renderDashboard, registrations: renderRegistrations,
-     merchants: renderMerchants, topups: renderTopups,
-     settings: renderSettings }[name])();
+     merchants: renderMerchants, catalog: renderCatalog, orders: renderOrders,
+     cancellations: renderCancellations, zones: renderZones,
+     topups: renderTopups, settings: renderSettings }[name])();
 }
 
 /* ---------- dashboard ---------- */
@@ -413,6 +416,444 @@ async function saveSetting(key) {
   } catch (e) { toast(e.message, 'bad'); }
 }
 
+/* ---------- order inspection ----------
+   Part 3 lists this as an admin MUST-HAVE, and the job is answering a
+   complaint: what was this order, who took it, what moved, and was any of it
+   cancelled. Read-only — every way an order can change has its own route with
+   its own rules, and a write button here would skip all of them. */
+const ORDER_PAGE = 50;
+let ordersOffset = 0;
+
+function renderOrders() {
+  ordersOffset = 0;
+  $('pageBody').innerHTML = `
+    <div id="orderList"></div>
+    <div class="filters" style="margin-top:12px">
+      <button class="btn btn-sm" data-act="orders-page" data-dir="-1">السابق</button>
+      <span id="ordersRange" class="muted"></span>
+      <button class="btn btn-sm" data-act="orders-page" data-dir="1">التالي</button>
+    </div>`;
+  loadOrders();
+}
+
+async function loadOrders() {
+  try {
+    const data = await api(`/admin/orders?limit=${ORDER_PAGE}&offset=${ordersOffset}`);
+    const rows = data.orders || [];
+    $('ordersRange').textContent =
+      `${data.offset + 1}–${data.offset + rows.length} من ${data.total}`;
+    $('orderList').innerHTML = rows.length
+      ? rows.map(orderRow).join('')
+      : '<div class="empty">لا توجد طلبات</div>';
+  } catch (e) {
+    $('orderList').innerHTML = `<div class="empty">${escapeHtml(e.message)}</div>`;
+  }
+}
+
+function pageOrders(dir) {
+  const next = ordersOffset + dir * ORDER_PAGE;
+  if (next < 0) return;
+  ordersOffset = next;
+  loadOrders();
+}
+
+const money = (v) => `${Number(v ?? 0).toFixed(2)} ج.م`;
+
+function orderRow(o) {
+  const safe = (v) => escapeHtml(v == null ? '' : String(v));
+  return `
+    <div class="row">
+      <div class="grow">
+        <div class="name">FL-${Number(o.id)} ${statusBadge(o.status)}</div>
+        <div class="sub">👤 ${safe(o.customerName)} • 📞 ${safe(o.customerPhone)}</div>
+        <div class="sub">🚚 ${o.acceptedDriverId ? 'كابتن #' + Number(o.acceptedDriverId) : 'لم يُسند بعد'}
+          • توصيل ${money(o.finalDeliveryFee)} • مشتريات ${money(o.itemsPrice)}</div>
+      </div>
+      <div class="actions">
+        <button class="btn btn-sm" data-act="order-detail" data-id="${Number(o.id)}">تفاصيل</button>
+      </div>
+    </div>
+    <div id="orderDetail_${Number(o.id)}"></div>`;
+}
+
+async function showOrderDetail(id) {
+  const host = $(`orderDetail_${id}`);
+  if (!host) return;
+  if (host.innerHTML) { host.innerHTML = ''; return; } // second click closes
+
+  host.innerHTML = '<div class="empty">جاري التحميل...</div>';
+  try {
+    const d = await api(`/admin/orders/${id}`);
+    const safe = (v) => escapeHtml(v == null ? '' : String(v));
+
+    const items = (d.items || []).length
+      ? d.items.map((i) =>
+          `<div class="sub">• ${safe(i.name)} ×${Number(i.quantity ?? 1)} — ${money(i.price)}</div>`).join('')
+      : '<div class="sub muted">لا توجد أصناف مسجّلة</div>';
+
+    // The ledger is shown as written, not recalculated: what the driver was
+    // charged is whatever wallet_transactions says.
+    const ledger = (d.transactions || []).length
+      ? d.transactions.map((t) =>
+          `<div class="sub">• ${safe(t.type)} ${money(t.amount)} — <span class="muted">${safe(t.reference)}</span></div>`).join('')
+      : '<div class="sub muted">لا توجد حركات محفظة على هذا الطلب</div>';
+
+    const cancels = (d.cancellations || []).length
+      ? d.cancellations.map((c) =>
+          `<div class="sub">• ${safe(c.requestedByRole)} — ${safe(c.status)} — غرامة ${money(c.penaltyAmount)}
+             ${c.penaltyReference ? '' : '<span class="muted">(بدون خصم)</span>'}</div>`).join('')
+      : '<div class="sub muted">لا يوجد إلغاء على هذا الطلب</div>';
+
+    host.innerHTML = `
+      <div class="row" style="background:#f8fafc">
+        <div class="grow">
+          <div class="sub"><strong>العنوان:</strong> ${safe(d.order.deliveryAddressText)}</div>
+          <div class="sub"><strong>الوصف:</strong> ${safe(d.order.itemsDescription)}</div>
+          <div class="sub" style="margin-top:8px"><strong>الأصناف</strong></div>${items}
+          <div class="sub" style="margin-top:8px"><strong>حركات المحفظة</strong></div>${ledger}
+          <div class="sub" style="margin-top:8px"><strong>الإلغاء</strong></div>${cancels}
+        </div>
+      </div>`;
+  } catch (e) {
+    host.innerHTML = `<div class="empty">${escapeHtml(e.message)}</div>`;
+  }
+}
+
+/* ---------- cancellation review ----------
+   The queue an admin actually works is appeals waiting on a decision. The
+   evidence is the order chat, which is why nothing is duplicated onto the
+   cancellation row — see order-cancellation.service.ts. */
+function renderCancellations() {
+  $('pageBody').innerHTML = `
+    <div class="filters">
+      <select id="fAppeal">
+        <option value="pending">اعتراضات بانتظار المراجعة</option>
+        <option value="">كل السجلات</option>
+        <option value="upheld">تم تأييد الغرامة</option>
+        <option value="refunded">تم رد الغرامة</option>
+      </select>
+    </div>
+    <div id="cancelList"></div>`;
+  $('fAppeal').onchange = loadCancellations;
+  loadCancellations();
+}
+
+async function loadCancellations() {
+  const appealStatus = $('fAppeal').value;
+  const q = appealStatus ? `?appealStatus=${encodeURIComponent(appealStatus)}` : '';
+  try {
+    const data = await api(`/admin/cancellations${q}`);
+    const rows = data.requests || [];
+    $('cancelList').innerHTML = rows.length
+      ? rows.map(cancelRow).join('')
+      : '<div class="empty">لا توجد سجلات</div>';
+  } catch (e) {
+    $('cancelList').innerHTML = `<div class="empty">${escapeHtml(e.message)}</div>`;
+  }
+}
+
+function cancelRow(c) {
+  const safe = (v) => escapeHtml(v == null ? '' : String(v));
+  const who = c.requestedByRole === 'customer' ? 'العميل' : 'الكابتن';
+  // Only a cancellation that actually charged can be refunded; approving a
+  // customer's request charges nothing (Q-B3), so there is nothing to give back.
+  const refundable = c.appealStatus === 'pending' && c.penaltyReference;
+  return `
+    <div class="row">
+      <div class="grow">
+        <div class="name">طلب FL-${Number(c.orderId)} <span class="muted">(بدأه ${safe(who)})</span></div>
+        <div class="sub">السبب: ${safe(c.reason)}</div>
+        <div class="sub">الغرامة: ${money(c.penaltyAmount)}
+          ${c.penaltyReference ? `<span class="muted">${safe(c.penaltyReference)}</span>` : '<span class="muted">(لم تُخصم)</span>'}</div>
+        ${c.appealReason ? `<div class="sub">اعتراض الكابتن: ${safe(c.appealReason)}</div>` : ''}
+        <div class="sub">حالة الاعتراض: ${safe(c.appealStatus)}</div>
+      </div>
+      <div class="actions">
+        ${refundable ? `
+          <button class="btn btn-sm btn-green" data-act="cancel-review" data-id="${Number(c.id)}" data-decision="refund">رد الغرامة</button>
+          <button class="btn btn-sm btn-red" data-act="cancel-review" data-id="${Number(c.id)}" data-decision="uphold">تأييد الغرامة</button>
+        ` : '<span class="muted">لا إجراء مطلوب</span>'}
+      </div>
+    </div>`;
+}
+
+/* Ids with a review in flight — a refund is money, and a double click must
+   never become two requests. The server's unique reference would reject the
+   second anyway; this stops it being sent. */
+const reviewInFlight = new Set();
+
+async function reviewCancellation(id, decision) {
+  if (reviewInFlight.has(id)) return;
+  const note = prompt(decision === 'refund' ? 'سبب رد الغرامة:' : 'سبب تأييد الغرامة:');
+  if (note === null) return;
+
+  reviewInFlight.add(id);
+  try {
+    await api(`/admin/cancellations/${id}/${decision}`, { method: 'POST', body: { note } });
+    toast(decision === 'refund' ? 'تم رد الغرامة للكابتن' : 'تم تأييد الغرامة');
+    loadCancellations();
+  } catch (e) {
+    toast(e.message, 'bad');
+  } finally {
+    reviewInFlight.delete(id);
+  }
+}
+
+/* ---------- catalog ----------
+   Admin-managed by design: merchants register but do not get a dashboard in
+   V1, so this is the only way a menu gets built. */
+function renderCatalog() {
+  $('pageBody').innerHTML = `
+    <div class="filters">
+      <select id="catMerchant"><option value="">اختر متجراً…</option></select>
+    </div>
+    <div id="catalogBody"><div class="empty">اختر متجراً لعرض الكتالوج</div></div>`;
+  loadCatalogMerchants();
+}
+
+async function loadCatalogMerchants() {
+  try {
+    const list = await api('/merchants');
+    $('catMerchant').innerHTML = '<option value="">اختر متجراً…</option>' +
+      list.map((m) =>
+        `<option value="${Number(m.id)}">${escapeHtml(m.storeName)}</option>`).join('');
+    $('catMerchant').onchange = () => loadCatalog(Number($('catMerchant').value));
+  } catch (e) {
+    $('catalogBody').innerHTML = `<div class="empty">${escapeHtml(e.message)}</div>`;
+  }
+}
+
+async function loadCatalog(merchantId) {
+  if (!merchantId) {
+    $('catalogBody').innerHTML = '<div class="empty">اختر متجراً لعرض الكتالوج</div>';
+    return;
+  }
+  $('catalogBody').innerHTML = '<div class="empty">جاري التحميل...</div>';
+  try {
+    const menu = await api(`/admin/catalog/merchants/${merchantId}/menu`);
+    const safe = (v) => escapeHtml(v == null ? '' : String(v));
+    const categories = menu.categories || [];
+    const products = menu.products || [];
+
+    const catOptions = categories
+      .map((c) => `<option value="${Number(c.id)}">${safe(c.name)}</option>`).join('');
+
+    const productRows = products.length
+      ? products.map((p) => `
+          <div class="row">
+            <div class="grow">
+              <div class="name">${safe(p.name)}</div>
+              <div class="sub">${money(p.price)} • ${p.isAvailable === false ? 'غير متاح' : 'متاح'}</div>
+            </div>
+            <div class="actions">
+              <button class="btn btn-sm" data-act="product-price" data-id="${Number(p.id)}" data-merchant="${Number(merchantId)}">تعديل السعر</button>
+              <button class="btn btn-sm ${p.isAvailable === false ? 'btn-green' : 'btn-amber'}"
+                      data-act="product-availability" data-id="${Number(p.id)}"
+                      data-merchant="${Number(merchantId)}"
+                      data-available="${p.isAvailable === false ? '1' : '0'}">
+                ${p.isAvailable === false ? 'إتاحة' : 'إيقاف'}
+              </button>
+            </div>
+          </div>`).join('')
+      : '<div class="empty">لا توجد أصناف بعد</div>';
+
+    $('catalogBody').innerHTML = `
+      <div class="row">
+        <div class="grow">
+          <div class="name">إضافة قسم</div>
+          <input id="newCatName" placeholder="اسم القسم" style="max-width:220px" />
+        </div>
+        <div class="actions">
+          <button class="btn btn-sm btn-primary" data-act="add-category" data-merchant="${Number(merchantId)}">إضافة</button>
+        </div>
+      </div>
+      <div class="row">
+        <div class="grow">
+          <div class="name">إضافة صنف</div>
+          <span style="display:flex; gap:8px; flex-wrap:wrap; margin-top:6px">
+            <input id="newProdName" placeholder="اسم الصنف" style="max-width:200px" />
+            <input id="newProdPrice" type="number" step="0.01" min="0" placeholder="السعر" style="max-width:110px" />
+            <select id="newProdCat"><option value="">بدون قسم</option>${catOptions}</select>
+          </span>
+        </div>
+        <div class="actions">
+          <button class="btn btn-sm btn-primary" data-act="add-product" data-merchant="${Number(merchantId)}">إضافة</button>
+        </div>
+      </div>
+      <h3 style="margin:16px 0 8px">الأصناف</h3>
+      ${productRows}`;
+  } catch (e) {
+    $('catalogBody').innerHTML = `<div class="empty">${escapeHtml(e.message)}</div>`;
+  }
+}
+
+async function addCategory(merchantId) {
+  const name = $('newCatName').value.trim();
+  if (!name) { toast('اكتب اسم القسم', 'bad'); return; }
+  try {
+    await api('/admin/catalog/categories', { method: 'POST', body: { merchantId, name } });
+    toast('تمت إضافة القسم');
+    loadCatalog(merchantId);
+  } catch (e) { toast(e.message, 'bad'); }
+}
+
+async function addProduct(merchantId) {
+  const name = $('newProdName').value.trim();
+  const price = Number($('newProdPrice').value);
+  const categoryId = $('newProdCat').value ? Number($('newProdCat').value) : undefined;
+  if (!name) { toast('اكتب اسم الصنف', 'bad'); return; }
+  if (!Number.isFinite(price) || price < 0) { toast('السعر غير صحيح', 'bad'); return; }
+  try {
+    await api('/admin/catalog/products', {
+      method: 'POST',
+      body: { merchantId, name, price, ...(categoryId ? { categoryId } : {}) },
+    });
+    toast('تمت إضافة الصنف');
+    loadCatalog(merchantId);
+  } catch (e) { toast(e.message, 'bad'); }
+}
+
+async function editProductPrice(id, merchantId) {
+  const raw = prompt('السعر الجديد:');
+  if (raw === null) return;
+  const price = Number(raw);
+  if (!Number.isFinite(price) || price < 0) { toast('السعر غير صحيح', 'bad'); return; }
+  try {
+    await api(`/admin/catalog/products/${id}`, { method: 'PATCH', body: { price } });
+    toast('تم تحديث السعر');
+    loadCatalog(merchantId);
+  } catch (e) { toast(e.message, 'bad'); }
+}
+
+async function setProductAvailability(id, merchantId, isAvailable) {
+  try {
+    await api(`/admin/catalog/products/${id}`, { method: 'PATCH', body: { isAvailable } });
+    toast(isAvailable ? 'تمت إتاحة الصنف' : 'تم إيقاف الصنف');
+    loadCatalog(merchantId);
+  } catch (e) { toast(e.message, 'bad'); }
+}
+
+/* ---------- zones and rates ----------
+   The delivery fee comes from this table and nowhere else — bidding was
+   removed precisely so there is one pricing authority. Editing here changes
+   what every future order is quoted. */
+function renderZones() {
+  $('pageBody').innerHTML = '<div id="zonesBody"><div class="empty">جاري التحميل...</div></div>';
+  loadZones();
+}
+
+async function loadZones() {
+  try {
+    const [zones, rates] = await Promise.all([
+      api('/zones?all=true'),
+      api('/zones/rates'),
+    ]);
+    const safe = (v) => escapeHtml(v == null ? '' : String(v));
+    const byId = Object.fromEntries(zones.map((z) => [z.id, z.name]));
+
+    const zoneRows = zones.length
+      ? zones.map((z) => `
+          <div class="row">
+            <div class="grow">
+              <div class="name">${safe(z.name)} <span class="muted">${safe(z.city)}</span></div>
+              <div class="sub">${z.isActive === false ? 'غير مفعّلة' : 'مفعّلة'}</div>
+            </div>
+            <div class="actions">
+              <button class="btn btn-sm ${z.isActive === false ? 'btn-green' : 'btn-amber'}"
+                      data-act="zone-active" data-id="${Number(z.id)}"
+                      data-active="${z.isActive === false ? '1' : '0'}">
+                ${z.isActive === false ? 'تفعيل' : 'إيقاف'}
+              </button>
+            </div>
+          </div>`).join('')
+      : '<div class="empty">لا توجد مناطق</div>';
+
+    const rateRows = rates.length
+      ? rates.map((r) => `
+          <div class="row">
+            <div class="grow">
+              <div class="name">${safe(byId[r.pickupZoneId] || r.pickupZoneId)} ← ${safe(byId[r.dropoffZoneId] || r.dropoffZoneId)}</div>
+              <div class="sub">${money(r.deliveryFee)}${r.estimatedMinutes ? ` • ~${Number(r.estimatedMinutes)} دقيقة` : ''}</div>
+            </div>
+          </div>`).join('')
+      : '<div class="empty">لا توجد أسعار بين المناطق</div>';
+
+    const zoneOptions = zones
+      .map((z) => `<option value="${Number(z.id)}">${safe(z.name)}</option>`).join('');
+
+    $('zonesBody').innerHTML = `
+      <div class="row">
+        <div class="grow">
+          <div class="name">إضافة منطقة</div>
+          <span style="display:flex; gap:8px; flex-wrap:wrap; margin-top:6px">
+            <input id="newZoneName" placeholder="اسم المنطقة" style="max-width:200px" />
+            <input id="newZoneCity" placeholder="المدينة" style="max-width:160px" />
+          </span>
+        </div>
+        <div class="actions"><button class="btn btn-sm btn-primary" data-act="add-zone">إضافة</button></div>
+      </div>
+      <h3 style="margin:16px 0 8px">المناطق</h3>
+      ${zoneRows}
+      <div class="row" style="margin-top:16px">
+        <div class="grow">
+          <div class="name">إضافة سعر بين منطقتين</div>
+          <span style="display:flex; gap:8px; flex-wrap:wrap; margin-top:6px">
+            <select id="rateFrom">${zoneOptions}</select>
+            <select id="rateTo">${zoneOptions}</select>
+            <input id="rateFee" type="number" step="0.01" min="0" placeholder="الرسوم" style="max-width:110px" />
+            <input id="rateMins" type="number" min="0" placeholder="دقائق (اختياري)" style="max-width:140px" />
+          </span>
+        </div>
+        <div class="actions"><button class="btn btn-sm btn-primary" data-act="add-rate">إضافة</button></div>
+      </div>
+      <h3 style="margin:16px 0 8px">الأسعار</h3>
+      ${rateRows}`;
+  } catch (e) {
+    $('zonesBody').innerHTML = `<div class="empty">${escapeHtml(e.message)}</div>`;
+  }
+}
+
+async function addZone() {
+  const name = $('newZoneName').value.trim();
+  const city = $('newZoneCity').value.trim();
+  if (!name || !city) { toast('اكتب اسم المنطقة والمدينة', 'bad'); return; }
+  try {
+    await api('/zones', { method: 'POST', body: { name, city } });
+    toast('تمت إضافة المنطقة');
+    loadZones();
+  } catch (e) { toast(e.message, 'bad'); }
+}
+
+async function setZoneActive(id, isActive) {
+  try {
+    await api(`/zones/${id}`, { method: 'PATCH', body: { isActive } });
+    toast(isActive ? 'تم تفعيل المنطقة' : 'تم إيقاف المنطقة');
+    loadZones();
+  } catch (e) { toast(e.message, 'bad'); }
+}
+
+async function addRate() {
+  const pickupZoneId = Number($('rateFrom').value);
+  const dropoffZoneId = Number($('rateTo').value);
+  const deliveryFee = Number($('rateFee').value);
+  const minutes = $('rateMins').value;
+  if (!Number.isFinite(deliveryFee) || deliveryFee < 0) {
+    toast('الرسوم غير صحيحة', 'bad');
+    return;
+  }
+  try {
+    await api('/zones/rates', {
+      method: 'POST',
+      body: {
+        pickupZoneId, dropoffZoneId, deliveryFee,
+        ...(minutes ? { estimatedMinutes: Number(minutes) } : {}),
+      },
+    });
+    toast('تمت إضافة السعر');
+    loadZones();
+  } catch (e) { toast(e.message, 'bad'); }
+}
+
 /* ---------- delegated actions (CP-E / S8) ----------
    Every button used to carry its own `onclick="fn(...)"`. That needs
    script-src 'unsafe-inline', which would have made the CSP decorative: the
@@ -447,6 +888,36 @@ document.addEventListener('click', (e) => {
       break;
     case 'merchant-availability':
       setMerchantAvailability(Number(d.id), d.open === '1');
+      break;
+    case 'orders-page':
+      pageOrders(Number(d.dir));
+      break;
+    case 'order-detail':
+      showOrderDetail(Number(d.id));
+      break;
+    case 'cancel-review':
+      reviewCancellation(Number(d.id), d.decision);
+      break;
+    case 'add-category':
+      addCategory(Number(d.merchant));
+      break;
+    case 'add-product':
+      addProduct(Number(d.merchant));
+      break;
+    case 'product-price':
+      editProductPrice(Number(d.id), Number(d.merchant));
+      break;
+    case 'product-availability':
+      setProductAvailability(Number(d.id), Number(d.merchant), d.available === '1');
+      break;
+    case 'add-zone':
+      addZone();
+      break;
+    case 'zone-active':
+      setZoneActive(Number(d.id), d.active === '1');
+      break;
+    case 'add-rate':
+      addRate();
       break;
   }
 });

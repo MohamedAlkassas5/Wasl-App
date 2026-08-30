@@ -56,6 +56,39 @@ export class CatalogService {
    * Sizes and add-ons are attached to their products in one pass rather than
    * a query per item.
    */
+  /**
+   * The same catalog, but as an administrator has to see it.
+   *
+   * `getMenu` below is the *customer* menu and filters to `isAvailable` /
+   * `isActive` — correct there, and unusable for management: a product the
+   * admin switches off vanishes from the list that holds the switch, so it can
+   * never be switched back on. This returns everything, and is admin-guarded
+   * at the controller.
+   *
+   * It also does not require the merchant to be APPROVED. Building a menu
+   * before a store goes live is exactly when this is needed, and the panel's
+   * own store list only offers approved merchants anyway.
+   */
+  async getMenuForAdmin(merchantId: number) {
+    const merchant = await this.merchants.findOne({
+      where: { id: merchantId },
+    });
+    if (!merchant) throw new NotFoundException('المتجر غير موجود');
+
+    const [categories, products] = await Promise.all([
+      this.categories.find({
+        where: { merchantId },
+        order: { sortOrder: 'ASC', name: 'ASC' },
+      }),
+      this.products.find({
+        where: { merchantId },
+        order: { name: 'ASC' },
+      }),
+    ]);
+
+    return { merchant, categories, products };
+  }
+
   async getMenu(merchantId: number) {
     const merchant = await this.merchants.findOne({
       where: { id: merchantId, status: MerchantStatus.APPROVED },
