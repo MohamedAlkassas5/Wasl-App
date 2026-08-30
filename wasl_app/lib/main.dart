@@ -8,6 +8,7 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:wasl_app/core/providers/user_provider.dart';
 import 'package:wasl_app/core/network/authed_http.dart';
 import 'package:wasl_app/core/theme/wasl_theme.dart';
+import 'package:wasl_app/core/config/api_config.dart';
 import 'package:wasl_app/services/push_service.dart';
 import 'package:wasl_app/customer_screen/cart_orders/WaslMyOrdersScreen.dart';
 import 'package:wasl_app/delivery_screen/WaslDriverOrdersScreen.dart';
@@ -61,6 +62,14 @@ void _wirePushRouting() {
 void main() async {
   // 🎯 3. تأمين اتصال الـ Widgets بنظام الـ Native لضمان عمل الخدمات قبل سطر الـ runApp
   WidgetsFlutterBinding.ensureInitialized();
+
+  // 🚨 CP-I: نسخة إصدار من غير عنوان سيرفر = تطبيق كل طلب فيه هيفشل.
+  // بيتفحص هنا، قبل أي حاجة تانية، عشان الغلط يبان على الشاشة فوراً بدل ما
+  // يتخبى ورا رسالة «تعذّر الاتصال» في كل شاشة.
+  if (WaslApiConfig.isReleaseMisconfigured) {
+    runApp(const _MisconfiguredApp());
+    return;
+  }
 
   // 🎯 4. التفعيل الإجباري لخدمات Firebase لقراءة الـ google-services.json
   await Firebase.initializeApp();
@@ -199,3 +208,46 @@ class MyApp extends StatelessWidget {
 //     );
 //   }
 // }
+/// شاشة نسخة الإصدار الغلط.
+///
+/// مقصود إنها إنجليزي وقبيحة: مش المفروض أي مستخدم يشوفها أبداً — دي رسالة
+/// لمين بيبني النسخة، وبتظهر عند أول تشغيل بدل ما التطبيق يشتغل ويفشل بهدوء.
+class _MisconfiguredApp extends StatelessWidget {
+  const _MisconfiguredApp();
+
+  @override
+  Widget build(BuildContext context) {
+    return const MaterialApp(
+      debugShowCheckedModeBanner: false,
+      home: Scaffold(
+        backgroundColor: Color(0xFF7F1D1D),
+        body: Padding(
+          padding: EdgeInsets.all(24),
+          child: Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.error_outline, color: Colors.white, size: 56),
+                SizedBox(height: 16),
+                Text(
+                  'Build misconfigured',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 22,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                SizedBox(height: 12),
+                Text(
+                  WaslApiConfig.misconfiguredMessage,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: Colors.white70, height: 1.5),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
