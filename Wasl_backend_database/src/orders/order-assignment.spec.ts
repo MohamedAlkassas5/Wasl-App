@@ -135,6 +135,10 @@ describe('OrderAssignmentService', () => {
 
     const orderRepo = {
       findOne: () => Promise.resolve(order),
+      // The sweep now also looks for orders that are waiting with nobody
+      // being asked, so the fake has to answer a `find` as well.
+      find: ({ where }: { where: Record<string, unknown> }) =>
+        Promise.resolve(matches(order, where) ? [order] : []),
       update: (where: Record<string, unknown>, patch: Partial<Order>) => {
         if (!matches(order, where)) return Promise.resolve({ affected: 0 });
         Object.assign(order, patch);
@@ -453,6 +457,102 @@ describe('OrderAssignmentService', () => {
         rewaved: [],
         expiredOrders: [],
       });
+    });
+  });
+
+  /**
+   * An order whose first wave reached nobody.
+   *
+   * This is a field bug, not a hypothetical: a customer placed an order while
+   * the only nearby captain's GPS fix had gone stale, so wave 1 found zero
+   * candidates and wrote zero assignment rows. The sweep looked only at
+   * *lapsed offers*, and an order with no offers has nothing that can lapse —
+   * so it was never widened, never expired, and never shown to the captain
+   * even after he came back. It simply sat in `pending_offers` for ever.
+   */
+  describe('an order nobody was asked about', () => {
+    /** Wave 1 ran, found nobody, and wrote no rows. */
+    const waveThatReachedNobody = async (createdMinutesAgo: number) => {
+      nearby = [];
+      await service.openNextWave(ORDER_ID);
+      expect(assignments).toHaveLength(0);
+      order.createdAt = new Date(Date.now() - createdMinutesAgo * 60_000);
+    };
+
+    it('is picked up by the sweep once its wave is due', async () => {
+      await waveThatReachedNobody(5);
+      // A captain is reachable again by the time the sweep runs.
+      nearby = [{ driverId: 1, distanceKm: 1 }];
+
+      const result = await service.runSweep();
+
+      expect(result.rewaved).toEqual([ORDER_ID]);
+      expect(assignments.map((a) => a.driverId)).toEqual([1]);
+      expect(order.status).toBe(OrderStatus.PENDING_OFFERS);
+    });
+
+    it('…and the captain is told, exactly as on any other wave', async () => {
+      await waveThatReachedNobody(5);
+      nearby = [{ driverId: 1, distanceKm: 1 }];
+
+      await service.runSweep();
+
+      expect(notified).toContainEqual(
+        expect.objectContaining({
+          to: [1],
+          kind: NotificationKind.ORDER_OFFER,
+          orderId: ORDER_ID,
+        }),
+      );
+    });
+
+    it('is left alone until its wave is actually due', async () => {
+      // Created seconds ago: wave 1 is still inside its own minute, and
+      // widening now would burn through every radius in a few sweeps.
+      await waveThatReachedNobody(0);
+      nearby = [{ driverId: 1, distanceKm: 1 }];
+
+      const result = await service.runSweep();
+
+      expect(result.rewaved).toEqual([]);
+      expect(assignments).toHaveLength(0);
+    });
+
+    it('widens, and expires the order once the radius is exhausted', async () => {
+      // Old enough that every wave is due, and still nobody anywhere.
+      await waveThatReachedNobody(60);
+      nearby = [];
+
+      let expired: number[] = [];
+      for (let sweep = 0; sweep < 6 && expired.length === 0; sweep++) {
+        expired = (await service.runSweep()).expiredOrders;
+      }
+
+      expect(expired).toEqual([ORDER_ID]);
+      expect(order.status).toBe(OrderStatus.EXPIRED);
+    });
+
+    it('is not touched while a live offer is still outstanding', async () => {
+      nearby = [{ driverId: 1, distanceKm: 1 }];
+      await service.openNextWave(ORDER_ID);
+      order.createdAt = new Date(Date.now() - 60 * 60_000);
+
+      const result = await service.runSweep();
+
+      // Somebody is being asked; widening now would double-offer the order.
+      expect(result.rewaved).toEqual([]);
+      expect(assignments).toHaveLength(1);
+    });
+
+    it('leaves an order that is no longer waiting alone', async () => {
+      await waveThatReachedNobody(60);
+      order.status = OrderStatus.ACCEPTED;
+      nearby = [{ driverId: 1, distanceKm: 1 }];
+
+      const result = await service.runSweep();
+
+      expect(result.rewaved).toEqual([]);
+      expect(assignments).toHaveLength(0);
     });
   });
 

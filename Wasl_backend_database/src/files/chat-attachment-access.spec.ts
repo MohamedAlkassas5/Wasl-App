@@ -2,6 +2,7 @@ import { getRepositoryToken } from '@nestjs/typeorm';
 import { Test } from '@nestjs/testing';
 
 import { FilesService } from './files.service';
+import { SupportService } from '../support/support.service';
 import { STORAGE_PROVIDER } from '../storage/storage-provider';
 import { DeliveryPartner } from '../delivery/entities/delivery-partner.entity';
 import { Merchant } from '../merchant/entities/merchant.entity';
@@ -116,6 +117,12 @@ describe('FilesService — chat attachments and prescriptions', () => {
                 offeredOrderIds.has(where.orderId) ? { id: 1 } : null,
               ),
           },
+        },
+        // Support attachments are a different feature with its own spec; here
+        // the rule simply never matches, so these cases are unaffected by it.
+        {
+          provide: SupportService,
+          useValue: { canReadAttachment: () => Promise.resolve(false) },
         },
       ],
     }).compile();

@@ -11,15 +11,46 @@ import 'package:wasl_app/services/orders_service.dart';
 class WaslMyOrdersScreen extends StatefulWidget {
   const WaslMyOrdersScreen({Key? key}) : super(key: key);
 
-  /// Lets the shell refresh this screen when its tab is opened.
+  /// Every live instance of this screen, so anything that changes the
+  /// customer's orders can refresh all of them.
   ///
-  /// The tabs live in an IndexedStack, so this widget is built once at app
-  /// start and kept alive — initState never runs again. Without this hook the
-  /// list a customer sees is whatever was fetched when the app launched, so an
-  /// order placed a minute ago simply is not there.
-  static Future<void> Function()? refreshHook;
+  /// The shell keeps one instance alive for the whole session inside an
+  /// IndexedStack — its `initState` runs once at app start and never again — so
+  /// without an external refresh the list a customer sees is whatever was
+  /// fetched when the app launched, and an order placed a minute ago simply is
+  /// not there.
+  ///
+  /// 🐞 This used to be a **single slot** (`static Function()? refreshHook`),
+  /// and that is what made a new order invisible until the app was restarted.
+  /// Three flows push a *second* instance of this screen — the pharmacy
+  /// request, the هاتلي/وصللي success screen, and a push-notification tap. Each
+  /// one overwrote the slot in its own `initState` and then set it back to
+  /// **null** in its `dispose`. From that moment the shell's long-lived
+  /// instance had no hook at all: opening the الطلبات tab, and "تتبّع طلباتي"
+  /// after checkout, both called `refreshNow()` and it did nothing. Only a full
+  /// restart rebuilt the shell instance and re-fetched.
+  ///
+  /// A set fixes it at the cause: instances register and unregister
+  /// themselves, and can no longer overwrite one another.
+  static final Set<Future<void> Function()> _refreshHooks =
+      <Future<void> Function()>{};
 
-  static Future<void> refreshNow() async => refreshHook?.call();
+  static void registerRefreshHook(Future<void> Function() hook) =>
+      _refreshHooks.add(hook);
+
+  static void unregisterRefreshHook(Future<void> Function() hook) =>
+      _refreshHooks.remove(hook);
+
+  /// Whether any instance is currently listening. Exposed for tests.
+  static int get liveRefreshHooks => _refreshHooks.length;
+
+  /// Refreshes every live instance. A no-op when none is mounted, so callers
+  /// (order creation, the shell's tab switch) never have to check.
+  static Future<void> refreshNow() async {
+    for (final hook in _refreshHooks.toList()) {
+      await hook();
+    }
+  }
 
   @override
   State<WaslMyOrdersScreen> createState() => _WaslMyOrdersScreenState();
@@ -42,23 +73,31 @@ class _WaslMyOrdersScreenState extends State<WaslMyOrdersScreen>
   /// وليها رسالة وزرار إعادة محاولة.
   WaslAsync<List<dynamic>> _orders = const WaslAsync.loading();
 
+  /// Held in a field so `dispose` unregisters the very same closure it
+  /// registered, whatever Dart decides about tear-off identity.
+  late final Future<void> Function() _refreshHook;
+
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
+    _refreshHook = _loadCustomerSessionAndFetchOrders;
     _loadCustomerSessionAndFetchOrders();
-    WaslMyOrdersScreen.refreshHook = _loadCustomerSessionAndFetchOrders;
+    WaslMyOrdersScreen.registerRefreshHook(_refreshHook);
   }
 
   Future<void> _loadCustomerSessionAndFetchOrders() async {
     final prefs = await SharedPreferences.getInstance();
+    if (!mounted) return;
     final id = prefs.getInt('user_id') ?? 1;
     setState(() => _customerId = id);
     await _fetchCustomerOrdersFromServer();
   }
 
   Future<void> _fetchCustomerOrdersFromServer() async {
-    if (_customerId == null) return;
+    // Now reachable from outside the widget (order creation, the shell's tab
+    // switch), so it can no longer assume it is still on screen.
+    if (!mounted || _customerId == null) return;
 
     setState(() => _orders = const WaslAsync.loading());
 
@@ -117,7 +156,9 @@ class _WaslMyOrdersScreenState extends State<WaslMyOrdersScreen>
 
   @override
   void dispose() {
-    WaslMyOrdersScreen.refreshHook = null;
+    // Only this instance stops listening. Any other live instance — notably the
+    // shell's, which must survive for the whole session — keeps its own hook.
+    WaslMyOrdersScreen.unregisterRefreshHook(_refreshHook);
     _tabController?.dispose();
     super.dispose();
   }

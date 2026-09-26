@@ -6,6 +6,7 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Not, IsNull } from 'typeorm';
 import { DeliveryPartner } from './entities/delivery-partner.entity';
+import { UpdateVehicleDto } from './dto/update-vehicle.dto';
 import { SettingsService, SettingKey } from '../settings/settings.service';
 import { haversineKm, roundKm, isValidCoordinate } from '../common/geo.util';
 
@@ -30,6 +31,96 @@ export class DeliveryService {
     private readonly deliveryRepository: Repository<DeliveryPartner>,
     private readonly settings: SettingsService,
   ) {}
+
+  /**
+   * The driver's own vehicle record.
+   *
+   * Deliberately a narrow projection, not the row. `delivery_partners` also
+   * carries the wallet balance, the live GPS fix and the admin's private
+   * notes; none of that belongs in a "my vehicle" screen, and returning the
+   * whole entity is how such a field ends up on a client by accident.
+   *
+   * The document keys ARE included: `FilesService.canRead` already lets a
+   * partner read their own documents, so this only tells them the name of a
+   * file they are entitled to fetch.
+   */
+  async getMyVehicle(driverId: number) {
+    const driver = await this.deliveryRepository.findOne({
+      where: { userId: driverId },
+    });
+    if (!driver) throw new NotFoundException('حساب الكابتن غير موجود');
+
+    return {
+      success: true,
+      vehicleType: driver.vehicleType,
+      licenseNumber: driver.licenseNumber ?? '',
+      vehicleImage: driver.vehicleImage,
+      // Read-only here — an admin decides it, and the screen shows it so the
+      // driver understands why they can or cannot work.
+      verificationStatus: driver.verificationStatus,
+    };
+  }
+
+  /**
+   * Edit the vehicle type and/or plate number.
+   *
+   * 🔐 `driverId` comes from the token, never from the request, so a driver
+   * can only ever edit their own row.
+   *
+   * Changing these does **not** re-open verification. `vehicleType` is
+   * recorded at registration and is not read by pricing, assignment or the
+   * eligibility gate (checked before this was allowed), so a correction here
+   * moves no money and grants no access. The approved *documents* are what
+   * verification rests on, and those are untouched by this route.
+   */
+  async updateMyVehicle(driverId: number, dto: UpdateVehicleDto) {
+    const driver = await this.deliveryRepository.findOne({
+      where: { userId: driverId },
+    });
+    if (!driver) throw new NotFoundException('حساب الكابتن غير موجود');
+
+    if (dto.vehicleType === undefined && dto.licenseNumber === undefined) {
+      throw new BadRequestException('لا يوجد أي تعديل لحفظه');
+    }
+
+    if (dto.vehicleType !== undefined) {
+      driver.vehicleType = dto.vehicleType;
+    }
+    if (dto.licenseNumber !== undefined) {
+      const trimmed = dto.licenseNumber.trim();
+      driver.licenseNumber = trimmed === '' ? undefined : trimmed;
+    }
+
+    await this.deliveryRepository.save(driver);
+
+    return {
+      ...(await this.getMyVehicle(driverId)),
+      message: 'تم حفظ بيانات المركبة بنجاح',
+    };
+  }
+
+  /**
+   * Whether a driver's GPS fix is recent enough for them to be matched.
+   *
+   * The same `driver_location_ttl_min` that {@link findNearbyOnlineDrivers}
+   * applies, exposed so callers can *report* reachability instead of
+   * re-deriving the rule. Being `is_online` is not the same as being
+   * reachable, and the difference is invisible to the driver unless something
+   * says so.
+   */
+  locationFreshness(lastLocationUpdate?: Date | null): {
+    fresh: boolean;
+    ttlMinutes: number;
+  } {
+    const ttlMinutes = this.settings.getNumber(
+      SettingKey.DRIVER_LOCATION_TTL_MIN,
+      10,
+    );
+    if (!lastLocationUpdate) return { fresh: false, ttlMinutes };
+
+    const age = Date.now() - new Date(lastLocationUpdate).getTime();
+    return { fresh: age <= ttlMinutes * 60 * 1000, ttlMinutes };
+  }
 
   /** Persist a fresh GPS fix for a driver. */
   async updateLocation(

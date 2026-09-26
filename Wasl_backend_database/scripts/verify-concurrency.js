@@ -31,6 +31,7 @@
  *   5. commission + penalty      — both land, on one driver, concurrently
  *   6. balanceAfter correctness  — the ledger's running balance matches
  *   7. rollback                  — a failed transaction leaves nothing behind
+ *   8. top-up approval           — parallel approvals credit the wallet once
  *
  * It drives the **real** `OrdersService` / `PaymentsService` through a real
  * TypeORM pool. A verification that reimplements the mechanism proves the
@@ -169,6 +170,10 @@ async function main() {
     await dataSource.query(
       `DELETE FROM wallet_transactions WHERE driver_id = ANY($1) OR order_id = $2`,
       [driverIds, orderId],
+    );
+    await dataSource.query(
+      `DELETE FROM wallet_topup_requests WHERE driver_id = ANY($1)`,
+      [driverIds],
     );
     await dataSource.query(`DELETE FROM order_assignments WHERE order_id = $1`, [orderId]);
     await dataSource.query(`DELETE FROM order_cancellation_requests WHERE order_id = $1`, [orderId]);
@@ -407,6 +412,98 @@ async function main() {
   check('…and does not move the balance',
     Math.abs(Number(rolledBack) - Number(endBalance)) < 0.001,
     `${endBalance} → ${rolledBack}`);
+
+  // ── 8 parallel top-up approval ─────────────────────────────────────────
+  //
+  // The money-moving half of the driver wallet top-up flow. Two admins hitting
+  // Approve on the same request — or one admin double-tapping through a slow
+  // connection — must credit the wallet exactly once.
+  //
+  // `wallet-topup.spec.ts` pins this against a fake EntityManager that models
+  // the row lock, the conditional UPDATE and the UNIQUE reference. This is the
+  // same service against the real ones.
+  console.log('\n[5] parallel top-up approval');
+
+  const topUpDriverId = driverIds[0];
+  const [{ balance: topUpStartBalance }] = await dataSource.query(
+    `SELECT balance FROM delivery_partners WHERE user_id = $1`, [topUpDriverId]);
+
+  const [topUpRow] = await dataSource.query(
+    `INSERT INTO wallet_topup_requests
+       (driver_id, amount, method, sender_reference, proof_image_url, status)
+     VALUES ($1, 100, 'vodafone_cash', '01000000000',
+             'uploads/payments/verify-proof.jpg', 'pending')
+     RETURNING id`,
+    [topUpDriverId],
+  );
+  const topUpId = Number(topUpRow.id);
+
+  const { WalletTopUpRequest } = require('../src/payments/entities/wallet-topup-request.entity');
+
+  // `approveRequest` reaches `topUpRepo` (for its manager), `notifications`
+  // and `logger`. The transaction, the lock and the constraint are all the
+  // real thing; only the push is stubbed, because a notification is not part
+  // of what is being proven and FCM is not reachable from a verification.
+  const payments = Object.create(PaymentsService.prototype);
+  payments.topUpRepo = dataSource.getRepository(WalletTopUpRequest);
+  payments.notifications = { notify: async () => ({}) };
+  payments.logger = { error: () => {} };
+
+  const approvals = await Promise.allSettled(
+    Array.from({ length: DRIVERS }, (_, i) =>
+      payments.approveRequest(topUpId, FIXTURE_BASE + 100 + i),
+    ),
+  );
+
+  const [{ credits }] = await dataSource.query(
+    `SELECT COUNT(*)::int AS credits FROM wallet_transactions WHERE reference = $1`,
+    [`topup-${topUpId}`],
+  );
+  check('N parallel approvals write exactly one credit', credits === 1,
+    `${credits} rows`);
+
+  const [{ balance: topUpEndBalance }] = await dataSource.query(
+    `SELECT balance FROM delivery_partners WHERE user_id = $1`, [topUpDriverId]);
+  check('the wallet grows by the requested amount, once',
+    Math.abs((Number(topUpStartBalance) + 100) - Number(topUpEndBalance)) < 0.001,
+    `${topUpStartBalance} → ${topUpEndBalance}`);
+
+  const creditedOnce = approvals.filter(
+    (r) => r.status === 'fulfilled' && r.value.repeated === false);
+  check('exactly one call reports it did the crediting',
+    creditedOnce.length === 1,
+    `${creditedOnce.length} of ${approvals.length}`);
+
+  const [topUpAfter] = await dataSource.query(
+    `SELECT status, reviewed_by_admin_id FROM wallet_topup_requests WHERE id = $1`,
+    [topUpId]);
+  check('the request ends APPROVED with one reviewer',
+    topUpAfter.status === 'approved' && topUpAfter.reviewed_by_admin_id != null,
+    `status=${topUpAfter.status} admin=${topUpAfter.reviewed_by_admin_id}`);
+
+  // A rejected request must stay unfundable no matter who asks afterwards.
+  const [rejectedRow] = await dataSource.query(
+    `INSERT INTO wallet_topup_requests
+       (driver_id, amount, method, proof_image_url, status)
+     VALUES ($1, 250, 'instapay', 'uploads/payments/verify-proof-2.jpg', 'pending')
+     RETURNING id`,
+    [topUpDriverId],
+  );
+  const rejectedId = Number(rejectedRow.id);
+  await payments.rejectRequest(rejectedId, FIXTURE_BASE + 200, 'تحويل غير مطابق');
+
+  let approvedAfterReject = false;
+  try {
+    await payments.approveRequest(rejectedId, FIXTURE_BASE + 201);
+    approvedAfterReject = true;
+  } catch { /* expected */ }
+
+  const [{ balance: afterReject }] = await dataSource.query(
+    `SELECT balance FROM delivery_partners WHERE user_id = $1`, [topUpDriverId]);
+  check('a rejected request cannot be approved, and moves no money',
+    !approvedAfterReject &&
+      Math.abs(Number(afterReject) - Number(topUpEndBalance)) < 0.001,
+    `${topUpEndBalance} → ${afterReject}`);
 
   // ── done ───────────────────────────────────────────────────────────────
   await cleanup();

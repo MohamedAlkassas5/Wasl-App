@@ -370,12 +370,14 @@
 
 
 
+import 'dart:async';
 import 'dart:io';
 import 'package:wasl_app/core/ui/wasl_submit_guard.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:wasl_app/core/theme/app_colors.dart';
+import 'package:wasl_app/customer_screen/cart_orders/WaslMyOrdersScreen.dart';
 import 'package:wasl_app/services/orders_service.dart';
 import 'package:wasl_app/services/location_service.dart';
 
@@ -571,6 +573,10 @@ class _WaslOrderAnyplaceDetailsScreenState
       if (!mounted) return;
 
       if (result['success'] == true) {
+        // 🔄 This flow only pops back to where it came from — it never opens
+        // "طلباتي" — so without refreshing here the customer's new order stayed
+        // invisible until the app was restarted.
+        unawaited(WaslMyOrdersScreen.refreshNow());
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: const Text('تم إرسال طلبك بنجاح وجاري المزايدة الآن! 🚀', style: TextStyle(fontFamily: 'Cairo')),

@@ -38,6 +38,22 @@ export class PaymentsController {
     return this.paymentsService.getPaymentAccounts();
   }
 
+  /**
+   * The single balance the driver app reads.
+   *
+   * Deliberately takes no driver id: the wallet is whoever the token says it
+   * is. The app previously read its balance from
+   * `/orders/driver/:id/dashboard-stats`, which needs an id the app keeps in
+   * `SharedPreferences` — when that id was stale or absent the screen fell
+   * back to a made-up number instead of failing. Both routes read the same
+   * `delivery_partners.balance` column; this one cannot be pointed at the
+   * wrong row.
+   */
+  @Get('summary')
+  summary(@Req() req: JwtReq) {
+    return this.paymentsService.getWalletSummary(req.user!.sub);
+  }
+
   @Post('topup-requests')
   @UseInterceptors(FileInterceptor('proofImage', imageUploadPolicy))
   async createTopUp(
@@ -45,14 +61,14 @@ export class PaymentsController {
     @UploadedFile() file: Express.Multer.File,
     @Body() dto: CreateTopUpRequestDto,
   ) {
-    const proofImageUrl = await this.uploadService.persistImage(
+    // The stored key is produced here from the verified bytes. Anything the
+    // client put in `proofImageUrl` is discarded — otherwise a driver could
+    // name someone else's file, or a path that is not a file at all.
+    dto.proofImageUrl = await this.uploadService.persistImage(
       file,
       'payments',
       'proof',
     );
-    if (proofImageUrl) {
-      dto.proofImageUrl = proofImageUrl;
-    }
     return this.paymentsService.createTopUpRequest(req.user!.sub, dto);
   }
 

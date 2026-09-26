@@ -11,6 +11,7 @@ import {
 } from '@nestjs/common';
 import { DeliveryService } from './delivery.service';
 import { UpdateLocationDto } from './dto/update-location.dto';
+import { UpdateVehicleDto } from './dto/update-vehicle.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CurrentUser, AuthUser, assertSelfOrAdmin } from '../auth/current-user';
 
@@ -22,6 +23,28 @@ import { CurrentUser, AuthUser, assertSelfOrAdmin } from '../auth/current-user';
 @UseGuards(JwtAuthGuard)
 export class DeliveryController {
   constructor(private readonly deliveryService: DeliveryService) {}
+
+  /**
+   * The signed-in driver's own vehicle record.
+   *
+   * There is no id in the path on purpose: the vehicle is whoever the token
+   * says it is, so there is nothing to tamper with. (`:id/location` above
+   * takes one for historical reasons and guards it with `assertSelfOrAdmin`.)
+   */
+  @Get('me/vehicle')
+  getMyVehicle(@CurrentUser() user: AuthUser) {
+    return this.deliveryService.getMyVehicle(user.sub);
+  }
+
+  /** Edit own vehicle type / plate number. Documents and verification status
+   * are not editable here — those stay with the admin. */
+  @Patch('me/vehicle')
+  updateMyVehicle(
+    @CurrentUser() user: AuthUser,
+    @Body() dto: UpdateVehicleDto,
+  ) {
+    return this.deliveryService.updateMyVehicle(user.sub, dto);
+  }
 
   /**
    * Driver app pushes its live GPS location here while online.

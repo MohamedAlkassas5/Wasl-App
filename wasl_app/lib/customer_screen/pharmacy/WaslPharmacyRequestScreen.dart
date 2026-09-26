@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -156,6 +157,9 @@ class _WaslPharmacyRequestScreenState extends State<WaslPharmacyRequestScreen> {
     }
 
     _snack('تم إرسال طلبك للصيدلية 🏥', AppColors.success);
+    // 🔄 The shell keeps its own "طلباتي" instance alive; refresh it too, not
+    // just the one this navigation is about to build.
+    unawaited(WaslMyOrdersScreen.refreshNow());
     Navigator.pushReplacement(
       context,
       MaterialPageRoute(builder: (_) => const WaslMyOrdersScreen()),

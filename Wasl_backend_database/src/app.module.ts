@@ -31,6 +31,7 @@ import { ZonesModule } from './zones/zones.module';
 import { CatalogModule } from './catalog/catalog.module';
 import { AccountAccessModule } from './auth/account-access.module';
 import { AdminAuditLogModule } from './admin/admin-audit-log.module';
+import { SupportModule } from './support/support.module';
 import { NotificationsModule } from './notifications/notifications.module';
 
 @Module({
@@ -70,6 +71,7 @@ import { NotificationsModule } from './notifications/notifications.module';
     NotificationsModule,
     // Global: admin actions are audited from five different modules.
     AdminAuditLogModule,
+    SupportModule,
     ZonesModule,
     CatalogModule,
     AuthModule,

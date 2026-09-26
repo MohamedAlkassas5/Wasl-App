@@ -505,18 +505,54 @@ class WaslDriverMarketplaceScreen extends StatefulWidget {
 
 class _WaslDriverMarketplaceScreenState extends State<WaslDriverMarketplaceScreen> {
   final FlutterOrdersService _ordersService = FlutterOrdersService();
-  // 🎯 تم تحديث النوع ليتناسب مع الـ Service الجديدة
-  late Future<Map<String, dynamic>> _availableJobsFuture;
+
+  /// 🐞 دي كانت `Future` بتتبني مرة واحدة في `initState` وبتتعرض بـ
+  /// `FutureBuilder`، من غير أي تحديث دوري. يعني الكابتن كان لازم يكون فاتح
+  /// الشاشة دي **وقت** ما الموجة تخرج، وإلا العرض بيروح من غير ما يشوفه —
+  /// مهلته ٦٠ ثانية بس. القايمة بقت حالة عادية عشان نقدر نحدّثها كل شوية من
+  /// غير ما الشاشة ترجع لدايرة التحميل وتفضل ترمش.
+  List<dynamic> _jobs = [];
+  bool _loading = true;
+  String? _error;
+  Timer? _pollTimer;
+
+  /// أقصر من مهلة العرض بكتير، فالطلب بيبان في ثواني من ساعة ما اتعرض.
+  static const Duration _pollInterval = Duration(seconds: 5);
 
   @override
   void initState() {
     super.initState();
     _refreshAvailableJobs();
+    _pollTimer = Timer.periodic(
+      _pollInterval,
+      (_) => _refreshAvailableJobs(silent: true),
+    );
   }
 
-  void _refreshAvailableJobs() {
+  @override
+  void dispose() {
+    _pollTimer?.cancel();
+    super.dispose();
+  }
+
+  /// [silent] بيمنع دايرة التحميل في نبضات الخلفية — التحديث الدوري المفروض
+  /// يعدّي من غير ما يمسح اللي الكابتن بيقراه.
+  Future<void> _refreshAvailableJobs({bool silent = false}) async {
+    if (!silent && mounted) setState(() => _loading = true);
+
+    final result = await _ordersService.getAvailableOrders();
+    if (!mounted) return;
+
     setState(() {
-      _availableJobsFuture = _ordersService.getAvailableOrders();
+      _loading = false;
+      if (result['success'] == true) {
+        _jobs = (result['data'] as List?) ?? const [];
+        _error = null;
+      } else if (!silent) {
+        // فشل نبضة خلفية بيسيب آخر قايمة ناجحة زي ما هي بدل ما يحوّلها لرسالة
+        // خطأ — الشبكة بتقطع لحظياً وهو راكب.
+        _error = result['message']?.toString() ?? 'تعذّر تحميل الطلبات';
+      }
     });
   }
 
@@ -549,26 +585,26 @@ class _WaslDriverMarketplaceScreenState extends State<WaslDriverMarketplaceScree
         actions: [IconButton(onPressed: _refreshAvailableJobs, icon: const Icon(Icons.refresh, color: AppColors.primary))],
       ),
       body: RefreshIndicator(
-        onRefresh: () async => _refreshAvailableJobs(),
-        child: FutureBuilder<Map<String, dynamic>>( // 👈 التحديث للنوع
-          future: _availableJobsFuture,
-          builder: (context, snapshot) {
-            if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator());
-
-            // التعامل مع الـ Map الناتجة من السيرفر
-            if (!snapshot.hasData || snapshot.data!['success'] != true) return _buildEmptyState();
-
-            final List<dynamic> jobs = snapshot.data!['data'] ?? [];
-            if (jobs.isEmpty) return _buildEmptyState();
-
-            return ListView.builder(
-              padding: const EdgeInsets.all(16),
-              itemCount: jobs.length,
-              itemBuilder: (context, index) => _buildOrderCard(Map<String, dynamic>.from(jobs[index])),
-            );
-          },
-        ),
+        onRefresh: () => _refreshAvailableJobs(),
+        child: _buildBody(),
       ),
+    );
+  }
+
+  Widget _buildBody() {
+    if (_loading && _jobs.isEmpty) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (_error != null && _jobs.isEmpty) {
+      return _buildEmptyState(message: _error);
+    }
+    if (_jobs.isEmpty) return _buildEmptyState();
+
+    return ListView.builder(
+      padding: const EdgeInsets.all(16),
+      itemCount: _jobs.length,
+      itemBuilder: (context, index) =>
+          _buildOrderCard(Map<String, dynamic>.from(_jobs[index] as Map)),
     );
   }
 
@@ -635,7 +671,20 @@ class _WaslDriverMarketplaceScreenState extends State<WaslDriverMarketplaceScree
     );
   }
 
-  Widget _buildEmptyState() => ListView(children: [const SizedBox(height: 200), const Center(child: Text('لا توجد طلبات متاحة حالياً', style: TextStyle(fontFamily: 'Cairo')))],);
+  // ListView وليس Column عشان RefreshIndicator يفضل شغال والقايمة فاضية.
+  Widget _buildEmptyState({String? message}) => ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        children: [
+          const SizedBox(height: 200),
+          Center(
+            child: Text(
+              message ?? 'لا توجد طلبات متاحة حالياً',
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontFamily: 'Cairo'),
+            ),
+          ),
+        ],
+      );
   Future<void> _acceptOrder(Map<String, dynamic> job) async {
     final id = int.tryParse(job['id']?.toString() ?? '');
     if (id == null) return;

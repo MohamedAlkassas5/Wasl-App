@@ -23,6 +23,8 @@ export const SettingKey = {
   PAY_VODAFONE_NUMBER: 'pay_vodafone_number',
   PAY_INSTAPAY_HANDLE: 'pay_instapay_handle',
   PAY_INSTRUCTIONS: 'pay_instructions',
+  TOPUP_MIN_AMOUNT: 'topup_min_amount',
+  TOPUP_MAX_AMOUNT: 'topup_max_amount',
 } as const;
 
 export type SettingKeyType = (typeof SettingKey)[keyof typeof SettingKey];
@@ -105,18 +107,30 @@ const DEFAULT_SETTINGS: SettingSeed[] = [
   },
   {
     key: SettingKey.PAY_VODAFONE_NUMBER,
-    value: '',
+    value: '01032919674',
     description: 'Platform Vodafone Cash number drivers pay top-ups to.',
   },
   {
     key: SettingKey.PAY_INSTAPAY_HANDLE,
-    value: '',
+    value: '01220346717',
     description: 'Platform InstaPay handle/address drivers pay top-ups to.',
   },
   {
     key: SettingKey.PAY_INSTRUCTIONS,
     value: 'حوّل المبلغ إلى أحد الحسابات ثم ارفق صورة التحويل ورقم المُرسِل.',
     description: 'Instructions shown to drivers on the top-up screen.',
+  },
+  {
+    key: SettingKey.TOPUP_MIN_AMOUNT,
+    value: '10',
+    description:
+      'Smallest wallet top-up (EGP) a driver may request. Enforced server-side.',
+  },
+  {
+    key: SettingKey.TOPUP_MAX_AMOUNT,
+    value: '5000',
+    description:
+      'Largest wallet top-up (EGP) a driver may request in one go. A ceiling keeps a typo (or a tampered client) from filing a request an admin might approve by reflex.',
   },
 ];
 

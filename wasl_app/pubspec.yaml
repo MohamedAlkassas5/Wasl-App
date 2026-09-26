@@ -48,6 +48,9 @@ dependencies:
   flutter_map: ^6.1.0
   latlong2: ^0.9.1
   http: ^1.2.0  # 🎯 أضف السطر ده فوراً يا هندسة
+  # صريحة عشان `MediaType` في رفع الصور. كانت جاية ضمنياً مع http، والاعتماد
+  # على تبعية غير مباشرة بيكسر لما الحزمة الأصلية تغيّرها.
+  http_parser: ^4.0.2
   geocoding: ^3.0.0
   google_fonts: ^6.3.0
   # Audio Recording

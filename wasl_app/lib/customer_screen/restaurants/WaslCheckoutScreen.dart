@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:wasl_app/core/ui/wasl_submit_guard.dart';
 import 'package:geolocator/geolocator.dart';
@@ -5,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:wasl_app/core/theme/app_colors.dart';
 import 'package:wasl_app/core/widgets/wasl_ui.dart';
+import 'package:wasl_app/customer_screen/cart_orders/WaslMyOrdersScreen.dart';
 import 'package:wasl_app/services/orders_service.dart';
 import 'package:wasl_app/services/zones_service.dart';
 
@@ -871,6 +874,14 @@ class _WaslCheckoutScreenState extends State<WaslCheckoutScreen>
 
     // The order now lives on the server, so the cart's job is done.
     _cart.clear();
+
+    // 🔄 The shell's "طلباتي" tab is built once at app start and kept alive in
+    // an IndexedStack, so nothing there re-fetches on its own. Refreshing here
+    // — the moment the server confirmed the order — is what puts it under
+    // الطلبات الحالية immediately, whichever button the customer taps next.
+    // Deliberately not awaited: the order is already created, and the
+    // confirmation screen must not wait on a second round trip.
+    unawaited(WaslMyOrdersScreen.refreshNow());
 
     Navigator.pushReplacement(
       context,

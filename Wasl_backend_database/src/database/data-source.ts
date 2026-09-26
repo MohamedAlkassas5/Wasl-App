@@ -96,6 +96,8 @@ import { OrderAssignment } from '../orders/entities/order-assignment.entity';
 import { DeviceToken } from '../notifications/entities/device-token.entity';
 import { RefreshToken } from '../auth/entities/refresh-token.entity';
 import { AdminAuditLog } from '../admin/entities/admin-audit-log.entity';
+import { SupportConversation } from '../support/entities/support-conversation.entity';
+import { SupportMessage } from '../support/entities/support-message.entity';
 
 /**
  * Every entity that maps to a table.
@@ -124,6 +126,8 @@ export const ENTITIES = [
   DeviceToken,
   RefreshToken,
   AdminAuditLog,
+  SupportConversation,
+  SupportMessage,
 ];
 
 export function buildDataSourceOptions(): DataSourceOptions {

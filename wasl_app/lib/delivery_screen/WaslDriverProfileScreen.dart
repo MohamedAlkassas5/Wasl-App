@@ -4,6 +4,11 @@ import 'package:wasl_app/services/push_service.dart';
 import 'package:wasl_app/core/theme/app_colors.dart';
 import 'package:wasl_app/screens/WaslLoginScreen.dart';
 import 'package:wasl_app/services/orders_service.dart';
+import 'package:wasl_app/services/auth_service.dart';
+import 'package:wasl_app/delivery_screen/WaslDriverEarningsScreen.dart';
+import 'package:wasl_app/delivery_screen/WaslDriverVehicleScreen.dart';
+import 'package:wasl_app/delivery_screen/WaslSupportChatScreen.dart';
+import 'package:wasl_app/services/support_service.dart';
 
 class WaslDriverProfileScreen extends StatefulWidget {
   const WaslDriverProfileScreen({Key? key}) : super(key: key);
@@ -20,10 +25,20 @@ class _WaslDriverProfileScreenState extends State<WaslDriverProfileScreen> {
   double _driverRating = 5.00; // 🎯 متغير حفظ التقييم التراكمي الحي
   bool _isDeleting = false; // مؤشر انتظار تحميل الحذف
 
+  /// ردود الدعم اللي الكابتن ما قراهاش — شارة على بند مركز الدعم.
+  int _supportUnread = 0;
+
   @override
   void initState() {
     super.initState();
     _loadDriverDataAndFetchRating();
+    _refreshSupportBadge();
+  }
+
+  /// الشارة بتتقرا من السيرفر، مش من عدّاد محلي — الرد بيوصل والتطبيق مقفول.
+  Future<void> _refreshSupportBadge() async {
+    final unread = await WaslSupportService().unreadCount();
+    if (mounted) setState(() => _supportUnread = unread);
   }
 
   void _loadDriverDataAndFetchRating() async {
@@ -50,6 +65,99 @@ class _WaslDriverProfileScreenState extends State<WaslDriverProfileScreen> {
         _driverRating = double.tryParse(result['rating']?.toString() ?? '5') ?? 5.0;
       });
     }
+  }
+
+  /// حالة التحقق الحقيقية من السيرفر (`GET /users/status`) — نفس المسار اللي
+  /// شاشة الانتظار بتستعمله، مش نسخة تانية منه. بيرجّع حالة الحساب وملاحظة
+  /// الإدارة، وهي اللي بتتكتب لما التسجيل يترفض.
+  Future<void> _showVerificationStatus() async {
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(
+          child: CircularProgressIndicator(color: AppColors.primary)),
+    );
+
+    final result = await FlutterAuthService().checkUserStatus(_phone);
+    if (!mounted) return;
+    if (!context.mounted) return;
+    Navigator.pop(context); // يقفل مؤشر التحميل
+
+    if (result['success'] != true) {
+      _showUnavailable('وثائق التحقق',
+          result['message']?.toString() ?? 'تعذّر تحميل حالة حسابك');
+      return;
+    }
+
+    const labels = {
+      'active': 'حسابك موثّق ومفعّل ✅',
+      'pending': 'وثائقك تحت المراجعة ⏳',
+      'rejected': 'التسجيل مرفوض ❌',
+      'suspended': 'الحساب موقوف مؤقتاً ⚠️',
+    };
+    final status = result['status']?.toString() ?? '';
+    final note = result['adminNotes']?.toString() ?? '';
+
+    _showSheet(
+      'وثائق التحقق والهوية',
+      '${labels[status] ?? status}\n\n'
+      '${note.isNotEmpty ? 'ملاحظة الإدارة: $note\n\n' : ''}'
+      'الوثائق اللي رفعتها وقت التسجيل (البطاقة والسيلفي وصورة المركبة) '
+      'محفوظة عند الإدارة. عرضها أو تعديلها من التطبيق لسه مش متاح.',
+    );
+  }
+
+  /// بند شغّال بس اللي وراه لسه مش موجود على السيرفر. بيقول الحقيقة بدل ما
+  /// يفتح شاشة بتوهم إن فيه حاجة بتحصل.
+  void _showUnavailable(String title, String message) =>
+      _showSheet(title, message);
+
+  void _showSheet(String title, String message) {
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: AppColors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (sheetContext) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title,
+                    style: const TextStyle(
+                        fontFamily: 'Cairo',
+                        fontWeight: FontWeight.w900,
+                        fontSize: 15,
+                        color: AppColors.textPrimary)),
+                const SizedBox(height: 10),
+                Text(message,
+                    style: const TextStyle(
+                        fontFamily: 'Cairo',
+                        fontSize: 13,
+                        height: 1.7,
+                        color: AppColors.textSecondary)),
+                const SizedBox(height: 18),
+                SizedBox(
+                  width: double.infinity,
+                  child: TextButton(
+                    onPressed: () => Navigator.pop(sheetContext),
+                    child: const Text('تمام',
+                        style: TextStyle(
+                            fontFamily: 'Cairo',
+                            fontWeight: FontWeight.bold)),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   // 🎯 دالة تسجيل الخروج وتصفير الجلسة محلياً
@@ -255,10 +363,47 @@ class _WaslDriverProfileScreenState extends State<WaslDriverProfileScreen> {
               const SizedBox(height: 20),
 
               // 2️⃣ خيارات التحكم والإعدادات اللوجستية الملونة للكابتن
-              _buildListTile('وثائق التحقق والهوية الشخصية 🪪', Icons.verified_user_outlined, AppColors.primary),
-              _buildListTile('تحديث بيانات المركبة والموتوسيكل 🏍️', Icons.two_wheeler_rounded, Colors.blue.shade600),
-              _buildListTile('سجل المكافآت والأرباح الأسبوعية 💵', Icons.analytics_outlined, const Color(0xFF16A34A)),
-              _buildListTile('مركز الدعم الفني والمساعدة 🛠️', Icons.support_agent_rounded, Colors.amber.shade800),
+              _buildListTile(
+                'وثائق التحقق والهوية الشخصية 🪪',
+                Icons.verified_user_outlined,
+                AppColors.primary,
+                onTap: _showVerificationStatus,
+              ),
+              _buildListTile(
+                'تحديث بيانات المركبة والموتوسيكل 🏍️',
+                Icons.two_wheeler_rounded,
+                Colors.blue.shade600,
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                      builder: (_) => const WaslDriverVehicleScreen()),
+                ),
+              ),
+              _buildListTile(
+                'سجل المكافآت والأرباح الأسبوعية 💵',
+                Icons.analytics_outlined,
+                const Color(0xFF16A34A),
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                      builder: (_) => const WaslDriverEarningsScreen()),
+                ),
+              ),
+              _buildListTile(
+                'مركز الدعم الفني والمساعدة 🛠️',
+                Icons.support_agent_rounded,
+                Colors.amber.shade800,
+                badge: _supportUnread,
+                onTap: () async {
+                  await Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                        builder: (_) => const WaslSupportChatScreen()),
+                  );
+                  // الرجوع من المحادثة = الردود اتقرت، فالشارة تتحدّث.
+                  _refreshSupportBadge();
+                },
+              ),
               const SizedBox(height: 24),
 
               // 3️⃣ زر تسجيل الخروج الحاسي لتدمير الجلسة الأمنية المحفوظة
@@ -300,7 +445,15 @@ class _WaslDriverProfileScreenState extends State<WaslDriverProfileScreen> {
     );
   }
 
-  Widget _buildListTile(String title, IconData icon, Color iconColor) {
+  /// [onTap] مطلوب: كل بند هنا كان `onTap: () {}` — شكله زرار وما بيعملش
+  /// حاجة. خليه إجباري عشان أي بند جديد يتحط لازم يقرر بيروح فين.
+  Widget _buildListTile(
+    String title,
+    IconData icon,
+    Color iconColor, {
+    required VoidCallback onTap,
+    int badge = 0,
+  }) {
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
@@ -328,8 +481,31 @@ class _WaslDriverProfileScreenState extends State<WaslDriverProfileScreen> {
           title,
           style: const TextStyle(fontFamily: 'Cairo', fontSize: 13, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
         ),
-        trailing: const Icon(Icons.arrow_forward_ios_rounded, size: 14, color: AppColors.textSecondary),
-        onTap: () {},
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (badge > 0)
+              Container(
+                margin: const EdgeInsets.only(left: 8),
+                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                decoration: BoxDecoration(
+                  color: AppColors.danger,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(
+                  '$badge',
+                  style: const TextStyle(
+                      fontFamily: 'Cairo',
+                      fontSize: 10,
+                      fontWeight: FontWeight.w900,
+                      color: Colors.white),
+                ),
+              ),
+            const Icon(Icons.arrow_forward_ios_rounded,
+                size: 14, color: AppColors.textSecondary),
+          ],
+        ),
+        onTap: onTap,
       ),
     );
   }

@@ -11,7 +11,7 @@ import 'package:wasl_app/core/theme/wasl_theme.dart';
 import 'package:wasl_app/core/config/api_config.dart';
 import 'package:wasl_app/services/push_service.dart';
 import 'package:wasl_app/customer_screen/cart_orders/WaslMyOrdersScreen.dart';
-import 'package:wasl_app/delivery_screen/WaslDriverOrdersScreen.dart';
+import 'package:wasl_app/delivery_screen/WaslDriverMarketplaceScreen.dart';
 
 // استيراد الشاشات الخاصة بالتطبيق
 import 'screens/WaslOnboardingScreen.dart';
@@ -28,6 +28,13 @@ final GlobalKey<NavigatorState> appNavigatorKey = GlobalKey<NavigatorState>();
 /// الواحد بتاخد كائن الطلب كامل، والإشعار فيه رقم الطلب بس (عن قصد — الـ
 /// `data` مالهاش تحمل أي بيانات شخصية). القايمة بتجيب البيانات من السيرفر
 /// وبتوصّل المستخدم لطلبه من غير ما نخترع بيانات ناقصة.
+///
+/// 🐞 إشعار العرض (`order_offer`) كان بيودّي على `WaslDriverOrdersScreen` —
+/// وهي شاشة **مستحيل** تعرض العرض ده: التبويبين بيفلتروا على
+/// `acceptedDriverId == أنا`، والطلب المعروض لسه `pending_offers` ومن غير
+/// كابتن، فمكانش بيطابق ولا واحد فيهم. يعني الكابتن يدوس على «طلب توصيل جديد
+/// ليك!» ويلاقي شاشة فاضية، والعرض ينتهي بعد ٦٠ ثانية. شاشة السوق هي المكان
+/// الوحيد اللي بيعرض العروض فعلاً، فالدوسة بتروح لها.
 void _wirePushRouting() {
   WaslPushService.instance.onTap = (tap) {
     final navigator = appNavigatorKey.currentState;
@@ -36,7 +43,7 @@ void _wirePushRouting() {
     navigator.push(
       MaterialPageRoute(
         builder: (_) => tap.isDriverOffer
-            ? const WaslDriverOrdersScreen()
+            ? const WaslDriverMarketplaceScreen()
             : const WaslMyOrdersScreen(),
       ),
     );

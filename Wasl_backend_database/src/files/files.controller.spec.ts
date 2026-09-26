@@ -8,6 +8,7 @@ import * as request from 'supertest';
 
 import { FilesController } from './files.controller';
 import { FilesService } from './files.service';
+import { SupportService } from '../support/support.service';
 import { STORAGE_PROVIDER } from '../storage/storage-provider';
 import { LocalDiskStorageProvider } from '../storage/local-disk-storage.provider';
 import { JWT_SECRET } from '../auth/jwt.constants';
@@ -78,6 +79,12 @@ describe('FilesController (uploads access control)', () => {
         },
         { provide: getRepositoryToken(OrderMessage), useValue: emptyRepo },
         { provide: getRepositoryToken(OrderAssignment), useValue: emptyRepo },
+        // Support attachments are a different feature with its own spec; here
+        // the rule simply never matches, so these cases are unaffected by it.
+        {
+          provide: SupportService,
+          useValue: { canReadAttachment: () => Promise.resolve(false) },
+        },
         // These tests exercise the guard for real, so the account lookup has to
         // answer: every account here is live.
         {

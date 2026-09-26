@@ -118,3 +118,40 @@ body { background: var(--bg); color: var(--text); }
   .sidebar { flex-direction: row; flex-wrap: wrap; }
   .sidebar nav { flex-direction: row; margin-top: 0; }
 }
+
+/* ---------- support inbox ---------- */
+/* Two panes: the thread list on the right (RTL), the conversation on the left.
+   Collapses to one column on a narrow screen so the panel stays usable on a
+   tablet, which is what a dispatcher actually has open. */
+.support { display: grid; grid-template-columns: 320px 1fr; gap: 16px; align-items: start; }
+@media (max-width: 900px) { .support { grid-template-columns: 1fr; } }
+
+.support-list { display: flex; flex-direction: column; gap: 8px; max-height: 70vh; overflow-y: auto; }
+.support-item { padding: 12px 14px; border: 1px solid var(--border); border-radius: 12px;
+  background: #fff; cursor: pointer; }
+.support-item:hover { border-color: var(--blue); }
+.support-item.active { border-color: var(--blue); box-shadow: 0 0 0 2px rgba(27,98,230,.12); }
+.support-item .name { font-weight: 700; font-size: 14px; }
+.support-item .sub { color: var(--muted); font-size: 12px; margin-top: 2px; }
+.support-unread { background: var(--red); color: #fff; border-radius: 999px;
+  font-size: 11px; font-weight: 700; padding: 1px 7px; margin-inline-start: 6px; }
+
+.support-thread { border: 1px solid var(--border); border-radius: 12px; background: #fff;
+  display: flex; flex-direction: column; min-height: 60vh; }
+.support-head { padding: 14px 16px; border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.support-body { flex: 1; padding: 16px; overflow-y: auto; max-height: 52vh;
+  display: flex; flex-direction: column; gap: 10px; background: #f8fafc; }
+.support-msg { max-width: 78%; padding: 10px 13px; border-radius: 14px; font-size: 13px;
+  line-height: 1.7; white-space: pre-wrap; word-break: break-word; }
+/* The user is on the right, the admin's own replies on the left — the same
+   orientation the driver sees, mirrored, so a screenshot from either side is
+   readable against the other. */
+.support-msg.user { background: #fff; border: 1px solid var(--border); align-self: flex-start; }
+.support-msg.admin { background: var(--blue); color: #fff; align-self: flex-end; }
+.support-msg.system { background: #fef3c7; color: #92400e; align-self: center; font-size: 12px; }
+.support-msg .meta { display: block; font-size: 10px; opacity: .7; margin-top: 5px; }
+.support-msg img { max-width: 220px; border-radius: 10px; display: block; margin-top: 8px; cursor: zoom-in; }
+.support-compose { padding: 12px 16px; border-top: 1px solid var(--border); display: flex; gap: 10px; }
+.support-compose textarea { flex: 1; resize: vertical; min-height: 44px; font: inherit;
+  padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; }

@@ -827,49 +827,15 @@ class FlutterOrdersService {
     }
   }
 
-  // 🎯 15️⃣ طلب شحن المحفظة
-  Future<Map<String, dynamic>> requestDriverTopUp({
-    required int driverId,
-    required double amount,
-  }) async {
-    final url = Uri.parse('$baseUrl/wallet/topup-requests');
-    try {
-      final response = await WaslAuthedHttp.instance.post(
-        url,
-        body: jsonEncode({'amount': amount, 'method': 'instapay'}),
-      ).timeout(const Duration(seconds: 15));
-      if (response.statusCode >= 200 && response.statusCode < 300) {
-        return {'success': true, 'data': jsonDecode(response.body)};
-      }
-      return {'success': false, 'message': 'فشل طلب الشحن'};
-    } catch (e) {
-      return WaslFailure.from(e).toResult();
-    }
-  }
-
-  // 🎯 16️⃣ معالجة الـ Webhook لتأكيد دفع المحفظة
-  Future<Map<String, dynamic>> processPaymentWebhook({
-    required int driverId,
-    required double amount,
-  }) async {
-    final url = Uri.parse('$baseUrl/orders/payment/webhook');
-    try {
-      final response = await WaslAuthedHttp.instance.post(
-        url,
-        body: jsonEncode({
-          'driverId': driverId,
-          'amount': amount,
-          'status': 'success',
-        }),
-      ).timeout(const Duration(seconds: 15));
-      if (response.statusCode >= 200 && response.statusCode < 300) {
-        return {'success': true, 'data': jsonDecode(response.body)};
-      }
-      return {'success': false, 'message': 'فشل تأكيد الشحن'};
-    } catch (e) {
-      return WaslFailure.from(e).toResult();
-    }
-  }
+  // 🎯 15️⃣/16️⃣ شحن المحفظة اتنقل لـ `WaslWalletService`.
+  //
+  // `requestDriverTopUp` كان بيبعت `method: 'instapay'` ثابتة ومن غير صورة
+  // تحويل — والسيرفر دلوقتي بيرفض طلب من غير صورة، لأن مفيش حاجة الإدارة
+  // تراجعها. و`processPaymentWebhook` كان بينده مسار مش موجود على السيرفر
+  // (`/orders/payment/webhook`) وشاشة المحفظة كانت بتعامل رده كأنه تأكيد شحن،
+  // فتقول للكابتن «تم شحن ١٠٠ جنيه» والفلوس ما اتحركتش. الشحن ما بيتأكدش من
+  // التطبيق أصلاً: الإدارة هي اللي بتوافق، والرصيد بيتحرك ساعتها بس.
+  // شوف `lib/services/wallet_service.dart`.
 
   // 🎯 17️⃣ جلب إشعارات المستخدم
   Future<Map<String, dynamic>> getUserNotifications(int userId) async {

@@ -9,6 +9,7 @@ import { Order } from '../orders/entities/order.entity';
 import { OrderMessage } from '../orders/entities/order-message.entity';
 import { OrderAssignment } from '../orders/entities/order-assignment.entity';
 import { WalletTopUpRequest } from '../payments/entities/wallet-topup-request.entity';
+import { SupportModule } from '../support/support.module';
 
 @Module({
   imports: [
@@ -22,6 +23,8 @@ import { WalletTopUpRequest } from '../payments/entities/wallet-topup-request.en
       // assigned.
       OrderAssignment,
     ]),
+    // Support owns the rule for its own attachments; FilesService asks it.
+    SupportModule,
   ],
   controllers: [FilesController],
   providers: [FilesService],

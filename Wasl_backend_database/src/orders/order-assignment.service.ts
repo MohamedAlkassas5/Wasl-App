@@ -428,31 +428,44 @@ export class OrderAssignmentService {
       },
     });
 
-    if (lapsed.length === 0) {
-      return { expiredOffers: 0, rewaved: [], expiredOrders: [] };
+    if (lapsed.length > 0) {
+      await this.assignmentRepository.update(
+        { id: In(lapsed.map((a) => a.id)) },
+        { status: AssignmentStatus.EXPIRED },
+      );
+
+      // 🔔 Close the loop for the drivers who ran out of time, so a stale offer
+      // does not sit in their list looking answerable. Deliberately quiet — no
+      // reproach, they may simply have been riding.
+      await this.notifyQuietly(() =>
+        this.notifications.notifyMany(
+          [...new Set(lapsed.map((a) => a.driverId))],
+          '⌛ انتهت مهلة العرض',
+          'انتهت مهلة قبول أحد الطلبات المعروضة عليك، وتم عرضه على كابتن آخر.',
+          { kind: NotificationKind.OFFER_EXPIRED },
+        ),
+      );
     }
 
-    await this.assignmentRepository.update(
-      { id: In(lapsed.map((a) => a.id)) },
-      { status: AssignmentStatus.EXPIRED },
-    );
+    // 🩹 An order whose wave reached *nobody* writes no assignment row, so it
+    // has nothing that can lapse — and the loop above, which only ever looked
+    // at lapsed offers, would never revisit it. It sat in `pending_offers` for
+    // ever: not offered, not widened, not expired, invisible to every driver
+    // even after one came back online. Observed in the field, which is how it
+    // was found. Those orders are collected here.
+    const candidates = new Set<number>(lapsed.map((a) => a.orderId));
+    for (const orderId of await this.findStalledOrders(now)) {
+      candidates.add(orderId);
+    }
 
-    // 🔔 Close the loop for the drivers who ran out of time, so a stale offer
-    // does not sit in their list looking answerable. Deliberately quiet — no
-    // reproach, they may simply have been riding.
-    await this.notifyQuietly(() =>
-      this.notifications.notifyMany(
-        [...new Set(lapsed.map((a) => a.driverId))],
-        '⌛ انتهت مهلة العرض',
-        'انتهت مهلة قبول أحد الطلبات المعروضة عليك، وتم عرضه على كابتن آخر.',
-        { kind: NotificationKind.OFFER_EXPIRED },
-      ),
-    );
+    if (candidates.size === 0) {
+      return { expiredOffers: lapsed.length, rewaved: [], expiredOrders: [] };
+    }
 
     const rewaved: number[] = [];
     const expiredOrders: number[] = [];
 
-    for (const orderId of new Set(lapsed.map((a) => a.orderId))) {
+    for (const orderId of candidates) {
       // Somebody may have accepted between the query and here.
       const stillWaiting = await this.assignmentRepository.count({
         where: { orderId, status: AssignmentStatus.OFFERED },
@@ -474,6 +487,46 @@ export class OrderAssignmentService {
       rewaved,
       expiredOrders,
     };
+  }
+
+  /**
+   * Orders that are waiting but have nobody to wait on.
+   *
+   * "Stalled" means: still `pending_offers`, no live offer outstanding, and
+   * due for its next wave. The due time is derived rather than stored —
+   * `createdAt + waveNumber × the offer timeout` — so an order gets the same
+   * sixty seconds per wave it would have got had a driver been asked, instead
+   * of racing through every radius in one sweep. That keeps the widening
+   * paced without adding a column to `orders`.
+   *
+   * A wave that never ran at all (`assignmentWave` 0, because creation threw
+   * before it) comes out due immediately, which is the repair such an order
+   * needs.
+   */
+  private async findStalledOrders(now: Date): Promise<number[]> {
+    const waiting = await this.orderRepository.find({
+      where: { status: OrderStatus.PENDING_OFFERS },
+    });
+    if (waiting.length === 0) return [];
+
+    const live = await this.assignmentRepository.find({
+      where: {
+        orderId: In(waiting.map((o) => o.id)),
+        status: AssignmentStatus.OFFERED,
+      },
+    });
+    const beingAsked = new Set(live.map((a) => a.orderId));
+
+    return waiting
+      .filter((order) => !beingAsked.has(order.id))
+      .filter((order) => {
+        const wave = order.assignmentWave ?? 0;
+        const dueAt =
+          new Date(order.createdAt).getTime() +
+          wave * OFFER_TIMEOUT_SECONDS * 1000;
+        return dueAt <= now.getTime();
+      })
+      .map((order) => order.id);
   }
 
   /**

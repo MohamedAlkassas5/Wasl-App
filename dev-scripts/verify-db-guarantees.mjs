@@ -114,6 +114,7 @@ try {
   const names = tables.rows.map((r) => r.tablename);
   for (const required of [
     'orders', 'order_assignments', 'wallet_transactions',
+    'wallet_topup_requests',
     'order_cancellation_requests', 'device_tokens', 'admin_audit_log',
   ]) {
     check(`table ${required} exists`, names.includes(required));
@@ -220,12 +221,71 @@ try {
   check('the second claim matches zero rows — the loser is told, not served',
     second.affectedRows === 0, `affected ${second.affectedRows}`);
 
+  // ── 6b. Driver wallet top-up, on the same two mechanisms ───────────────
+  //
+  // Approving a top-up is a money-moving operation, and it is made safe by
+  // exactly the two guarantees already proven above, applied to a different
+  // pair of rows: the `topup-<id>` ledger reference, and a conditional UPDATE
+  // off `status = 'pending'`. Both are re-run here against the real thing
+  // because a guarantee that holds for orders is not automatically wired up on
+  // the top-up path — that wiring is the thing worth checking.
+  console.log('\n[6b] driver wallet top-up');
+
+  const topUp = await db.query(`
+    INSERT INTO wallet_topup_requests
+      (driver_id, amount, method, proof_image_url, status)
+    VALUES (901, 100, 'vodafone_cash', 'uploads/payments/proof-verify.jpg', 'pending')
+    RETURNING id`);
+  const topUpId = topUp.rows[0].id;
+
+  check('a new request starts pending', true, `request #${topUpId}`);
+
+  await db.query(`
+    INSERT INTO wallet_transactions (driver_id, amount, type, reference, balance_after)
+    VALUES (901, 100, 'topup', 'topup-${topUpId}', 100)`);
+
+  const secondCredit = await rejects(db, `
+    INSERT INTO wallet_transactions (driver_id, amount, type, reference, balance_after)
+    VALUES (901, 100, 'topup', 'topup-${topUpId}', 200)`, /duplicate key|unique/i);
+  check('one top-up cannot be credited twice', secondCredit.rejected,
+    secondCredit.rejected ? 'rejected by UQ_wallet_transactions_reference'
+                          : secondCredit.message);
+
+  const review = `
+    UPDATE wallet_topup_requests
+       SET status = 'approved', reviewed_by_admin_id = 902, reviewed_at = now()
+     WHERE id = ${topUpId} AND status = 'pending'`;
+
+  const firstReview = await db.query(review);
+  check('the first approval matches exactly one row', firstReview.affectedRows === 1,
+    `affected ${firstReview.affectedRows}`);
+
+  const secondReview = await db.query(review);
+  check('a second approval matches zero rows — nothing to credit against',
+    secondReview.affectedRows === 0, `affected ${secondReview.affectedRows}`);
+
+  // And the other direction: a rejected request is equally unreachable.
+  const rejected = await db.query(`
+    INSERT INTO wallet_topup_requests
+      (driver_id, amount, method, proof_image_url, status, admin_note)
+    VALUES (901, 250, 'instapay', 'uploads/payments/proof-verify-2.jpg',
+            'rejected', 'تحويل غير مطابق')
+    RETURNING id`);
+  const rejectedId = rejected.rows[0].id;
+
+  const approveRejected = await db.query(`
+    UPDATE wallet_topup_requests SET status = 'approved'
+     WHERE id = ${rejectedId} AND status = 'pending'`);
+  check('a rejected request can never be approved',
+    approveRejected.affectedRows === 0, `affected ${approveRejected.affectedRows}`);
+
   // ── 7. Down and re-apply ───────────────────────────────────────────────
   console.log('\n[7] revert and re-apply');
   // The rows above would block a clean revert of tables they live in; clear
   // them so this step tests the migration, not the fixtures.
   await db.exec(`
     DELETE FROM wallet_transactions WHERE driver_id = 901;
+    DELETE FROM wallet_topup_requests WHERE driver_id = 901;
     DELETE FROM orders WHERE id IN (9001, 9002, 9003, 9004);
     DELETE FROM users WHERE id IN (901, 902, 903);
   `);

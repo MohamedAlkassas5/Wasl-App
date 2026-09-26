@@ -1027,10 +1027,29 @@ export class OrdersService {
       throw new NotFoundException('حساب الكابتن غير موجود');
     }
 
+    // 📍 Being online is not enough to be *reachable*. Offers go to drivers
+    // found by `findNearbyOnlineDrivers`, which ignores a GPS fix older than
+    // `driver_location_ttl_min` — so a driver whose app stopped reporting is
+    // still `is_online` while silently receiving nothing.
+    //
+    // That gap was invisible: the switch said online, the orders never came,
+    // and nothing anywhere said why. Reporting it here is what lets the app
+    // tell the driver the truth instead of the switch.
+    const lastFix = driver.lastLocationUpdate
+      ? new Date(driver.lastLocationUpdate)
+      : null;
+    const { fresh: locationFresh, ttlMinutes } =
+      this.deliveryService.locationFreshness(lastFix);
+
     return {
       success: true,
       isOnline: driver.isOnline,
       balance: Number(driver.balance || 0),
+      lastLocationUpdate: lastFix,
+      locationFresh,
+      locationTtlMinutes: ttlMinutes,
+      // What the driver actually is, as far as the marketplace is concerned.
+      receivingOffers: driver.isOnline && locationFresh,
     };
   }
 

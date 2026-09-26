@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:wasl_app/core/ui/wasl_submit_guard.dart';
@@ -5,6 +7,7 @@ import 'package:wasl_app/core/theme/app_colors.dart';
 import 'package:wasl_app/core/providers/user_provider.dart';
 import 'package:wasl_app/services/orders_service.dart';
 import 'package:wasl_app/services/location_api_service.dart';
+import 'package:wasl_app/customer_screen/cart_orders/WaslMyOrdersScreen.dart';
 import 'package:wasl_app/customer_screen/cart_orders/WaslOrderSuccessScreen.dart';
 
 class WaslOrderSummaryScreen extends StatelessWidget {
@@ -86,6 +89,10 @@ class WaslOrderSummaryScreen extends StatelessWidget {
     Navigator.pop(context);
 
     if (result['success'] == true) {
+      // 🔄 The shell keeps a long-lived "طلباتي" instance that never re-runs
+      // initState; without this the new order is missing from الطلبات الحالية
+      // until the app is restarted.
+      unawaited(WaslMyOrdersScreen.refreshNow());
       Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => WaslOrderSuccessScreen(orderId: result['data']['id'].toString())));
     } else {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(result['message'] ?? 'فشل'), backgroundColor: AppColors.danger));

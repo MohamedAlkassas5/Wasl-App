@@ -16,10 +16,11 @@ import { Order, OrderStatus, OrderType } from '../orders/entities/order.entity';
 import { OrderMessage } from '../orders/entities/order-message.entity';
 import { OrderAssignment } from '../orders/entities/order-assignment.entity';
 import { WalletTopUpRequest } from '../payments/entities/wallet-topup-request.entity';
+import { SupportService } from '../support/support.service';
 import { STORAGE_PROVIDER, StorageProvider } from '../storage/storage-provider';
 
 /** Sub-folders under `uploads/` that the app actually writes to. */
-const ALLOWED_FOLDERS = ['orders', 'invoices', 'payments', 'chat'];
+const ALLOWED_FOLDERS = ['orders', 'invoices', 'payments', 'chat', 'support'];
 
 /** Multer names files itself, so anything outside this charset is an attack. */
 const SAFE_NAME = /^[A-Za-z0-9._-]+$/;
@@ -43,6 +44,9 @@ export class FilesService {
     private readonly messageRepository: Repository<OrderMessage>,
     @InjectRepository(OrderAssignment)
     private readonly assignmentRepository: Repository<OrderAssignment>,
+    // 🎫 Support attachments: the rule lives with the support thread, so it is
+    // asked rather than re-implemented here.
+    private readonly supportService: SupportService,
     @Inject(STORAGE_PROVIDER)
     private readonly storage: StorageProvider,
   ) {}
@@ -177,6 +181,13 @@ export class FilesService {
       where: { proofImageUrl: relativePath },
     });
     if (topUp && topUp.driverId === user.sub) return true;
+
+    // 🎫 Support attachment: the user whose thread it is, and admins. A
+    // transfer screenshot sent to support is as private as the top-up proof
+    // above — and no other driver is a party to someone's account complaint.
+    if (await this.supportService.canReadAttachment(user, relativePath)) {
+      return true;
+    }
 
     // 💬 Chat attachment: the two parties to the order it was sent on. A driver
     // browsing the marketplace is not a party — by the time a conversation

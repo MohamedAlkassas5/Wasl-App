@@ -88,7 +88,7 @@ function showImage(url) {
 
 function statusBadge(status) {
   const map = { active: 'نشط', pending: 'قيد المراجعة', rejected: 'مرفوض', suspended: 'موقوف',
-    approved: 'مقبول' };
+    approved: 'مقبول', open: 'مفتوحة', closed: 'مغلقة' };
   return `<span class="badge ${status}">${map[status] || status}</span>`;
 }
 
@@ -134,7 +134,8 @@ document.querySelectorAll('.nav-item').forEach((el) =>
 const TITLES = { dashboard: 'لوحة المعلومات', registrations: 'طلبات التسجيل',
   merchants: 'المتاجر', catalog: 'الكتالوج', orders: 'الطلبات',
   cancellations: 'مراجعة الإلغاءات', zones: 'المناطق والأسعار',
-  topups: 'طلبات شحن المحفظة', settings: 'إعدادات النظام' };
+  topups: 'طلبات شحن المحفظة', support: 'الدعم الفني',
+  settings: 'إعدادات النظام' };
 
 function route(name) {
   document.querySelectorAll('.nav-item').forEach((el) =>
@@ -144,7 +145,8 @@ function route(name) {
   ({ dashboard: renderDashboard, registrations: renderRegistrations,
      merchants: renderMerchants, catalog: renderCatalog, orders: renderOrders,
      cancellations: renderCancellations, zones: renderZones,
-     topups: renderTopups, settings: renderSettings }[name])();
+     topups: renderTopups, support: renderSupport,
+     settings: renderSettings }[name])();
 }
 
 /* ---------- dashboard ---------- */
@@ -344,31 +346,57 @@ async function loadTopups() {
 function topupRow(r) {
   const safe = (v) => escapeHtml(v == null ? '' : String(v));
   const method = r.method === 'vodafone_cash' ? 'فودافون كاش' : 'إنستاباي';
+  // A request with no screenshot cannot be verified. The server refuses to
+  // create one, so this only shows for rows filed before that rule existed.
   const proof = r.proofImageUrl
     ? docThumb(r.proofImageUrl)
-    : '<span class="muted">بدون إثبات</span>';
+    : '<span class="muted">بدون إثبات — لا يمكن التوثيق</span>';
+  const driver = r.driverName
+    ? `${safe(r.driverName)} (#${Number(r.driverId)})`
+    : `مندوب #${Number(r.driverId)}`;
   const actions = r.status === 'pending'
-    ? `<button class="btn btn-sm btn-green" data-act="review-topup" data-id="${Number(r.id)}" data-action="approve">توثيق وإضافة الرصيد</button>
+    ? `<button class="btn btn-sm btn-green" data-act="review-topup" data-id="${Number(r.id)}" data-action="approve" data-amount="${safe(r.amount)}">توثيق وإضافة الرصيد</button>
        <button class="btn btn-sm btn-red" data-act="review-topup" data-id="${Number(r.id)}" data-action="reject">رفض</button>`
+    : '';
+  const note = r.adminNote
+    ? `<div class="sub">ملاحظة الإدارة: ${safe(r.adminNote)}</div>`
     : '';
   return `
     <div class="row">
       <div class="grow">
         <div class="name">${safe(r.amount)} ج.م • ${safe(method)}</div>
-        <div class="sub">مندوب #${safe(r.driverId)} ${r.senderReference ? '• من: ' + safe(r.senderReference) : ''}</div>
+        <div class="sub">${driver}${r.driverPhone ? ' • ' + safe(r.driverPhone) : ''}</div>
+        <div class="sub">${r.senderReference ? 'من: ' + safe(r.senderReference) : 'بدون رقم مُرسِل'}</div>
         <div class="sub">${statusBadge(r.status)} • ${new Date(r.createdAt).toLocaleString('ar-EG')}</div>
+        ${note}
         <div class="docs" style="margin-top:10px">${proof}</div>
       </div>
       <div class="actions">${actions}</div>
     </div>`;
 }
 
-async function reviewTopup(id, action) {
+/* Approving is the only screen in this panel that moves money, so it asks
+   first — and rejecting insists on a reason, because that reason is what the
+   driver is shown in the app. */
+async function reviewTopup(id, action, amount) {
   let adminNote;
-  if (action === 'reject') { adminNote = prompt('سبب الرفض:') || undefined; }
+  if (action === 'reject') {
+    adminNote = (prompt('سبب الرفض (سيظهر للمندوب):') || '').trim();
+    if (!adminNote) { toast('لازم تكتب سبب الرفض', 'bad'); return; }
+  } else if (!confirm(`تأكيد إضافة ${amount} ج.م لمحفظة المندوب؟ راجع صورة التحويل أولاً.`)) {
+    return;
+  }
   try {
     const r = await api(`/admin/payments/topup-requests/${id}/${action}`, { method: 'PATCH', body: { adminNote } });
-    toast(action === 'approve' ? `تم توثيق الشحن. الرصيد الجديد: ${r.newBalance} ج.م` : 'تم رفض الطلب');
+    if (action === 'approve') {
+      // `repeated` means the request was already approved — a double click or
+      // a retried request. Saying "done" again would imply a second credit.
+      toast(r.repeated
+        ? `الطلب كان موثقاً بالفعل. الرصيد: ${r.newBalance} ج.م`
+        : `تم توثيق الشحن. الرصيد الجديد: ${r.newBalance} ج.م`);
+    } else {
+      toast('تم رفض الطلب');
+    }
     loadTopups();
   } catch (e) { toast(e.message, 'bad'); }
 }
@@ -380,6 +408,170 @@ async function manualCredit() {
     const r = await api(`/admin/payments/drivers/${driverId}/credit`, { method: 'PATCH', body: { amount, note: 'شحن يدوي من لوحة الإدارة' } });
     toast(`تم. الرصيد الجديد: ${r.newBalance} ج.م`);
     $('creditDriver').value = ''; $('creditAmount').value = '';
+  } catch (e) { toast(e.message, 'bad'); }
+}
+
+/* ---------- support inbox (driver <-> admin) ---------- */
+/* This is NOT the order chat. That one lives on an order and is between the
+   customer and their driver; this is the platform's own channel with a driver,
+   usually about money. Different endpoints, different table, and deliberately
+   no way to reach one from the other. */
+
+let supportOpenId = null;
+let supportPoll = null;
+
+async function renderSupport() {
+  $('pageBody').innerHTML = `
+    <div class="filters">
+      <select id="sStatus">
+        <option value="open">مفتوحة</option>
+        <option value="closed">مغلقة</option>
+        <option value="">الكل</option>
+      </select>
+    </div>
+    <div class="support">
+      <div id="supportList" class="support-list"></div>
+      <div id="supportThread" class="support-thread">
+        <div class="empty">اختار محادثة من القائمة</div>
+      </div>
+    </div>`;
+  $('sStatus').onchange = () => { supportOpenId = null; loadSupportList(); };
+  await loadSupportList();
+
+  // The dispatcher leaves this screen open; new messages should land without
+  // a manual refresh. Cleared by `route()` when they navigate away.
+  clearInterval(supportPoll);
+  supportPoll = setInterval(() => {
+    if (document.getElementById('supportList')) {
+      loadSupportList({ quiet: true });
+      if (supportOpenId) openSupportThread(supportOpenId, { quiet: true });
+    } else {
+      clearInterval(supportPoll);
+    }
+  }, 10000);
+}
+
+async function loadSupportList({ quiet = false } = {}) {
+  const status = $('sStatus') ? $('sStatus').value : 'open';
+  try {
+    const list = await api(`/admin/support/conversations${status ? '?status=' + status : ''}`);
+    if (!list.length) {
+      $('supportList').innerHTML = '<div class="empty">لا توجد محادثات</div>';
+      return;
+    }
+    $('supportList').innerHTML = list.map(supportItem).join('');
+  } catch (e) {
+    if (!quiet) $('supportList').innerHTML = `<div class="empty">${escapeHtml(e.message)}</div>`;
+  }
+}
+
+function supportItem(c) {
+  const safe = (v) => escapeHtml(v == null ? '' : String(v));
+  const who = c.userName ? safe(c.userName) : `مستخدم #${Number(c.userId)}`;
+  const role = { delivery: 'كابتن', customer: 'عميل', merchant: 'متجر' }[c.userRole] || safe(c.userRole);
+  const when = c.lastMessageAt ? new Date(c.lastMessageAt).toLocaleString('ar-EG') : '';
+  const unread = c.unread > 0 ? `<span class="support-unread">${Number(c.unread)}</span>` : '';
+  const preview = c.lastMessagePreview
+    ? `${c.lastMessageFrom === 'admin' ? 'أنت: ' : ''}${safe(c.lastMessagePreview)}`
+    : 'لا توجد رسائل';
+  return `
+    <div class="support-item ${supportOpenId === c.id ? 'active' : ''}"
+         data-act="open-support" data-id="${Number(c.id)}">
+      <div class="name">${who} <span class="muted" style="font-weight:400">· ${role}</span>${unread}</div>
+      <div class="sub">${preview}</div>
+      <div class="sub">${statusBadge(c.status)} · ${when}</div>
+    </div>`;
+}
+
+async function openSupportThread(id, { quiet = false } = {}) {
+  supportOpenId = id;
+  try {
+    const data = await api(`/admin/support/conversations/${id}/messages`);
+
+    // The 10s poll re-renders this pane. Without carrying the draft (and the
+    // caret) across, an admin writing a long reply loses it mid-sentence every
+    // time the timer fires — which is exactly when they are most likely to be
+    // typing something careful about someone's money.
+    const previous = $('supportReply');
+    const draft = previous ? previous.value : '';
+    const caret = previous ? previous.selectionStart : 0;
+    const wasFocused = document.activeElement === previous;
+    const c = data.conversation;
+    const safe = (v) => escapeHtml(v == null ? '' : String(v));
+    const who = c.userName ? safe(c.userName) : `مستخدم #${Number(c.userId)}`;
+
+    $('supportThread').innerHTML = `
+      <div class="support-head">
+        <strong>${who}</strong>
+        <span class="muted">${safe(c.userPhone || '')}</span>
+        ${statusBadge(c.status)}
+        <span style="flex:1"></span>
+        <button class="btn btn-sm btn-ghost" data-act="support-status" data-id="${Number(c.id)}"
+                data-status="${c.status === 'open' ? 'closed' : 'open'}">
+          ${c.status === 'open' ? 'إغلاق المحادثة' : 'إعادة فتحها'}
+        </button>
+      </div>
+      <div class="support-body" id="supportBody">
+        ${data.messages.length
+          ? data.messages.map(supportBubble).join('')
+          : '<div class="empty">لا توجد رسائل</div>'}
+      </div>
+      <div class="support-compose">
+        <textarea id="supportReply" placeholder="اكتب ردك للكابتن..."></textarea>
+        <button class="btn btn-primary" data-act="support-send" data-id="${Number(c.id)}">إرسال</button>
+      </div>`;
+
+    const restored = $('supportReply');
+    if (restored && draft) {
+      restored.value = draft;
+      if (wasFocused) {
+        restored.focus();
+        restored.setSelectionRange(caret, caret);
+      }
+    }
+
+    hydrateDocs($('supportBody'));
+    const body = $('supportBody');
+    if (body) body.scrollTop = body.scrollHeight;
+
+    // Opening a thread is reading it — the unread badge should reflect that.
+    await api(`/admin/support/conversations/${id}/read`, { method: 'POST' });
+    loadSupportList({ quiet: true });
+  } catch (e) {
+    if (!quiet) $('supportThread').innerHTML = `<div class="empty">${escapeHtml(e.message)}</div>`;
+  }
+}
+
+function supportBubble(m) {
+  const safe = (v) => escapeHtml(v == null ? '' : String(v));
+  const when = m.createdAt ? new Date(m.createdAt).toLocaleString('ar-EG') : '';
+  const image = m.attachmentUrl ? docThumb(m.attachmentUrl) : '';
+  return `
+    <div class="support-msg ${safe(m.senderRole)}">
+      ${m.body ? safe(m.body) : ''}
+      ${image}
+      <span class="meta">${when}</span>
+    </div>`;
+}
+
+async function sendSupportReply(id) {
+  const field = $('supportReply');
+  const body = (field.value || '').trim();
+  if (!body) { toast('اكتب رسالة الأول', 'bad'); return; }
+  try {
+    await api(`/admin/support/conversations/${id}/messages`, { method: 'POST', body: { body } });
+    field.value = '';
+    await openSupportThread(id);
+    loadSupportList({ quiet: true });
+  } catch (e) { toast(e.message, 'bad'); }
+}
+
+async function setSupportStatus(id, status) {
+  try {
+    await api(`/admin/support/conversations/${id}/status`, { method: 'PATCH', body: { status } });
+    toast(status === 'closed' ? 'تم إغلاق المحادثة' : 'تم إعادة فتح المحادثة');
+    await openSupportThread(id);
+    loadSupportList({ quiet: true });
   } catch (e) { toast(e.message, 'bad'); }
 }
 
@@ -878,10 +1070,19 @@ document.addEventListener('click', (e) => {
       reviewReg(Number(d.id), d.status, d.ask === '1');
       break;
     case 'review-topup':
-      reviewTopup(Number(d.id), d.action);
+      reviewTopup(Number(d.id), d.action, d.amount);
       break;
     case 'manual-credit':
       manualCredit();
+      break;
+    case 'open-support':
+      openSupportThread(Number(d.id));
+      break;
+    case 'support-send':
+      sendSupportReply(Number(d.id));
+      break;
+    case 'support-status':
+      setSupportStatus(Number(d.id), d.status);
       break;
     case 'save-setting':
       saveSetting(d.key);
